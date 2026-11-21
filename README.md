@@ -22,7 +22,7 @@ that can be built and verified without it.
 
 | Area | State |
 |---|---|
-| Shader translation | Every shader stage the game uses is translated (vertex, pixel, compute, mesh, geometry, ray intersection); the HLSL of all but three programs compiles. Instruction behaviour is checked on D3D12 WARP. |
+| Shader translation | Every shader stage the game uses is translated (vertex, pixel, compute, mesh, geometry, ray intersection), and all 25,884 programs compile; the three largest take about two hours each until control flow is restructured. Instruction behaviour is checked on D3D12 WARP. |
 | Archives | Contents can be extracted without the encrypted file table (no names yet). Metadata files parse completely. |
 | Textures | Most textures export; pages using the console's BCPack compression cannot be decoded yet. |
 | Loader | The game's support libraries load with all imports resolved; the console runtime is implemented for offline use. |
