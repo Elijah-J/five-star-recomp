@@ -1,0 +1,16 @@
+artifacts/
+.vs/
+*.user
+TestResults/
+
+# Never commit game data or anything extracted from it.
+*.rpf
+*.ttpf
+*.xvd
+*.fssm
+*.dxbc
+*.dxil
+*.bk2
+*.dds
+*.png
+!docs/**/*.png
