@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Maps the console's x64 images on Windows and binds their Xbox-only imports to the shims in this project. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>fivestar-loader</AssemblyName>
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="FiveStar.Loader.Tests" />
+    <InternalsVisibleTo Include="FiveStar.Benchmarks" />
+  </ItemGroup>
+</Project>

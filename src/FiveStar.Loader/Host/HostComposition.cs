@@ -1,0 +1,49 @@
+// Copyright (c) 2026 Five Star Recomp contributors.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+using FiveStar.Loader.Loading;
+using FiveStar.Loader.Shims.Gdk;
+
+namespace FiveStar.Loader.Host;
+
+/// <summary>Turns the command line and the process environment into the loader's options.</summary>
+internal static class HostComposition
+{
+    private const string WorkFolder = "work";
+    private const string DataFolder = "FiveStar";
+    private const string GdkDataFolder = "GdkData";
+
+    /// <summary>The shipped MSVC runtime, mapped from the target's directory unless --system-crt is given.</summary>
+    public static readonly IReadOnlyList<string> ShippedCrt =
+    [
+        "msvcp140.dll", "msvcp140_1.dll", "msvcp140_2.dll", "msvcp140_atomic_wait.dll", "msvcp140_codecvt_ids.dll",
+        "vcruntime140.dll", "vcruntime140_1.dll", "concrt140.dll", "vccorlib140.dll", "vcomp140.dll",
+    ];
+
+    public static LoaderOptions CreateLoaderOptions(HostOptions options)
+    {
+        var manual = new HashSet<string>(options.ManualModules, StringComparer.OrdinalIgnoreCase);
+
+        if (!options.SystemCrt)
+        {
+            manual.UnionWith(ShippedCrt);
+        }
+
+        string workDirectory = options.WorkDirectory ?? Path.Combine(AppContext.BaseDirectory, WorkFolder);
+
+        return new LoaderOptions(options.SearchDirectories, manual, options.Unresolved, options.CallEntryPoints, workDirectory, options.MainModule, Environment.ProcessId);
+    }
+
+    public static GdkOptions CreateGdkOptions(HostOptions options)
+    {
+        string dataRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), DataFolder, GdkDataFolder);
+        uint deviceType = options.DeviceType ?? SystemService.XboxScarlettAnaconda;
+
+        return new GdkOptions(options.PackageRoot, options.SaveDirectory, dataRoot, Environment.CurrentDirectory, deviceType, Environment.OSVersion.Version);
+    }
+
+    public static LoaderEnvironment CreateEnvironment()
+    {
+        return new LoaderEnvironment(Environment.SystemDirectory, TimeProvider.System, Environment.FailFast);
+    }
+}

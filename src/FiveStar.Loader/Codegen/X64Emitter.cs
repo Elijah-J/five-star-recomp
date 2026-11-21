@@ -1,0 +1,259 @@
+// Copyright (c) 2026 Five Star Recomp contributors.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+using System.Buffers.Binary;
+
+namespace FiveStar.Loader.Codegen;
+
+/// <summary>
+/// Appends the few x64 instructions the loader generates. Each encoding is the one given in the Intel 64 and IA-32
+/// Architectures Software Developer's Manual, volume 2, for the instruction named in its field.
+/// </summary>
+internal sealed class X64Emitter
+{
+    /// <summary>Length of <c>mov eax,[rip+disp32]</c>; its displacement is relative to the end of the instruction.</summary>
+    public const int MovEaxRipRelativeLength = 6;
+
+    private const byte RetOpcode = 0xC3;
+    private const byte Int3Opcode = 0xCC;
+    private const byte JzRel8Opcode = 0x74;
+    private const byte MovEaxImm32Opcode = 0xB8;
+
+    private static readonly byte[] SubRspImm8 = [0x48, 0x83, 0xEC];
+    private static readonly byte[] AddRspImm8 = [0x48, 0x83, 0xC4];
+    private static readonly byte[] MovRaxImm64 = [0x48, 0xB8];
+    private static readonly byte[] MovRcxImm64 = [0x48, 0xB9];
+    private static readonly byte[] MovR11Imm64 = [0x49, 0xBB];
+    private static readonly byte[] CallRaxEncoding = [0xFF, 0xD0];
+    private static readonly byte[] JmpRaxEncoding = [0xFF, 0xE0];
+    private static readonly byte[] MovRspDisp8FromRax = [0x48, 0x89, 0x44, 0x24];
+    private static readonly byte[] MovRaxFromRspDisp8 = [0x48, 0x8B, 0x44, 0x24];
+    private static readonly byte[] MovRaxFromRspDisp32 = [0x48, 0x8B, 0x84, 0x24];
+    private static readonly byte[] MovR9FromRspDisp32 = [0x4C, 0x8B, 0x8C, 0x24];
+    private static readonly byte[] MovRcxFromGsDisp32 = [0x65, 0x48, 0x8B, 0x0C, 0x25];
+    private static readonly byte[] MovGsDisp32FromEcx = [0x65, 0x89, 0x0C, 0x25];
+    private static readonly byte[] MovGsDisp32QwordImm32 = [0x65, 0x48, 0xC7, 0x04, 0x25];
+    private static readonly byte[] TestRcxRcxEncoding = [0x48, 0x85, 0xC9];
+    private static readonly byte[] DecRcxEncoding = [0x48, 0xFF, 0xC9];
+    private static readonly byte[] MovRcxRdxEncoding = [0x48, 0x89, 0xD1];
+    private static readonly byte[] MovRdxR8Encoding = [0x4C, 0x89, 0xC2];
+    private static readonly byte[] MovR8R9Encoding = [0x4D, 0x89, 0xC8];
+    private static readonly byte[] MovapsXmm0Xmm1 = [0x0F, 0x28, 0xC1];
+    private static readonly byte[] MovapsXmm1Xmm2 = [0x0F, 0x28, 0xCA];
+    private static readonly byte[] MovapsXmm2Xmm3 = [0x0F, 0x28, 0xD3];
+    private static readonly byte[] MovqXmm3FromRspDisp32 = [0xF3, 0x0F, 0x7E, 0x9C, 0x24];
+    private static readonly byte[] MovEaxFromRipDisp32 = [0x8B, 0x05];
+    private static readonly byte[] MovR11MemFromEax = [0x41, 0x89, 0x03];
+
+    private readonly List<byte> _code = [];
+
+    /// <summary>Bytes emitted so far.</summary>
+    public int Length => _code.Count;
+
+    public byte[] ToArray()
+    {
+        return _code.ToArray();
+    }
+
+    public void SubRsp(byte size)
+    {
+        Emit(SubRspImm8, size);
+    }
+
+    public void AddRsp(byte size)
+    {
+        Emit(AddRspImm8, size);
+    }
+
+    public void MovRax(ulong value)
+    {
+        Emit(MovRaxImm64);
+        Emit64(value);
+    }
+
+    public void MovRcx(ulong value)
+    {
+        Emit(MovRcxImm64);
+        Emit64(value);
+    }
+
+    public void MovR11(ulong value)
+    {
+        Emit(MovR11Imm64);
+        Emit64(value);
+    }
+
+    public void MovEax(uint value)
+    {
+        _code.Add(MovEaxImm32Opcode);
+        Emit32(value);
+    }
+
+    public void CallRax()
+    {
+        Emit(CallRaxEncoding);
+    }
+
+    public void JmpRax()
+    {
+        Emit(JmpRaxEncoding);
+    }
+
+    public void Ret()
+    {
+        _code.Add(RetOpcode);
+    }
+
+    /// <summary><c>mov [rsp+disp8],rax</c>.</summary>
+    public void StoreRaxToStack(byte displacement)
+    {
+        Emit(MovRspDisp8FromRax, displacement);
+    }
+
+    /// <summary><c>mov rax,[rsp+disp8]</c>.</summary>
+    public void LoadRaxFromStack(byte displacement)
+    {
+        Emit(MovRaxFromRspDisp8, displacement);
+    }
+
+    /// <summary><c>mov rax,[rsp+disp32]</c>.</summary>
+    public void LoadRaxFromStackFar(int displacement)
+    {
+        Emit(MovRaxFromRspDisp32);
+        Emit32((uint)displacement);
+    }
+
+    /// <summary><c>mov r9,[rsp+disp32]</c>.</summary>
+    public void LoadR9FromStack(int displacement)
+    {
+        Emit(MovR9FromRspDisp32);
+        Emit32((uint)displacement);
+    }
+
+    /// <summary><c>movq xmm3,[rsp+disp32]</c>.</summary>
+    public void LoadXmm3FromStack(int displacement)
+    {
+        Emit(MovqXmm3FromRspDisp32);
+        Emit32((uint)displacement);
+    }
+
+    /// <summary><c>mov rcx,gs:[disp32]</c>.</summary>
+    public void LoadRcxFromGs(int displacement)
+    {
+        Emit(MovRcxFromGsDisp32);
+        Emit32((uint)displacement);
+    }
+
+    /// <summary><c>mov gs:[disp32],ecx</c>.</summary>
+    public void StoreEcxToGs(int displacement)
+    {
+        Emit(MovGsDisp32FromEcx);
+        Emit32((uint)displacement);
+    }
+
+    /// <summary><c>mov qword gs:[disp32],imm32</c> (sign-extended).</summary>
+    public void StoreQwordToGs(int displacement, int value)
+    {
+        Emit(MovGsDisp32QwordImm32);
+        Emit32((uint)displacement);
+        Emit32((uint)value);
+    }
+
+    public void TestRcxRcx()
+    {
+        Emit(TestRcxRcxEncoding);
+    }
+
+    public void DecRcx()
+    {
+        Emit(DecRcxEncoding);
+    }
+
+    /// <summary><c>jz rel8</c> with a displacement patched by <see cref="PatchJumpHere"/>; returns the patch position.</summary>
+    public int JzForward()
+    {
+        Emit([JzRel8Opcode], 0);
+
+        return _code.Count - 1;
+    }
+
+    /// <summary>Points the <c>jz</c> whose displacement byte is at <paramref name="patch"/> to the current position.</summary>
+    public void PatchJumpHere(int patch)
+    {
+        _code[patch] = (byte)(_code.Count - (patch + 1));
+    }
+
+    /// <summary><c>mov rcx,rdx; mov rdx,r8; mov r8,r9</c>: shifts the first integer arguments one register down.</summary>
+    public void ShiftIntegerArguments()
+    {
+        Emit(MovRcxRdxEncoding);
+        Emit(MovRdxR8Encoding);
+        Emit(MovR8R9Encoding);
+    }
+
+    /// <summary><c>movaps xmm0,xmm1; movaps xmm1,xmm2; movaps xmm2,xmm3</c>.</summary>
+    public void ShiftFloatArguments()
+    {
+        Emit(MovapsXmm0Xmm1);
+        Emit(MovapsXmm1Xmm2);
+        Emit(MovapsXmm2Xmm3);
+    }
+
+    /// <summary><c>mov eax,[rip+disp32]</c>.</summary>
+    public void LoadEaxRipRelative(int displacement)
+    {
+        Emit(MovEaxFromRipDisp32);
+        Emit32((uint)displacement);
+    }
+
+    /// <summary><c>mov [r11],eax</c>.</summary>
+    public void StoreEaxToR11()
+    {
+        Emit(MovR11MemFromEax);
+    }
+
+    /// <summary>Pads with <c>int3</c> to a multiple of <paramref name="alignment"/>.</summary>
+    public void PadTo(int alignment)
+    {
+        while (_code.Count % alignment != 0)
+        {
+            _code.Add(Int3Opcode);
+        }
+    }
+
+    /// <summary>Appends raw data (unwind information, tables) after the code.</summary>
+    public void Data(ReadOnlySpan<byte> bytes)
+    {
+        _code.AddRange(bytes.ToArray());
+    }
+
+    public void Data32(uint value)
+    {
+        Emit32(value);
+    }
+
+    private void Emit(byte[] encoding)
+    {
+        _code.AddRange(encoding);
+    }
+
+    private void Emit(byte[] encoding, byte operand)
+    {
+        _code.AddRange(encoding);
+        _code.Add(operand);
+    }
+
+    private void Emit32(uint value)
+    {
+        Span<byte> bytes = stackalloc byte[sizeof(uint)];
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes, value);
+        _code.AddRange(bytes.ToArray());
+    }
+
+    private void Emit64(ulong value)
+    {
+        Span<byte> bytes = stackalloc byte[sizeof(ulong)];
+        BinaryPrimitives.WriteUInt64LittleEndian(bytes, value);
+        _code.AddRange(bytes.ToArray());
+    }
+}

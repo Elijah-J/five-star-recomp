@@ -1,0 +1,68 @@
+// Copyright (c) 2026 Five Star Recomp contributors.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+using System.Runtime.InteropServices;
+using FiveStar.Loader.Diagnostics;
+using FiveStar.Loader.Native;
+
+namespace FiveStar.Loader.Shims;
+
+/// <summary>
+/// System functions that must know the mapped images, which the OS loader does not. Bound for every importing module
+/// ("*"), because they are imported from kernel32, ntdll or different api-ms-win sets.
+/// </summary>
+internal static unsafe class LoaderShims
+{
+    private const string UcrtLibrary = "ucrtbase.dll";
+    private const string TerminateExport = "terminate";
+
+    /// <summary>
+    /// vcruntime's _CxxThrowException calls RtlPcToFileHeader(pThrowInfo) for the image base the x64 ThrowInfo RVAs are
+    /// relative to. ntdll knows only OS-loaded modules, so for a mapped image it would return NULL and C++ throw/catch
+    /// would crash. Effective for images whose imports the loader binds (a mapped vcruntime140.dll).
+    /// </summary>
+    [HotPath]
+    [Shim("*", "RtlPcToFileHeader")]
+    [UnmanagedCallersOnly]
+    private static nint RtlPcToFileHeader(nint pc, nint* baseOfImage)
+    {
+        var runtime = ShimContext.Runtime;
+        var image = runtime.Images.FindByAddress(pc);
+
+        if (image is null)
+        {
+            return Ntdll.RtlPcToFileHeader(pc, baseOfImage);
+        }
+
+        runtime.Counters.CountPcToFileHeader();
+
+        if (runtime.Log.DetailEnabled)
+        {
+            LogHit(runtime, pc, image);
+        }
+
+        *baseOfImage = image.Base;
+
+        return image.Base;
+    }
+
+    private static void LogHit(LoaderRuntime runtime, nint pc, Loading.LoadedImage image)
+    {
+        runtime.Log.Detail($"  [loader] RtlPcToFileHeader(0x{pc:x}) -> {image.Name} @ 0x{image.Base:x}");
+    }
+
+    /// <summary>
+    /// std::terminate from a mapped image (FH4 calls it for noexcept violations and unmatched throws) logs the native
+    /// stack, then hands over to the real ucrtbase terminate, which fail-fasts.
+    /// </summary>
+    [Shim("*", "terminate")]
+    [UnmanagedCallersOnly]
+    private static void Terminate()
+    {
+        var runtime = ShimContext.Runtime;
+        runtime.Log.Error("std::terminate() called from mapped code");
+        NativeStack.Log(runtime.Images, runtime.Log, "terminate call stack");
+        var real = (delegate* unmanaged<void>)NativeLibrary.GetExport(NativeLibrary.Load(UcrtLibrary), TerminateExport);
+        real();
+    }
+}

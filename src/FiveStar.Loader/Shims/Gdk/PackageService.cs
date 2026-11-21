@@ -1,0 +1,225 @@
+// Copyright (c) 2026 Five Star Recomp contributors.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+using System.Runtime.InteropServices;
+using FiveStar.Loader.Native;
+
+namespace FiveStar.Loader.Shims.Gdk;
+
+/// <summary>
+/// XPackage.h: one installed, fully available game package rooted at the package root, with the identity from
+/// MicrosoftGame.config. No DLC; chunks are always ready; installation monitors report 100%.
+/// </summary>
+internal sealed unsafe class PackageService
+{
+    public const string MountApi = "XPackageMountWithUiAsync";
+
+    private const string UserLocale = "en-US";
+
+    private readonly HandleTable<string> _mounts = new("XPKMOUNT");
+    private readonly HandleTable<string> _monitors = new("XPKMONIT");
+    private readonly GdkConfig _config;
+    private long _token;
+
+    public PackageService(GdkConfig config)
+    {
+        _config = config;
+    }
+
+    /// <summary>
+    /// The package identifier: the identity name from MicrosoftGame.config (shorter than XPACKAGE_IDENTIFIER_MAX_LENGTH),
+    /// else the title id. What the console returns here is unconfirmed.
+    /// </summary>
+    public string PackageId
+    {
+        get
+        {
+            var identity = _config.Identity;
+
+            if (identity.Name.Length > 0)
+            {
+                return identity.Name;
+            }
+
+            return _config.TitleIdText;
+        }
+    }
+
+    public int GetCurrentProcessPackageIdentifier(nuint size, byte* buffer)
+    {
+        return Utf8Text.Write(PackageId, size, buffer, null);
+    }
+
+    public static int GetUserLocale(nuint size, byte* locale)
+    {
+        return Utf8Text.Write(UserLocale, size, locale, null);
+    }
+
+    /// <summary>Calls the callback once for the game package; no content packages.</summary>
+    public int EnumeratePackages(uint kind, nint context, nint callback)
+    {
+        if (callback == 0)
+        {
+            return HResult.InvalidArgument;
+        }
+
+        if (kind != PackageLayout.KindGame)
+        {
+            return HResult.Ok;
+        }
+
+        var identity = _config.Identity;
+        string[] texts = [PackageId, identity.DisplayName, identity.Description, identity.PublisherDisplayName, identity.StoreId, _config.TitleIdText];
+        var pointers = texts.Select(t => (nint)Utf8Text.Allocate(t)).ToArray();
+        byte* details = stackalloc byte[PackageLayout.DetailsSize];
+        WriteDetails(details, pointers, identity.Version);
+
+        try
+        {
+            ((delegate* unmanaged<nint, nint, byte>)callback)(context, (nint)details);
+        }
+        finally
+        {
+            foreach (nint pointer in pointers)
+            {
+                NativeMemory.Free((void*)pointer);
+            }
+        }
+
+        return HResult.Ok;
+    }
+
+    public int Mount(string? id, out nint mount)
+    {
+        mount = 0;
+
+        if (!IsOurs(id))
+        {
+            return HResult.NotFound;
+        }
+
+        mount = _mounts.Add(_config.PackageRoot);
+
+        return HResult.Ok;
+    }
+
+    public int GetMountPathSize(nint mount, nuint* size)
+    {
+        string? path = _mounts.Get(mount);
+
+        if (path is null || size == null)
+        {
+            return HResult.InvalidArgument;
+        }
+
+        *size = Utf8Text.SizeWithTerminator(path);
+
+        return HResult.Ok;
+    }
+
+    public int GetMountPath(nint mount, nuint size, byte* path)
+    {
+        string? root = _mounts.Get(mount);
+
+        if (root is null)
+        {
+            return HResult.InvalidArgument;
+        }
+
+        return Utf8Text.Write(root, size, path, null);
+    }
+
+    public void CloseMount(nint mount)
+    {
+        _mounts.Remove(mount);
+    }
+
+    public int FindChunkAvailability(byte* id, uint* availability)
+    {
+        if (availability == null)
+        {
+            return HResult.Pointer;
+        }
+
+        if (!IsOurs(Utf8Text.Read((nint)id)))
+        {
+            return HResult.NotFound;
+        }
+
+        *availability = PackageLayout.ChunkReady;
+
+        return HResult.Ok;
+    }
+
+    public int CreateInstallationMonitor(byte* id, nint* monitor)
+    {
+        if (monitor == null)
+        {
+            return HResult.Pointer;
+        }
+
+        string? text = Utf8Text.Read((nint)id);
+
+        if (!IsOurs(text))
+        {
+            return HResult.NotFound;
+        }
+
+        *monitor = _monitors.Add(text ?? PackageId);
+
+        return HResult.Ok;
+    }
+
+    /// <summary>Fully installed and launchable; the three byte counts carry the same value, so their order does not matter.</summary>
+    public void GetInstallationProgress(nint monitor, byte* progress)
+    {
+        if (progress == null || _monitors.Get(monitor) is null)
+        {
+            return;
+        }
+
+        *(ulong*)(progress + PackageLayout.ProgressTotalOffset) = PackageLayout.ReportedPackageBytes;
+        *(ulong*)(progress + PackageLayout.ProgressInstalledOffset) = PackageLayout.ReportedPackageBytes;
+        *(ulong*)(progress + PackageLayout.ProgressLaunchOffset) = PackageLayout.ReportedPackageBytes;
+        progress[PackageLayout.ProgressLaunchableOffset] = GdkModule.True;
+        progress[PackageLayout.ProgressCompletedOffset] = GdkModule.True;
+    }
+
+    public void CloseMonitor(nint monitor)
+    {
+        _monitors.Remove(monitor);
+    }
+
+    /// <summary>Registration succeeds; it never fires because the package is already complete.</summary>
+    public int RegisterProgressChanged(ulong* token)
+    {
+        if (token == null)
+        {
+            return HResult.Pointer;
+        }
+
+        *token = (ulong)Interlocked.Increment(ref _token);
+
+        return HResult.Ok;
+    }
+
+    private static void WriteDetails(byte* details, nint[] pointers, Version version)
+    {
+        new Span<byte>(details, PackageLayout.DetailsSize).Clear();
+        *(nint*)(details + PackageLayout.IdentifierOffset) = pointers[(int)PackageText.Identifier];
+        *(ulong*)(details + PackageLayout.VersionOffset) = XVersion.Pack(version);
+        *(uint*)(details + PackageLayout.KindOffset) = PackageLayout.KindGame;
+        *(nint*)(details + PackageLayout.DisplayNameOffset) = pointers[(int)PackageText.DisplayName];
+
+        *(nint*)(details + PackageLayout.DescriptionOffset) = pointers[(int)PackageText.Description];
+        *(nint*)(details + PackageLayout.PublisherOffset) = pointers[(int)PackageText.Publisher];
+        *(nint*)(details + PackageLayout.StoreIdOffset) = pointers[(int)PackageText.StoreId];
+        *(uint*)(details + PackageLayout.CountOffset) = 1;
+        *(nint*)(details + PackageLayout.TitleIdOffset) = pointers[(int)PackageText.TitleId];
+    }
+
+    private bool IsOurs(string? id)
+    {
+        return string.IsNullOrEmpty(id) || string.Equals(id, PackageId, StringComparison.OrdinalIgnoreCase);
+    }
+}
