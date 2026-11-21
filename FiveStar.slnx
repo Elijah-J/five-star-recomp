@@ -10,6 +10,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/FiveStar.Architecture.Tests/FiveStar.Architecture.Tests.csproj" />
+    <Project Path="tests/FiveStar.Cli.Tests/FiveStar.Cli.Tests.csproj" />
     <Project Path="tests/FiveStar.Formats.Tests/FiveStar.Formats.Tests.csproj" />
     <Project Path="tests/FiveStar.Loader.Tests/FiveStar.Loader.Tests.csproj" />
     <Project Path="tests/FiveStar.Shaders.Tests/FiveStar.Shaders.Tests.csproj" />
