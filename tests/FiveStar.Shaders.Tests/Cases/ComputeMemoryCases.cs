@@ -1,0 +1,238 @@
+// Copyright (c) 2026 Five Star Recomp contributors.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+using System.Globalization;
+using FiveStar.Shaders.Tests.Warp;
+
+namespace FiveStar.Shaders.Tests.Cases;
+
+/// <summary>
+/// Compute cases for buffer atomics, read-modify-write through one V#, buffer loads, and global memory (loads from the
+/// GPU-memory window at heap slot 0, stores and atomics through its writable view at slot 1).
+/// </summary>
+public static class ComputeMemoryCases
+{
+    private const int AuxiliaryHeap = 4;
+    private const int Threads = 64;
+
+    private const string BufferAtomicProgram = """
+        v_lshlrev_b32_e32 v1, 2, v0
+        v_mov_b32 v2, 0
+        v_add_nc_u32_e32 v20, 1, v0
+        buffer_atomic_add v20, v1, s[4:7], 0 offen glc
+        v_mov_b32 v21, 1
+        buffer_atomic_add v21, v2, s[4:7], 0 offen offset:256 glc
+        v_mul_u32_u24_e32 v7, 7, v0
+        v_and_b32_e32 v7, 63, v7
+        v_add_nc_u32_e32 v7, 5, v7
+        buffer_atomic_umin v7, v2, s[4:7], 0 offen offset:260
+        buffer_atomic_umax v7, v2, s[4:7], 0 offen offset:264
+        v_sub_nc_u32_e32 v8, 20, v0
+        buffer_atomic_smin v8, v2, s[4:7], 0 offen offset:268
+        buffer_atomic_smax v8, v2, s[4:7], 0 offen offset:272
+        v_lshlrev_b32_e64 v9, v0, 1
+        buffer_atomic_or v9, v2, s[4:7], 0 offen offset:276
+        v_not_b32_e32 v10, v9
+        buffer_atomic_and v10, v2, s[4:7], 0 offen offset:280
+        v_mul_u32_u24_e32 v11, 0x9e37, v0
+        buffer_atomic_xor v11, v2, s[4:7], 0 offen offset:284
+        v_and_b32_e32 v3, 1, v0
+        v_lshlrev_b32_e32 v4, 1, v0
+        v_mov_b32 v5, 0x3039
+        v_cmp_eq_u32_e32 vcc_lo, 0, v3
+        v_cndmask_b32_e32 v23, v5, v4, vcc_lo
+        v_add_nc_u32_e32 v22, 0xc0000000, v0
+        buffer_atomic_cmpswap v[22:23], v1, s[4:7], 0 offen offset:320 glc
+        s_waitcnt vmcnt(0)
+        """;
+
+    private static readonly uint[] Input = [.. Enumerable.Range(0, 1024).Select(index => 0xA0000000 + (0x11 * (uint)index))];
+
+    public static IEnumerable<ComputeCase> All()
+    {
+        return
+        [
+            BufferAtomics(),
+            BufferReadModifyWrite(),
+            BufferLoads(),
+            GlobalMemory(),
+            GlobalNegativeOffset(),
+            GlobalAtomic(),
+        ];
+    }
+
+    private static IEnumerable<string> Differences(string name, uint[] expected, uint[] actual)
+    {
+        for (var index = 0; index < expected.Length; index++)
+        {
+            if (expected[index] != actual[index])
+            {
+                yield return string.Create(CultureInfo.InvariantCulture, $"{name}[{index}] expected {Expected.Hex(expected[index])} actual {Expected.Hex(actual[index])}");
+            }
+        }
+    }
+
+    private static IEnumerable<string> Permutation(string what, IEnumerable<uint> actual, int count)
+    {
+        if (!actual.Order().SequenceEqual(Enumerable.Range(0, count).Select(value => (uint)value)))
+        {
+            yield return $"{what} is not a permutation of 0..{count - 1}";
+        }
+    }
+
+    // buffer_atomic_add (glc returns the old value), a contended add, umin / umax / smin / smax / or / and / xor, cmpswap
+    // (glc); the final buffer contents are checked too.
+    private static ComputeCase BufferAtomics()
+    {
+        uint[] initial = [.. Enumerable.Range(0, Threads).Select(index => 1000 + (uint)index), 0, uint.MaxValue, 0, 0x7FFFFFFF, 0x80000000, 0,
+            uint.MaxValue, 0, .. new uint[8], .. Enumerable.Range(0, Threads).Select(index => 2 * (uint)index)];
+        var final = (uint[])initial.Clone();
+
+        for (var t = 0; t < Threads; t++)
+        {
+            var (unsigned, signed) = ((uint)(((7 * t) & 63) + 5), 20 - t);
+            final[t] += (uint)t + 1;
+            final[64]++;
+            (final[65], final[66]) = (Math.Min(final[65], unsigned), Math.Max(final[66], unsigned));
+            (final[67], final[68]) = ((uint)Math.Min((int)final[67], signed), (uint)Math.Max((int)final[68], signed));
+            (final[69], final[70], final[71]) = (final[69] | (1u << (t & 31)), final[70] & ~(1u << (t & 31)), final[71] ^ (0x9E37u * (uint)t));
+
+            if (t % 2 == 0)
+            {
+                final[80 + t] = 0xC0000000 + (uint)t;
+            }
+        }
+
+        return new ComputeCase("cs_buffer_atomic", BufferAtomicProgram, 3, thread => [1000 + thread.Id, Expected.Any, 2 * thread.Id])
+        {
+            SecondDescriptor = ComputeCase.Descriptor(AuxiliaryHeap),
+            Buffers = [new BufferResource(AuxiliaryHeap, initial, Writable: true)],
+            Check = buffers => Permutation("v21 (contended buffer_atomic_add glc)", Enumerable.Range(0, Threads).Select(t => buffers[ComputeCase.OutputHeap][(t * 3) + 1]), Threads)
+                .Concat(Differences($"heap{AuxiliaryHeap}", final, buffers[AuxiliaryHeap])),
+        };
+    }
+
+    // buffer_load + buffer_store through the same V# (read-modify-write of a writable buffer).
+    private static ComputeCase BufferReadModifyWrite()
+    {
+        const string Program = """
+            v_lshlrev_b32_e32 v1, 2, v41
+            buffer_load_dword v20, v1, s[4:7], 0 offen
+            s_waitcnt vmcnt(0)
+            v_add_nc_u32_e32 v20, 1, v20
+            buffer_store_dword v20, v1, s[4:7], 0 offen
+            """;
+        uint[] final = [.. Input.Take(Threads).Select(value => value + 1)];
+
+        return new ComputeCase("cs_buffer_rmw", Program, 1, thread => [Input[thread.Id] + 1])
+        {
+            SecondDescriptor = ComputeCase.Descriptor(AuxiliaryHeap),
+            Buffers = [new BufferResource(AuxiliaryHeap, Input[..Threads], Writable: true)],
+            Check = buffers => Differences($"heap{AuxiliaryHeap}", final, buffers[AuxiliaryHeap]),
+        };
+    }
+
+    // buffer_load_dwordx4 offen, dwordx2 idxen (stride = V# dword1) + soffset + instruction offset from a read-only buffer.
+    private static ComputeCase BufferLoads()
+    {
+        const string Program = """
+            v_lshlrev_b32_e32 v1, 4, v41
+            buffer_load_dwordx4 v[20:23], v1, s[4:7], 0 offen
+            buffer_load_dwordx2 v[24:25], v41, s[4:7], s8 idxen offset:4
+            s_waitcnt vmcnt(0)
+            """;
+
+        return new ComputeCase("cs_buffer_load_store", Program, 6, thread =>
+        {
+            var record = ((thread.Id * 8) + 32 + 4) / 4;
+
+            return [.. Input.Skip(4 * thread.Id).Take(4).Select(Expected.Exact), Input[record], Input[record + 1]];
+        })
+        {
+            SecondDescriptor = ComputeCase.Descriptor(3, stride: 8),
+            User = [32],
+            Groups = (2, 1, 1),
+            Buffers = [new BufferResource(3, Input, Writable: false)],
+        };
+    }
+
+    // global_load / store through a 64-bit VGPR address (carry chain) and through an SGPR base + VGPR offset.
+    private static ComputeCase GlobalMemory()
+    {
+        const string Program = """
+            v_lshlrev_b32_e32 v1, 4, v41
+            v_mov_b32 v4, 0
+            v_add_co_u32 v2, vcc_lo, s8, v1
+            v_add_co_ci_u32_e32 v3, vcc_lo, s9, v4, vcc_lo
+            global_load_dwordx4 v[20:23], v[2:3], off
+            v_lshlrev_b32_e32 v6, 2, v41
+            global_load_dword v24, v6, s[8:9] offset:4
+            s_waitcnt vmcnt(0)
+            v_add_co_u32 v2, vcc_lo, s10, v1
+            v_add_co_ci_u32_e32 v3, vcc_lo, s11, v4, vcc_lo
+            global_store_dwordx4 v[2:3], v[20:23], off
+            v_xor_b32_e32 v7, 0xffff, v24
+            v_add_nc_u32_e32 v8, 0xc00, v6
+            global_store_dword v8, v7, s[10:11] offset:1024
+            """;
+        var stored = new uint[2048];
+
+        for (var thread = 0; thread < 2 * Threads; thread++)
+        {
+            Input.AsSpan((0x40 / 4) + (4 * thread), 4).CopyTo(stored.AsSpan((0x200 / 4) + (4 * thread)));
+            stored[((0x200 + 0xC00 + 1024) / 4) + thread] = Input[thread + (0x40 / 4) + 1] ^ 0xFFFF;
+        }
+
+        return new ComputeCase("cs_global_mem", Program, 5, thread => GlobalLoads(thread.Id))
+        {
+            User = [0x40, 0, 0x200, 0],
+            Groups = (2, 1, 1),
+            Buffers = [new BufferResource(0, Input, Writable: false), new BufferResource(1, new uint[2048], Writable: true)],
+            Check = buffers => Differences("heap1", stored, buffers[1]),
+        };
+    }
+
+    private static Expected[] GlobalLoads(int thread)
+    {
+        return [.. Input.Skip((0x40 / 4) + (4 * thread)).Take(4).Select(Expected.Exact), Input[thread + (0x40 / 4) + 1]];
+    }
+
+    // global_load with a negative immediate offset (13-bit signed on gfx10).
+    private static ComputeCase GlobalNegativeOffset()
+    {
+        const string Program = """
+            v_lshlrev_b32_e32 v1, 2, v41
+            v_mov_b32 v4, 0
+            v_add_co_u32 v2, vcc_lo, s8, v1
+            v_add_co_ci_u32_e32 v3, vcc_lo, s9, v4, vcc_lo
+            global_load_dword v20, v[2:3], off offset:-8
+            global_load_dword v21, v1, s[8:9] offset:-4
+            s_waitcnt vmcnt(0)
+            """;
+
+        return new ComputeCase("cs_global_negoff", Program, 2, thread => [Input[thread.Id + (0x40 / 4) - 2], Input[thread.Id + (0x40 / 4) - 1]])
+        {
+            User = [0x40, 0],
+            Buffers = [new BufferResource(0, Input, Writable: false)],
+        };
+    }
+
+    // global_atomic_add (saddr form, glc) on the writable view of the GPU-memory window.
+    private static ComputeCase GlobalAtomic()
+    {
+        const string Program = """
+            v_mov_b32 v1, 0
+            v_mov_b32 v2, 1
+            global_atomic_add v20, v1, v2, s[10:11] offset:16 glc
+            s_waitcnt vmcnt(0)
+            """;
+
+        return new ComputeCase("cs_global_atomic", Program, 1, null)
+        {
+            User = [0, 0, 0x100, 0],
+            Buffers = [new BufferResource(1, new uint[256], Writable: true)],
+            Check = buffers => Permutation("v20 (returned)", buffers[ComputeCase.OutputHeap].Take(Threads), Threads)
+                .Concat(Differences("heap1 counter", [Threads], buffers[1][((0x100 + 16) / 4)..])),
+        };
+    }
+}

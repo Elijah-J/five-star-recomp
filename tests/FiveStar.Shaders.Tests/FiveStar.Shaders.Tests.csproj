@@ -16,4 +16,9 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\FiveStar.Shaders\FiveStar.Shaders.csproj" />
   </ItemGroup>
+
+  <!-- Helper shaders (fullscreen / half-coverage VS, wave probes, GS pass-through VS), compiled by the tests. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Shaders\*.hlsl" LogicalName="%(Filename)%(Extension)" />
+  </ItemGroup>
 </Project>

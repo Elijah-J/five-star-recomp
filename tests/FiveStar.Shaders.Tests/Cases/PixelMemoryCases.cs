@@ -1,0 +1,296 @@
+// Copyright (c) 2026 Five Star Recomp contributors.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+using FiveStar.Shaders.Tests.Reference;
+using FiveStar.Shaders.Tests.Warp;
+using Vortice.DXGI;
+
+namespace FiveStar.Shaders.Tests.Cases;
+
+/// <summary>
+/// Pixel-shader cases for scalar / buffer / global / formatted loads, images and samplers, and a float export. Bindless:
+/// V# / T# dword0 is the resource heap index, S# dword0 the sampler heap index, 64-bit pointers address the GPU-memory
+/// window at heap slot 0.
+/// </summary>
+public static class PixelMemoryCases
+{
+    private const string FormatProgram = """
+        v_cvt_u32_f32_e32 v10, v2
+        v_and_b32_e32 v10, 3, v10
+        buffer_load_format_xyzw v[20:23], v10, s[0:3], 0 idxen
+        s_waitcnt vmcnt(0)
+        """;
+
+    private static readonly uint[] BufferWords = [.. Enumerable.Range(0, 64).Select(index => 0xA0000000 + (0x11 * (uint)index))];
+
+    public static IEnumerable<PixelCase> All()
+    {
+        return
+        [
+            ScalarBufferLoad(),
+            BufferLoad(),
+            GlobalPointers(),
+            .. Formats(),
+            ImageLoadSample(),
+            ImageLoadInteger(),
+            ImageSampleLinear(),
+            FloatExport(),
+        ];
+    }
+
+    private static uint F(double value) => FloatBits.Of(value);
+
+    private static Bindings Raw(int heapIndex, uint[] words, params uint[] user)
+    {
+        return new Bindings { UserSgprs = user, Buffers = [new BufferResource(heapIndex, words, Writable: false)] };
+    }
+
+    // Bindless: V# dword0 (s0) is the descriptor-heap index.
+    private static PixelCase ScalarBufferLoad()
+    {
+        const string Program = """
+            s_buffer_load_dword s20, s[0:3], 0x0
+            s_buffer_load_dwordx2 s[22:23], s[0:3], 0x8
+            s_buffer_load_dwordx4 s[24:27], s[0:3], 0x20
+            s_mov_b32 s28, 0x44
+            s_buffer_load_dword s29, s[0:3], s28
+            s_waitcnt lgkmcnt(0)
+            v_mov_b32 v20, s20
+            v_mov_b32 v21, s22
+            v_mov_b32 v22, s23
+            v_mov_b32 v23, s24
+            v_mov_b32 v24, s25
+            v_mov_b32 v25, s26
+            v_mov_b32 v26, s27
+            v_mov_b32 v27, s29
+            """;
+        Expected[] expected = [BufferWords[0], BufferWords[2], BufferWords[3], BufferWords[8], BufferWords[9], BufferWords[10], BufferWords[11], BufferWords[17]];
+
+        return new PixelCase("s_buffer_load", Program, 8, _ => expected) { Bindings = Raw(1, BufferWords, 1, 0, 0x100, 0) };
+    }
+
+    // offen / idxen (stride = V# dword1) / soffset / instruction offset.
+    private static PixelCase BufferLoad()
+    {
+        const string Program = """
+            v_cvt_u32_f32_e32 v10, v2
+            v_lshlrev_b32_e32 v11, 2, v10
+            buffer_load_dword v20, v11, s[0:3], 0 offen
+            buffer_load_dwordx2 v[21:22], v11, s[0:3], 0 offen offset:16
+            buffer_load_dword v23, v10, s[0:3], 0 idxen
+            buffer_load_dword v24, v10, s[0:3], s4 idxen offset:4
+            s_waitcnt vmcnt(0)
+            """;
+
+        return new PixelCase(
+            "buffer_load_dword",
+            Program,
+            5,
+            pixel => [BufferWords[pixel.X], BufferWords[pixel.X + 4], BufferWords[pixel.X + 5], BufferWords[2 * pixel.X], BufferWords[(2 * pixel.X) + 3]])
+        {
+            Bindings = Raw(1, BufferWords, 1, 8, 0x100, 0, 8),
+        };
+    }
+
+    // 64-bit pointers read the GPU-memory window (heap slot 0): address = pointer low dword + offset.
+    private static PixelCase GlobalPointers()
+    {
+        const string Program = """
+            s_load_dword s20, s[0:1], 0x8
+            s_load_dwordx4 s[24:27], s[0:1], 0x0
+            s_waitcnt lgkmcnt(0)
+            v_cvt_u32_f32_e32 v12, v2
+            v_lshl_add_u32 v10, v12, 2, 0x80
+            v_mov_b32 v11, 0
+            global_load_dword v21, v[10:11], off
+            v_lshlrev_b32_e32 v13, 2, v12
+            global_load_dword v22, v13, s[2:3] offset:4
+            s_waitcnt vmcnt(0)
+            v_mov_b32 v20, s20
+            v_mov_b32 v23, s24
+            v_mov_b32 v24, s27
+            """;
+
+        return new PixelCase(
+            "smem_global_ptr",
+            Program,
+            5,
+            pixel => [BufferWords[18], BufferWords[32 + pixel.X], BufferWords[(0x20 + (4 * pixel.X) + 4) / 4], BufferWords[16], BufferWords[19]])
+        {
+            Bindings = Raw(0, BufferWords, 0x40, 0, 0x20, 0),
+        };
+    }
+
+    // Format code = layout * 8 + numeric type (written into V# dword3); missing components read (0, 0, 0, 1).
+    private static PixelCase[] Formats()
+    {
+        var h = (double value) => FloatBits.Half(value);
+        uint[] tenBits = [0xC0300401, 0x3FF003FF, 0x40100403, 0xFFFFFFFF];
+        uint[] halves = [FloatBits.Pack(h(1.5), h(-2.0)), FloatBits.Pack(h(65504.0), 0x0001), FloatBits.Pack(0x7C00, h(0.1)), FloatBits.Pack(h(-0.0), h(3.0))];
+
+        return
+        [
+            FormatCase("8_8_8_8_unorm", 10, BufferFormats.Unorm, 4, [0xFF804000, 0x01020304, 0x7F7F7F7F, 0x00FFFF00], 1),
+            FormatCase("16_16_16_16_float", 12, BufferFormats.FloatingPoint, 8, [.. halves, .. halves], 0),
+            FormatCase("32_32_uint", 11, BufferFormats.UnsignedInt, 8, [0xDEADBEEF, 0x12345678, 1, 2, 3, 4, 5, 6], 0),
+            FormatCase("8_8_snorm", 3, BufferFormats.Snorm, 4, [0x7F80, 0x8100, 0x0040, 0xFFC0], 1),
+            FormatCase("16_16_sint", 5, BufferFormats.SignedInt, 4, [0x8000FFFF, 0x7FFF0001, 0x00010000, 0xFFFE8001], 0),
+            FormatCase("2_10_10_10_uint", 9, BufferFormats.UnsignedInt, 4, tenBits, 0),
+            FormatCase("10_10_10_2_uint", 8, BufferFormats.UnsignedInt, 4, tenBits, 0),
+        ];
+    }
+
+    private static PixelCase FormatCase(string suffix, int layout, int numeric, int stride, uint[] words, int ulps)
+    {
+        var perElement = stride / 4;
+
+        Expected[] Expect(PixelContext pixel)
+        {
+            var element = words.Skip((pixel.X & 3) * perElement).Take(perElement).ToArray();
+            var decoded = BufferFormats.Decode(element, layout, numeric);
+
+            return [.. decoded.Select(bits => Tolerant(bits, ulps))];
+        }
+
+        var user = new uint[] { 1, (uint)stride, 0x1000, (uint)((layout * 8) + numeric) };
+
+        return new PixelCase($"buffer_load_format[{suffix}]", FormatProgram, 4, Expect) { Bindings = Raw(1, words, user) };
+    }
+
+    private static Expected Tolerant(uint bits, int ulps)
+    {
+        if (ulps > 0)
+        {
+            return Expected.Ulp(bits, ulps);
+        }
+
+        return Expected.Exact(bits);
+    }
+
+    /// <summary>A 4x4 R32G32B32A32_FLOAT texture: texel (i, j) = (i, j, i + 10 j, 0.5 + i).</summary>
+    private static uint[] Texel(int i, int j)
+    {
+        return [F(i), F(j), F(i + (10 * j)), F(0.5 + i)];
+    }
+
+    private static uint[] FloatTexture()
+    {
+        return [.. Enumerable.Range(0, 16).SelectMany(index => Texel(index % 4, index / 4))];
+    }
+
+    // T# dword0 = SRV heap index, S# dword0 = sampler heap index; dmask packs the enabled channels.
+    private static PixelCase ImageLoadSample()
+    {
+        const string Program = """
+            v_cvt_u32_f32_e32 v10, v2
+            v_cvt_u32_f32_e32 v11, v3
+            v_and_b32_e32 v10, 3, v10
+            v_and_b32_e32 v11, 3, v11
+            image_load v[20:23], v[10:11], s[0:7] dmask:0xf dim:SQ_RSRC_IMG_2D
+            v_cvt_f32_u32_e32 v12, v10
+            v_cvt_f32_u32_e32 v13, v11
+            v_add_f32_e32 v12, 0.5, v12
+            v_add_f32_e32 v13, 0.5, v13
+            v_mul_f32_e32 v12, 0x3e800000, v12
+            v_mul_f32_e32 v13, 0x3e800000, v13
+            image_sample_lz v[24:27], v[12:13], s[0:7], s[8:11] dmask:0xf dim:SQ_RSRC_IMG_2D
+            image_sample_lz v[28:29], v[12:13], s[0:7], s[8:11] dmask:0x5 dim:SQ_RSRC_IMG_2D
+            image_load v[30:31], v[10:11], s[0:7] dmask:0xa dim:SQ_RSRC_IMG_2D
+            s_waitcnt vmcnt(0)
+            """;
+        var bindings = new Bindings
+        {
+            UserSgprs = [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            Textures = [new TextureResource(2, Format.R32G32B32A32_Float, 4, 4, FloatTexture())],
+            Samplers = [new SamplerResource(0, Linear: false)],
+        };
+
+        return new PixelCase("image_load_sample", Program, 12, pixel =>
+        {
+            var t = Texel(pixel.X & 3, pixel.Y & 3);
+
+            return [.. t, .. t, t[0], t[2], t[1], t[3]];
+        })
+        {
+            Bindings = bindings,
+        };
+    }
+
+    // image_load from an integer-format texture returns the raw integer bits (the known typed-view question).
+    private static PixelCase ImageLoadInteger()
+    {
+        const string Program = """
+            v_cvt_u32_f32_e32 v10, v2
+            v_cvt_u32_f32_e32 v11, v3
+            v_and_b32_e32 v10, 3, v10
+            v_and_b32_e32 v11, 3, v11
+            image_load v[20:23], v[10:11], s[0:7] dmask:0xf dim:SQ_RSRC_IMG_2D
+            s_waitcnt vmcnt(0)
+            """;
+        uint[] texels = [.. Enumerable.Range(0, 64).Select(index => 0x80000000 + (0x101 * (uint)index))];
+        var bindings = new Bindings
+        {
+            UserSgprs = [2, 0, 0, 0, 0, 0, 0, 0],
+            Textures = [new TextureResource(2, Format.R32G32B32A32_UInt, 4, 4, texels)],
+        };
+
+        return new PixelCase("image_load_uint_format", Program, 4, pixel =>
+        {
+            var start = (((pixel.Y & 3) * 4) + (pixel.X & 3)) * 4;
+
+            return [.. texels.Skip(start).Take(4).Select(Expected.Exact)];
+        })
+        {
+            Bindings = bindings,
+        };
+    }
+
+    // Bilinear sample midway between texels 1 and 2.
+    private static PixelCase ImageSampleLinear()
+    {
+        const string Program = """
+            v_cvt_u32_f32_e32 v11, v3
+            v_and_b32_e32 v11, 3, v11
+            v_cvt_f32_u32_e32 v13, v11
+            v_add_f32_e32 v13, 0.5, v13
+            v_mul_f32_e32 v13, 0x3e800000, v13
+            v_mov_b32 v12, 0.5
+            image_sample_lz v[20:23], v[12:13], s[0:7], s[8:11] dmask:0xf dim:SQ_RSRC_IMG_2D
+            s_waitcnt vmcnt(0)
+            """;
+        var bindings = new Bindings
+        {
+            UserSgprs = [2, 0, 0, 0, 0, 0, 0, 0, 3],
+            Textures = [new TextureResource(2, Format.R32G32B32A32_Float, 4, 4, FloatTexture())],
+            Samplers = [new SamplerResource(3, Linear: true)],
+        };
+
+        return new PixelCase("image_sample_linear", Program, 4, pixel =>
+        {
+            var (left, right) = (Texel(1, pixel.Y & 3), Texel(2, pixel.Y & 3));
+
+            return [.. Enumerable.Range(0, 4).Select(index => Expected.Near((FloatBits.Value(left[index]) + FloatBits.Value(right[index])) / 2, 1e-3))];
+        })
+        {
+            Bindings = bindings,
+        };
+    }
+
+    // No signature: float SV_Target into R32G32B32A32_FLOAT.
+    private static PixelCase FloatExport()
+    {
+        const string Program = """
+            v_cvt_u32_f32_e32 v10, v2
+            v_mov_b32 v20, s0
+            v_mov_b32 v21, s1
+            v_cvt_f32_u32_e32 v22, v10
+            v_mov_b32 v23, s2
+            """;
+
+        return new PixelCase("export_float_rt", Program, 4, pixel => [F(1.5), 0x3EAAAAAB, F(pixel.X), F(-0.0)])
+        {
+            Bindings = new Bindings { UserSgprs = [F(1.5), 0x3EAAAAAB, F(-0.0)] },
+            FloatTargets = true,
+        };
+    }
+}
