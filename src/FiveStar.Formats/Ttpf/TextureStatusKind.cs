@@ -1,0 +1,32 @@
+// Copyright (c) 2026 Five Star Recomp contributors.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+namespace FiveStar.Formats.Ttpf;
+
+/// <summary>Why a texture's mip 0 can or cannot be read.</summary>
+public enum TextureStatusKind
+{
+    /// <summary>Layout understood and every page under mip 0 is stored or zlib.</summary>
+    Ok,
+
+    /// <summary>The DXGI format is not supported (detail = format).</summary>
+    UnsupportedFormat,
+
+    /// <summary>The layout mode has no known swizzle (detail = mode).</summary>
+    UnsupportedMode,
+
+    /// <summary>A cube map whose span does not split into six faces.</summary>
+    CubeSpan,
+
+    /// <summary>Mip 0 does not fit inside the texture's span.</summary>
+    Size,
+
+    /// <summary>A cube map with mips (face and mip interleave not known).</summary>
+    CubeMips,
+
+    /// <summary>Mip 0 touches a page with an undecodable codec.</summary>
+    UnsupportedCodec,
+
+    /// <summary>Coverage only: mip 0 touches a BCPack page (detail = codec).</summary>
+    BcPack,
+}

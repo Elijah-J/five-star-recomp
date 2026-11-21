@@ -1,0 +1,83 @@
+// Copyright (c) 2026 Five Star Recomp contributors.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+using FiveStar.Formats.Common;
+
+namespace FiveStar.Formats.Ttpf;
+
+/// <summary>
+/// Decides which textures of a page file can be extracted without decoding anything: a texture counts as ok when its
+/// layout is known and no page under its mip 0 is BCPack.
+/// </summary>
+public sealed class TextureCoverage
+{
+    private readonly TexturePageFile _file;
+    private readonly TextureExtractor _extractor;
+
+    public TextureCoverage(TexturePageFile file, TextureExtractor extractor)
+    {
+        _file = file;
+        _extractor = extractor;
+    }
+
+    public CoverageReport Measure()
+    {
+        var textures = new Tally<string>();
+        var spanBytes = new Tally<string>();
+        var blockers = new Tally<(int Codec, string Format)>();
+
+        foreach (var descriptor in _file.Descriptors)
+        {
+            var span = _extractor.SpanEnd(descriptor) - descriptor.VirtualAddress;
+            var status = Classify(descriptor, blockers);
+            textures.Add(status.Name);
+            spanBytes.Add(status.Name, span);
+        }
+
+        return new CoverageReport(textures, spanBytes, blockers);
+    }
+
+    /// <summary>The codec of the first BCPack page overlapping [start, start + size), or null when there is none.</summary>
+    public int? BlockingCodec(long start, long size)
+    {
+        var index = Math.Max(_file.PageAt(start), 0);
+
+        while (index < _file.Pages.Count && _file.Pages[index].VirtualAddress < start + size)
+        {
+            var page = _file.Pages[index];
+
+            if (page.IsBcPack && page.VirtualAddress + page.EffectiveVirtualSize > start)
+            {
+                return page.Codec;
+            }
+
+            index++;
+        }
+
+        return null;
+    }
+
+    private TextureStatus Classify(TextureDescriptor descriptor, Tally<(int Codec, string Format)> blockers)
+    {
+        var (status, layout) = _extractor.Locate(descriptor);
+
+        if (layout is null)
+        {
+            return status;
+        }
+
+        for (var face = 0; face < layout.Faces; face++)
+        {
+            var codec = BlockingCodec(layout.Start + (face * layout.FaceSpan), layout.Size);
+
+            if (codec.HasValue)
+            {
+                blockers.Add((codec.Value, layout.Format.Name));
+
+                return new TextureStatus(TextureStatusKind.BcPack, codec.Value);
+            }
+        }
+
+        return status;
+    }
+}
