@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The `fivestar` command: every asset and shader tool behind one entry point. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>fivestar</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FiveStar.Formats\FiveStar.Formats.csproj" />
+    <ProjectReference Include="..\FiveStar.Shaders\FiveStar.Shaders.csproj" />
+  </ItemGroup>
+</Project>
