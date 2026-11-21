@@ -1,0 +1,80 @@
+// Copyright (c) 2026 Five Star Recomp contributors.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+using FiveStar.Shaders.Translation.Core;
+using static FiveStar.Shaders.Translation.Emitters.Operands;
+
+namespace FiveStar.Shaders.Translation.Emitters;
+
+/// <summary>
+/// Scalar memory loads. s_buffer_load reads a buffer whose V# dword0 is a heap index; s_load reads the GPU-memory window
+/// through a 64-bit pointer (pointer low dword + offset), or the program's own code when the pointer came from
+/// s_getpc_b64 (high dword CODE_TAG). In geometry programs the driver's ring table pointer reads as 0.
+/// </summary>
+internal sealed class ScalarMemoryEmitter
+{
+    private const int BaseOperand = 1;
+    private const int OffsetOperand = 2;
+
+    private static readonly IReadOnlyDictionary<string, int> Sizes = new Dictionary<string, int>
+    {
+        ["dword"] = 1,
+        ["dwordx2"] = 2,
+        ["dwordx4"] = 4,
+        ["dwordx8"] = 8,
+        ["dwordx16"] = 16,
+    };
+
+    private readonly TranslationState _state;
+    private readonly OperandAccess _operands;
+
+    public ScalarMemoryEmitter(TranslationState state, OperandAccess operands)
+    {
+        _state = state;
+        _operands = operands;
+    }
+
+    public void Translate(string op, IReadOnlyList<Operand> a)
+    {
+        var count = Sizes[op[(op.LastIndexOf('_') + 1)..]];
+        var pointer = a[BaseOperand];
+        var offsetValue = _operands.Read(a[OffsetOperand]);
+        var values = _operands.Snap(_operands.Read(pointer, Low), offsetValue);
+        var (address, offset) = (values[0], values[1]);
+
+        if (op.StartsWith("s_buffer_load", StringComparison.Ordinal))
+        {
+            for (var dword = 0; dword < count; dword++)
+            {
+                _operands.Write(a[Destination], $"BufLoad({address}, {offset} + {dword}u * 4u)", dword);
+            }
+
+            return;
+        }
+
+        var high = _operands.SnapOne(_operands.Read(pointer, High));
+
+        for (var dword = 0; dword < count; dword++)
+        {
+            _operands.Write(a[Destination], PointerLoad(address, offset, high, dword), dword);
+        }
+    }
+
+    private string PointerLoad(string address, string offset, string high, int dword)
+    {
+        var load = $"MemLoad({address}, {offset} + {dword}u * 4u)";
+
+        if (_state.UsesCode)
+        {
+            load = $"(({high}) == CODE_TAG ? CodeLoad({address} + {offset} + {dword}u * 4u) : {load})";
+        }
+
+        if (_state.Stage == ShaderStage.Geometry || _state.IsCopyShader)
+        {
+            // The driver ring table (GSVS base) reads as 0 in the private-LDS model.
+            load = $"(({high}) == RING_TAG ? 0u : {load})";
+        }
+
+        return load;
+    }
+}

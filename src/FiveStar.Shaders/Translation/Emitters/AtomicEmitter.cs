@@ -1,0 +1,207 @@
+// Copyright (c) 2026 Five Star Recomp contributors.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+using System.Text.RegularExpressions;
+using FiveStar.Shaders.Translation.Core;
+
+namespace FiveStar.Shaders.Translation.Emitters;
+
+/// <summary>
+/// buffer_atomic_*, global_atomic_* and image_atomic_*: an HLSL Interlocked* on the RW view (buffer: heap index in V#
+/// dword0; global: the writable GPU-memory window; image: a typed RW texture). With glc the pre-op value is returned
+/// in the data register.
+/// </summary>
+internal sealed partial class AtomicEmitter
+{
+    private const int Data = 0;
+    private const int Address = 1;
+    private const int Resource = 2;
+    private const int SOffset = 3;
+    private const int ReturnedAddress = 1;
+    private const int ScalarBaseAfterAddress = 2;
+    private const int CompareValue = 1;
+    private const long AddressMask = 0xffffffff;
+
+    private readonly TranslationState _state;
+    private readonly OperandAccess _operands;
+
+    public AtomicEmitter(TranslationState state, OperandAccess operands)
+    {
+        _state = state;
+        _operands = operands;
+    }
+
+    public void Translate(string op, string operandText, InstructionModifiers modifiers)
+    {
+        var arguments = ArgumentList.Split(operandText);
+        var kind = AtomicPrefixPattern().Replace(op, string.Empty);
+        var function = InterlockedFunction(kind);
+
+        if (function is null && kind != "cmpswap")
+        {
+            throw new UnsupportedProgramException(op);
+        }
+
+        var signed = kind is "smin" or "smax";
+        var data = OperandParser.Parse(arguments[Data]);
+        var result = $"_at{_state.NextTemporary()}";
+        var atomic = new AtomicOperation(kind, function, signed, data, result);
+
+        if (op.StartsWith("global_", StringComparison.Ordinal))
+        {
+            Global(atomic, arguments, modifiers);
+
+            return;
+        }
+
+        if (op.StartsWith("buffer_", StringComparison.Ordinal))
+        {
+            Buffer(atomic, arguments, modifiers);
+        }
+        else if (op.StartsWith("image_", StringComparison.Ordinal))
+        {
+            if (!Image(op, atomic, arguments, modifiers))
+            {
+                return;
+            }
+        }
+        else
+        {
+            throw new UnsupportedProgramException(op);
+        }
+
+        if (modifiers.Has("glc"))
+        {
+            WriteResult(atomic);
+        }
+    }
+
+    private static string? InterlockedFunction(string kind)
+    {
+        switch (kind)
+        {
+            case "add":
+                return "InterlockedAdd";
+            case "umin":
+            case "smin":
+                return "InterlockedMin";
+            case "umax":
+            case "smax":
+                return "InterlockedMax";
+            case "and":
+                return "InterlockedAnd";
+            case "or":
+                return "InterlockedOr";
+            case "xor":
+                return "InterlockedXor";
+            case "swap":
+                return "InterlockedExchange";
+            default:
+                return null;
+        }
+    }
+
+    private void WriteResult(AtomicOperation atomic)
+    {
+        var value = atomic.Signed ? $"asuint({atomic.Result})" : atomic.Result;
+        _operands.Write(atomic.Data, value);
+    }
+
+    /// <summary>global_atomic_* [vdst (glc),] vaddr, vdata, saddr|off on the writable GPU-memory window.</summary>
+    private void Global(AtomicOperation atomic, List<string> arguments, InstructionModifiers modifiers)
+    {
+        // Without glc the operands are vaddr, vdata, saddr; with glc vdst comes first.
+        var returns = modifiers.Has("glc");
+        var first = returns ? ReturnedAddress : 0;
+        var address = OperandParser.Parse(arguments[first]);
+        var data = OperandParser.Parse(arguments[first + 1]);
+        var scalarBase = arguments[first + ScalarBaseAfterAddress];
+        string low;
+
+        if (scalarBase != "off")
+        {
+            low = $"{_operands.Read(OperandParser.Parse(scalarBase), 0)} + {_operands.Read(address)}";
+        }
+        else
+        {
+            low = _operands.Read(address, 0);
+        }
+
+        var byteAddress = $"({low} + {Hlsl.HexUint(modifiers.Integer("offset", 0) & AddressMask)})";
+        var result = atomic.Result;
+        _state.Emit($"  uint {result} = 0; if (active) {{ RWByteAddressBuffer _b{result} = ResourceDescriptorHeap[GPU_MEM_HEAP + 1];");
+        _state.Emit($"    _b{result}.{Operation(atomic, data, byteAddress)}; }}");
+
+        if (returns)
+        {
+            WriteResult(atomic);
+        }
+    }
+
+    private string Operation(AtomicOperation atomic, Operand data, string byteAddress)
+    {
+        if (atomic.Kind == "cmpswap")
+        {
+            var swap = _operands.Read(data, CompareValue);
+
+            return $"InterlockedCompareExchange({byteAddress} & ~3u, {swap}, {_operands.Read(data, 0)}, {atomic.Result})";
+        }
+
+        var value = atomic.Signed ? $"asint({_operands.Read(data)})" : _operands.Read(data);
+
+        return $"{atomic.Function}({byteAddress} & ~3u, {value}, {atomic.Result})";
+    }
+
+    private void Buffer(AtomicOperation atomic, List<string> arguments, InstructionModifiers modifiers)
+    {
+        var resource = OperandParser.Parse(arguments[Resource]);
+        var vaddr = OperandParser.Parse(arguments[Address]);
+        var soffset = OperandParser.Parse(arguments[SOffset]);
+        var byteAddress = BufferAddress.Build(_operands, vaddr, resource, soffset, modifiers);
+        var result = atomic.Result;
+
+        _state.Emit($"  uint {result} = 0; if (active) {{ RWByteAddressBuffer _b{result} = ResourceDescriptorHeap[{_operands.Read(resource, 0)}];");
+        _state.Emit($"    _b{result}.{Operation(atomic, atomic.Data, byteAddress)}; }}");
+    }
+
+    /// <summary>image_atomic_*: false when the result is already written (cmpswap).</summary>
+    private bool Image(string op, AtomicOperation atomic, List<string> arguments, InstructionModifiers modifiers)
+    {
+        if (modifiers.Has("a16") || modifiers.Has("d16"))
+        {
+            throw new UnsupportedProgramException($"{op} a16/d16");
+        }
+
+        var dimension = ImageDimensions.Name(modifiers);
+        var (type, components) = ImageDimensions.Writable(dimension) ?? throw new UnsupportedProgramException($"{op} dim {dimension}");
+        var coordinates = ImageDimensions.ReadAddress(_operands, arguments[Address]);
+        var index = ImageDimensions.IntegerCoordinates(coordinates, components);
+
+        // Needs an integer-typed UAV view (R32_UINT/SINT) of the image.
+        var element = atomic.Signed ? "int" : "uint";
+        var result = atomic.Result;
+        var texture = _operands.Read(OperandParser.Parse(arguments[Resource]), 0);
+        _state.Emit($"  uint {result} = 0; if (active) {{ {type}<{element}> _u{result} = ResourceDescriptorHeap[{texture}];");
+
+        if (atomic.Kind == "cmpswap")
+        {
+            var swap = _operands.Read(atomic.Data, CompareValue);
+            _state.Emit($"    InterlockedCompareExchange(_u{result}[{index}], {swap}, {_operands.Read(atomic.Data, 0)}, {result}); }}");
+
+            if (modifiers.Has("glc"))
+            {
+                _operands.Write(atomic.Data, result);
+            }
+
+            return false;
+        }
+
+        var value = atomic.Signed ? $"asint({_operands.Read(atomic.Data)})" : _operands.Read(atomic.Data);
+        _state.Emit($"    {atomic.Function}(_u{result}[{index}], {value}, {result}); }}");
+
+        return true;
+    }
+
+    [GeneratedRegex(@"^(buffer|image|global)_atomic_")]
+    private static partial Regex AtomicPrefixPattern();
+}

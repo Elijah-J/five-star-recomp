@@ -1,0 +1,170 @@
+// Copyright (c) 2026 Five Star Recomp contributors.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+using FiveStar.Shaders.Translation.Core;
+
+namespace FiveStar.Shaders.Translation.Stages;
+
+/// <summary>
+/// Writes the entry point body: register declarations (uint per register, bool per lane mask, <c>active</c> for EXEC),
+/// the prologue of hardware inputs, then the blocks. With control flow the blocks run in a wave-uniform dispatch loop
+/// over <c>pc</c>; a two-phase mesh shader runs it twice around SetMeshOutputCounts.
+/// </summary>
+internal sealed class BodyWriter
+{
+    private const string Indent = "    ";
+
+    // End of a mesh phase loop: stop at s_endpgm, else run the barrier at the top level and resume after it.
+    private static readonly string[] PhaseTwoEnd =
+    [
+        "    if (pc == PC_END) break;", "    GroupMemoryBarrierWithGroupSync();", "    pc = pc_resume;", "  }",
+    ];
+
+    // Phase one also stops once the output counts are known.
+    private static readonly string[] PhaseOneEnd =
+    [
+        "    if (pc == PC_END) break;", "    GroupMemoryBarrierWithGroupSync();", "    pc = pc_resume;", "    if (g_ms_alloc != 0) break;", "  }",
+    ];
+
+    private readonly TranslationState _state;
+    private readonly MeshDeclarations _mesh;
+
+    public BodyWriter(TranslationState state, MeshDeclarations mesh)
+    {
+        _state = state;
+        _mesh = mesh;
+    }
+
+    public void Write(List<string> lines)
+    {
+        WriteDeclarations(lines);
+
+        if (!_state.HasControlFlow)
+        {
+            foreach (var block in _state.Blocks)
+            {
+                lines.AddRange(block.Lines.Where(line => !line.Contains("pc = ", StringComparison.Ordinal)));
+            }
+        }
+        else
+        {
+            WriteDispatch(lines);
+        }
+
+        WriteEpilogue(lines);
+    }
+
+    private void WriteDeclarations(List<string> lines)
+    {
+        var stage = _state.Stage;
+
+        if (stage == ShaderStage.Mesh)
+        {
+            lines.Add("  if (in_gi == 0) { g_ms_nv = 0; g_ms_np = 0; g_ms_alloc = 0; }");
+
+            if (!_state.MeshYield)
+            {
+                lines.Add("  g_ms_prim[in_gi] = 0x80000000u;");
+            }
+
+            lines.Add("  GroupMemoryBarrierWithGroupSync();");
+        }
+
+        if (stage == ShaderStage.Geometry)
+        {
+            lines.Add("  uint gs_emit = 0;");
+        }
+        else
+        {
+            var exports = stage is ShaderStage.Compute or ShaderStage.Mesh ? "  Exp x = (Exp)0;" : "  Out o = (Out)0; Exp x = (Exp)0;";
+            lines.Add(exports);
+        }
+
+        lines.AddRange(_state.InputMap);
+        var registers = _state.Variables.Order().Select(key => $"{key.Name} = 0").ToList();
+
+        if (registers.Count > 0)
+        {
+            lines.Add("  uint " + string.Join(", ", registers) + ";");
+        }
+
+        var masks = _state.Masks.Union(_state.MasksEver).Where(key => key != SpecialRegisters.Exec)
+            .Select(key => key.MaskName).Distinct().Order(StringComparer.Ordinal).Select(name => $", {name} = false");
+        lines.Add("  bool active = true, scc = false" + string.Concat(masks) + ";");
+        lines.AddRange(_state.Prologue);
+    }
+
+    private void WriteDispatch(List<string> lines)
+    {
+        lines.Add("  uint pc = 0, pc_resume = 0;");
+
+        if (!_state.MeshYield || _state.Stage != ShaderStage.Mesh)
+        {
+            lines.AddRange(Dispatch(dropOutputs: false));
+
+            return;
+        }
+
+        // Phase 1 runs without output writes until the first barrier after GS_ALLOC_REQ; SetMeshOutputCounts then
+        // dominates every output write; phase 2 resumes with direct exports. Barriers stay at the top level of the outer
+        // loop (a barrier inside the switch, even in a block never re-entered, crashes WARP's shader compiler).
+        lines.Add("  [loop] for (;;) {");
+        lines.AddRange(Dispatch(dropOutputs: true));
+        lines.AddRange(PhaseOneEnd);
+
+        lines.Add($"  SetMeshOutputCounts(min(g_ms_nv, {_mesh.MaxVertices}u), min(g_ms_np, {_mesh.MaxPrimitives}u));");
+        lines.Add("  [loop] for (;;) {");
+        lines.AddRange(Dispatch(dropOutputs: false));
+        lines.AddRange(PhaseTwoEnd);
+    }
+
+    /// <summary>The wave-uniform block dispatch: every lane follows the same pc; divergence lives in <c>active</c>.</summary>
+    private List<string> Dispatch(bool dropOutputs)
+    {
+        var lines = new List<string> { "  [loop] while (pc < PC_YIELD) {", "    switch (pc) {" };
+
+        foreach (var block in _state.Blocks)
+        {
+            lines.Add($"    case {Hlsl.Hex(block.Address)}: {{");
+
+            foreach (var line in block.Lines)
+            {
+                if (!dropOutputs || !MeshDeclarations.WritesOutput(line))
+                {
+                    lines.Add(Indent + line);
+                }
+            }
+
+            lines.Add("    } break;");
+        }
+
+        lines.Add("    default: pc = PC_END; break;");
+        lines.Add("    }");
+        lines.Add("  }");
+
+        return lines;
+    }
+
+    private void WriteEpilogue(List<string> lines)
+    {
+        var stage = _state.Stage;
+
+        if (stage is ShaderStage.Compute or ShaderStage.Geometry || (stage == ShaderStage.Mesh && _state.MeshYield))
+        {
+            lines.Add("}");
+
+            return;
+        }
+
+        if (stage == ShaderStage.Mesh)
+        {
+            lines.AddRange(_mesh.StagingEpilogue());
+
+            return;
+        }
+
+        lines.AddRange(_state.OutputMap);
+        lines.Add("  return o;");
+        lines.Add("}");
+    }
+}

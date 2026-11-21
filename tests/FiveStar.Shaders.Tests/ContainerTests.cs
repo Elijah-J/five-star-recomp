@@ -1,0 +1,153 @@
+// Copyright (c) 2026 Five Star Recomp contributors.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+using System.Buffers.Binary;
+using System.IO.Compression;
+using System.Text;
+using FiveStar.Shaders.Containers;
+using FiveStar.Shaders.Hardware;
+using Xunit;
+
+namespace FiveStar.Shaders.Tests;
+
+/// <summary>The shader containers and the FSSM header decode from hand-built bytes.</summary>
+public sealed class ContainerTests
+{
+    [Fact]
+    public void A_game_container_yields_its_signature_runtime_info_and_native_program()
+    {
+        var program = Fssm(stage: 6, flags: 0x20);
+        var container = Dxbc(("ISG1", Signature()), ("PSV0", Psv0()), ("DXIL", DxilWithXdat(program)));
+
+        var parsed = DxbcContainer.Parse(container);
+        var inputs = SignatureParser.Parse(parsed.Find("ISG1")!.Data.Span);
+        var psv = PipelineStateParser.Parse(parsed.Find("PSV0")!.Data.Span);
+        var extracted = ShaderArchiveExtractor.ReadProgram(container);
+
+        Assert.Equal(["ISG1", "PSV0", "DXIL"], parsed.Chunks.Select(chunk => chunk.FourCc));
+        Assert.Equal(new SignatureElement("TEXCOORD", 3, string.Empty, "float", 1, "xy", 3, 0), Assert.Single(inputs));
+        Assert.Equal("cs", psv.Stage);
+        Assert.Equal(new ThreadGroupSize(8, 8, 1), psv.NumThreads);
+        Assert.Equal(program, extracted);
+    }
+
+    [Fact]
+    public void A_compute_header_decodes_wave_size_system_registers_and_code()
+    {
+        var program = Fssm(stage: 6, flags: 0x20);
+
+        var config = FssmHeader.Decode(program);
+        var code = FssmHeader.ProgramCode(program);
+
+        Assert.Equal(HardwareStage.Compute, config.Stage);
+        Assert.Equal(32, config.WaveSize);
+        Assert.Equal(2, config.UserSgprs);
+
+        Assert.Equal(new ThreadGroupSize(64, 1, 1), config.Compute!.NumThreads);
+        Assert.Equal([new GroupIdSgpr('x', 2), new GroupIdSgpr('y', 3)], config.Compute.GroupIdSgprs);
+        Assert.Equal(1, config.Compute.ThreadIdComponentCount);
+        Assert.Equal([0x00, 0x00, 0x81, 0xBF], code);
+    }
+
+    // FSSM: code block at 0x400 (stored offset 0x3F0): 24-byte hash prefix, s_endpgm, one s_code_end pad.
+    private static byte[] Fssm(byte stage, uint flags)
+    {
+        var bytes = new byte[0x600];
+        Encoding.ASCII.GetBytes("FSSM").CopyTo(bytes, 0);
+        BinaryPrimitives.WriteUInt64LittleEndian(bytes.AsSpan(0xC0), 0x3F0);
+        BinaryPrimitives.WriteUInt64LittleEndian(bytes.AsSpan(0xC8), 0x18 + 8);
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(0xD4), flags);
+        bytes[0x100] = stage;
+
+        // COMPUTE_PGM_RSRC2: USER_SGPR 2, TGID_X and TGID_Y, TIDIG_COMP_CNT 1; numthreads 64x1x1.
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(0x138), (2u << 1) | (1u << 7) | (1u << 8) | (1u << 11));
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(0x13C), 64);
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(0x140), 1);
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(0x144), 1);
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(0x400 + 0x18), 0xBF810000);
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(0x400 + 0x1C), 0xBF9F0000);
+
+        return bytes;
+    }
+
+    // One element: TEXCOORD3, register 1, mask xy, float.
+    private static byte[] Signature()
+    {
+        var bytes = new byte[8 + 32 + 16];
+        BinaryPrimitives.WriteInt32LittleEndian(bytes, 1);
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(4), 8);
+
+        // Element: name offset 40, semantic index 3, float, register 1, mask and read/write mask xy.
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(8 + 4), 40);
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(8 + 8), 3);
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(8 + 16), 3);
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(8 + 20), 1);
+        bytes[8 + 24] = 0x3;
+        bytes[8 + 25] = 0x3;
+
+        Encoding.ASCII.GetBytes("TEXCOORD").CopyTo(bytes, 40);
+
+        return bytes;
+    }
+
+    // PSVRuntimeInfo2 (48 bytes): stage 5 (cs) at +24, numthreads at +36.
+    private static byte[] Psv0()
+    {
+        var bytes = new byte[4 + 48];
+        BinaryPrimitives.WriteInt32LittleEndian(bytes, 48);
+        bytes[4 + 24] = 5;
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(4 + 36), 8);
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(4 + 40), 8);
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(4 + 44), 1);
+
+        return bytes;
+    }
+
+    // DXIL program header (24 bytes), then XDAT with one section 0x0D holding the zlib-compressed program.
+    private static byte[] DxilWithXdat(byte[] program)
+    {
+        using var compressed = new MemoryStream();
+
+        using (var zlib = new ZLibStream(compressed, CompressionLevel.Optimal, leaveOpen: true))
+        {
+            zlib.Write(program);
+        }
+
+        var section = compressed.ToArray();
+        var xdat = new byte[0x18 + section.Length];
+        Encoding.ASCII.GetBytes("XDAT").CopyTo(xdat, 0);
+        BinaryPrimitives.WriteInt32LittleEndian(xdat.AsSpan(4), 1);
+        BinaryPrimitives.WriteInt32LittleEndian(xdat.AsSpan(8), 0x18);
+
+        BinaryPrimitives.WriteInt32LittleEndian(xdat.AsSpan(0x0C), 0x0D);
+        BinaryPrimitives.WriteInt32LittleEndian(xdat.AsSpan(0x10), 0x18);
+        BinaryPrimitives.WriteInt32LittleEndian(xdat.AsSpan(0x14), section.Length);
+        section.CopyTo(xdat, 0x18);
+
+        var dxil = new byte[0x18 + xdat.Length];
+        Encoding.ASCII.GetBytes("DXIL").CopyTo(dxil, 8);
+        xdat.CopyTo(dxil, 0x18);
+
+        return dxil;
+    }
+
+    private static byte[] Dxbc(params (string FourCc, byte[] Data)[] chunks)
+    {
+        var head = 0x20 + (4 * chunks.Length);
+        var bytes = new byte[head + chunks.Sum(chunk => 8 + chunk.Data.Length)];
+        Encoding.ASCII.GetBytes("DXBC").CopyTo(bytes, 0);
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(0x1C), chunks.Length);
+        var cursor = head;
+
+        for (var index = 0; index < chunks.Length; index++)
+        {
+            BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(0x20 + (4 * index)), cursor);
+            Encoding.ASCII.GetBytes(chunks[index].FourCc).CopyTo(bytes, cursor);
+            BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(cursor + 4), chunks[index].Data.Length);
+            chunks[index].Data.CopyTo(bytes, cursor + 8);
+            cursor += 8 + chunks[index].Data.Length;
+        }
+
+        return bytes;
+    }
+}

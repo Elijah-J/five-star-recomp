@@ -1,0 +1,12 @@
+// Copyright (c) 2026 Five Star Recomp contributors.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+using FiveStar.Shaders.Translation;
+
+namespace FiveStar.Shaders.Compilation;
+
+/// <summary>
+/// A corpus run: where the HLSL goes, which stages to translate (all when null), how many programs run at once, and
+/// the results.json of an earlier run whose final programs (ok, ok-msfb, skip-stage) are kept instead of re-run.
+/// </summary>
+public sealed record CorpusOptions(string OutputFolder, IReadOnlySet<ShaderStage>? Stages, int Parallelism, string? RetryResults);

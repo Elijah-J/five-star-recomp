@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Shader containers (SGD5, DXBC, XDAT, FSSM), the RDNA disassembly driver and the RDNA to HLSL translator. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="FiveStar.Shaders.Tests" />
+  </ItemGroup>
+
+  <!-- HLSL runtime helpers included by every translated program; written next to the generated HLSL. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Translation\Runtime\*.hlsli" LogicalName="%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>
