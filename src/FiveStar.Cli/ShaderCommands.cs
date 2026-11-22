@@ -27,7 +27,7 @@ internal static class ShaderCommands
         "  extract <shaders.rpf> <out>            write <out>/dxbc/*.dxbc (+ _manifest.tsv) and <out>/fssm/*.fssm",
         "  disasm <program.fssm> [--count N]      list the program's instructions (address, size, text)",
         "  translate <fssm-or-folder> <out>       translate to HLSL and compile with dxc, write <out>/results.json",
-        "        [--retry results.json] [--stages ps,vs,cs,ms,gs] [--jobs N] [--limit N] [--step K] [--no-compile] [--structured]",
+        "        [--cache <dir>] [--retry results.json] [--stages ps,vs,cs,ms,gs] [--jobs N] [--limit N] [--step K] [--no-compile] [--structured]",
         "  waves <out> <fssm-folder>              classify translated programs by wave-size dependence",
         "  pso <out> [--adapter <index|name>]     create a D3D12 pipeline state per compiled program, write <out>/pso-<adapter>.jsonl",
         "        [--stages ...] [--limit N] [--step K] [--jobs N] [--timeout S] [--max-memory GB]",
