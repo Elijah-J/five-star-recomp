@@ -65,7 +65,8 @@ public static class CodePolicy
         ["FiveStar.Formats"] = [],
         ["FiveStar.Shaders"] = [],
         ["FiveStar.Loader"] = [],
-        ["FiveStar.Cli"] = ["FiveStar.Formats", "FiveStar.Shaders"],
+        ["FiveStar.Graphics"] = [],
+        ["FiveStar.Cli"] = ["FiveStar.Formats", "FiveStar.Graphics", "FiveStar.Shaders"],
         ["FiveStar.Benchmarks"] = ["FiveStar.Loader"],
     }.ToFrozenDictionary(StringComparer.Ordinal);
 

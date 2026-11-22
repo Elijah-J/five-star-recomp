@@ -177,6 +177,67 @@ Classifies every `ok` program of a run by wave size and dependence: wave-size ag
 quad and first-lane operations only, or lane-indexed data movement (readlane, permlane, bpermute, DPP rows), which
 breaks when a wave64 program runs on 32-lane waves or the reverse.
 
+```
+fivestar shader pso <out> [--adapter <index | name part>] [--stages ps,vs,cs,ms,gs] [--limit N] [--step K]
+                    [--jobs N] [--timeout S] [--max-memory GB] [--debug-layer] [--recheck] [--dxc <path>]
+fivestar shader pso --list-adapters
+```
+
+Creates a D3D12 pipeline state for every `ok` and `ok-msfb` program of `<out>/results.json` on one adapter (default:
+the first hardware adapter) and records whether the runtime and driver accept it. This finds programs dxc compiles
+but a driver refuses, such as a `[WaveSize(64)]` compute program on a GPU without 64-lane waves. `--list-adapters`
+prints each adapter's shader model, `WaveLaneCountMin`-`Max` (D3D12_OPTIONS1) and mesh-shader tier.
+
+| Kind | Pipeline |
+|---|---|
+| `cs`, `msfb_cs` | compute |
+| `vs`, `msfb_vs` | VS only; input layout from ISG1 (slot 0, 32-bit formats of the element's type and width) |
+| `ps` | generated pass-through VS + PS; targets from the SV_Target outputs as RGBA32 of their type (RGBA16 for min-precision), D32_FLOAT with SV_Depth, D32_FLOAT_S8X24_UINT with SV_StencilRef |
+| `gs` | generated pass-through VS + GS, topology type from the GS input primitive |
+| `ms` | mesh shader only (pipeline-state stream) |
+
+Every pipeline has no culling, no blending, depth test off and one sample. The pass-through VS (`PassThroughVertexShader`)
+declares the consumer's PSV0 input elements in their order with the same types, widths, rows and interpolation
+modes, so dxc packs them into the same registers; it leaves out values the rasterizer generates and adds
+SV_Position for a PS that does not read it. Each one is compiled once into `<out>/pso-vs/vs_<hash>.dxil`.
+
+**Root signature** (`BindlessRootSignature`, root signature 1.1, flags
+CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED | SAMPLER_HEAP_DIRECTLY_INDEXED | ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT):
+
+| Parameter | Content |
+|---|---|
+| 0 | root CBV `b0` space 0: `cbuffer UserData` (128 dwords, more than root constants allow) |
+| 1 | descriptor table, space 9: UAV `u0`-`u2`, SRV `t0` (mesh fallback) |
+
+Everything else goes through `ResourceDescriptorHeap[]` / `SamplerDescriptorHeap[]`.
+
+Results are appended to `<out>/pso-<adapter name>.jsonl`, one line per pipeline as soon as it is known:
+`{"name", "kind", "result", "hresult", "message", "wave", "milliseconds"}`. `wave` is the size a `cs` program pins.
+
+| Result | Meaning |
+|---|---|
+| `accepted` | the driver created the pipeline state |
+| `rejected` | refused: the HRESULT and the exception text, or the debug layer's errors with `--debug-layer` |
+| `setup-fail` | no DXIL, or the pass-through VS did not compile |
+| `timeout` | no result after `--timeout` seconds (default 600) |
+| `over-memory` | the process passed `--max-memory` GB of private memory (default 16); logged for the longest-running pipeline |
+| `crash` | the process ended during this pipeline in two runs |
+
+A driver compile cannot be cancelled, so the limits end the process (exit code 3): once a pipeline is past the time
+limit no new one starts, and the late ones are logged when nothing else runs; above the memory limit (checked every
+second) the longest-running pipeline is logged at once. Pipelines still running for another reason are retried by the
+next run. Driver compiles of the largest dispatch-form programs (2-6 MB of DXIL) take minutes and up to about 50 GB
+each.
+
+A run skips pipelines already in the log, so a run after an exit resumes; `--recheck` re-creates every pipeline whose
+last result is not `accepted`, and the last line of a pipeline wins. `<out>/pso-<adapter name>.started` lists each
+pipeline before creation. `--jobs N` creates N pipelines at once (`--debug-layer` uses 1 so each message belongs to one
+pipeline); an E_OUTOFMEMORY under several jobs can be memory pressure, so recheck those with `--recheck --jobs 1`. The
+driver's implicit shader cache is turned off for the run (`ID3D12Device9::ShaderCacheControl`, needs Windows developer
+mode; a warning is printed otherwise), since tens of thousands of one-off pipelines would fill its disk cache. The run
+ends with the peak private memory, counts per kind and result, the pinned compute programs per wave size and the
+largest error groups (numbers in messages replaced by `#`).
+
 ## Testing
 
 `tests/FiveStar.Shaders.Tests` assembles handwritten gfx1013 programs with llvm-mc, translates them, compiles them with

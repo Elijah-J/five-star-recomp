@@ -29,6 +29,10 @@ internal static class ShaderCommands
         "  translate <fssm-or-folder> <out>       translate to HLSL and compile with dxc, write <out>/results.json",
         "        [--retry results.json] [--stages ps,vs,cs,ms,gs] [--jobs N] [--limit N] [--step K] [--no-compile] [--structured]",
         "  waves <out> <fssm-folder>              classify translated programs by wave-size dependence",
+        "  pso <out> [--adapter <index|name>]     create a D3D12 pipeline state per compiled program, write <out>/pso-<adapter>.jsonl",
+        "        [--stages ...] [--limit N] [--step K] [--jobs N] [--timeout S] [--max-memory GB]",
+        "        [--debug-layer] [--recheck]",
+        "  pso --list-adapters                    list the adapters with wave lane counts, shader model and mesh tier",
         "  unwrap <in.dxbc> <out.dxbc>            rewrite a container whose XDAT holds bitcode as standard DXBC",
         "  tool options: --llvm <bin folder> (or FIVESTAR_LLVM), --dxc <dxc path> (or FIVESTAR_DXC)",
     ];
@@ -56,6 +60,8 @@ internal static class ShaderCommands
                     return TranslateCommand.Run(rest);
                 case "waves":
                     return WaveReport.Run(rest);
+                case "pso":
+                    return PsoCommand.Run(rest);
                 case "unwrap":
                     return Unwrap(rest);
                 case "help":
