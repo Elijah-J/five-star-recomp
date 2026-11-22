@@ -19,27 +19,25 @@ public sealed class GpuDevice : IDisposable
 
     public GpuDevice(int adapterIndex, bool debugLayer)
     {
-        if (debugLayer)
-        {
-            D3D12.D3D12GetDebugInterface(out ID3D12Debug? debug).CheckError();
-            debug!.EnableDebugLayer();
-            debug.Dispose();
-        }
-
+        EnableDebugLayer(debugLayer);
         using var factory = DXGI.CreateDXGIFactory2<IDXGIFactory4>(false);
         factory.EnumAdapters1((uint)adapterIndex, out var adapter).CheckError();
 
         using (adapter)
         {
             AdapterName = adapter.Description1.Description;
-            D3D12.D3D12CreateDevice(adapter, FeatureLevel.Level_12_0, out ID3D12Device? device).CheckError();
-            _device = device!;
+            _device = CreateDevice(adapter);
         }
 
-        if (debugLayer)
-        {
-            _infoQueue = _device.QueryInterfaceOrNull<ID3D12InfoQueue>();
-        }
+        _infoQueue = InfoQueue(debugLayer);
+    }
+
+    private GpuDevice(IDXGIAdapter adapter, bool debugLayer)
+    {
+        EnableDebugLayer(debugLayer);
+        AdapterName = adapter.Description.Description;
+        _device = CreateDevice(adapter);
+        _infoQueue = InfoQueue(debugLayer);
     }
 
     public ID3D12Device Device => _device;
@@ -105,9 +103,47 @@ public sealed class GpuDevice : IDisposable
         return errors;
     }
 
+    /// <summary>A device on WARP, the software rasterizer (deterministic, on every Windows machine).</summary>
+    public static GpuDevice CreateWarp(bool debugLayer)
+    {
+        using var factory = DXGI.CreateDXGIFactory2<IDXGIFactory4>(false);
+        using var adapter = factory.EnumWarpAdapter<IDXGIAdapter>();
+
+        return new GpuDevice(adapter, debugLayer);
+    }
+
     public void Dispose()
     {
         _infoQueue?.Dispose();
         _device.Dispose();
+    }
+
+    private static void EnableDebugLayer(bool debugLayer)
+    {
+        if (!debugLayer)
+        {
+            return;
+        }
+
+        D3D12.D3D12GetDebugInterface(out ID3D12Debug? debug).CheckError();
+        debug!.EnableDebugLayer();
+        debug.Dispose();
+    }
+
+    private static ID3D12Device CreateDevice(IDXGIAdapter adapter)
+    {
+        D3D12.D3D12CreateDevice(adapter, FeatureLevel.Level_12_0, out ID3D12Device? device).CheckError();
+
+        return device!;
+    }
+
+    private ID3D12InfoQueue? InfoQueue(bool debugLayer)
+    {
+        if (!debugLayer)
+        {
+            return null;
+        }
+
+        return _device.QueryInterfaceOrNull<ID3D12InfoQueue>();
     }
 }

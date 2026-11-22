@@ -129,7 +129,7 @@ internal static class PsoCommand
     }
 
     /// <summary>The adapter by index or by a name substring; by default the first hardware adapter with a D3D12 device.</summary>
-    private static AdapterInfo SelectAdapter(string? choice)
+    internal static AdapterInfo SelectAdapter(string? choice)
     {
         var adapters = AdapterCatalog.List().Where(adapter => adapter.ShaderModel is not null).ToList();
         AdapterInfo? selected;

@@ -210,6 +210,7 @@ A blob cut short (such as the `bin` entry `archive carve` writes) reads up to it
   the exact render-target formats; alpha-to-coverage, logic op, conservative rasterisation and the sample mask.
 - Graphics record 0x20..0x37: hashes; neither half of 0x20 determines the render-target format class.
 - Shader metadata header words 0x08 and 0x0C, 0x41 entry fields +0x10 and +0x14, 0x42 entries with low byte 2.
-- Where the 0x41 byte offsets point (a user-data table of the second compile is likely).
+- Where the 0x41 byte offsets point (a user-data table of the second compile is likely; they do not match the
+  table offsets the FSSM programs load, see [rendering.md](rendering.md)).
 - How a cache code block maps to FSSM register configuration; it has none of its own, so it is not a translator input.
 - The programs of slot 6 and of the 20 shaders without an SGD5 match.

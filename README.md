@@ -26,7 +26,7 @@ that can be built and verified without it.
 | Archives | Contents can be extracted without the encrypted file table (no names yet). Metadata files parse completely. |
 | Textures | Most textures export; pages using the console's BCPack compression cannot be decoded yet. |
 | Loader | The game's support libraries load with all imports resolved; the console runtime is implemented for offline use. |
-| Graphics API | Not started: needs the executable to see how the game drives the GPU. |
+| Graphics API | Needs the executable to see how the game drives the GPU. A first frame works: a game texture drawn with the game's translated unlit pass and its cached pipeline state on our own D3D12 code ([docs/rendering.md](docs/rendering.md)). |
 
 The [wiki](../../wiki) has the details, research notes and the current progress report.
 
@@ -58,6 +58,7 @@ The loader is a separate program, `fivestar-loader`; see [docs/loader.md](docs/l
 | `src/FiveStar.Formats` | archive, texture, metadata and platform file readers |
 | `src/FiveStar.Shaders` | shader containers and the RDNA to HLSL translator |
 | `src/FiveStar.Loader` | the module loader and the console runtime replacements |
+| `src/FiveStar.Graphics` | D3D12 devices, the root signature of translated programs, pipelines and rendering |
 | `src/FiveStar.Cli` | the `fivestar` command |
 | `tests/` | tests per project, plus the code-rule checks |
 | `docs/` | one page per format and tool |

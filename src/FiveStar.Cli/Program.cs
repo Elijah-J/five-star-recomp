@@ -29,6 +29,8 @@ public static class Program
                 return PlatformCommands.Run(rest);
             case "shader":
                 return ShaderCommands.Run(rest);
+            case "graphics":
+                return GraphicsCommands.Run(rest);
             case "progress":
                 return ProgressCommands.Run(rest);
             default:
@@ -40,7 +42,7 @@ public static class Program
 
     private static void PrintUsage()
     {
-        Console.Error.WriteLine("usage: fivestar <archive|texture|platform|shader|progress> <command> [arguments]");
+        Console.Error.WriteLine("usage: fivestar <archive|texture|platform|shader|graphics|progress> <command> [arguments]");
         Console.Error.WriteLine("       fivestar <group> help    lists the commands of a group");
     }
 }

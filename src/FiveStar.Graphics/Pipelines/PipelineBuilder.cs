@@ -7,8 +7,8 @@ using Vortice.DXGI;
 namespace FiveStar.Graphics.Pipelines;
 
 /// <summary>
-/// Creates compute, graphics and mesh pipeline states on one root signature: no culling, no blending, depth test off,
-/// one sample. A rejected pipeline throws the driver's <c>SharpGenException</c>.
+/// Creates compute, graphics and mesh pipeline states on one root signature: by default no culling, no blending, depth
+/// test off, one sample. A rejected pipeline throws the driver's <c>SharpGenException</c>.
 /// </summary>
 public sealed class PipelineBuilder
 {
@@ -35,6 +35,12 @@ public sealed class PipelineBuilder
 
     public ID3D12PipelineState Graphics(GraphicsProgram program)
     {
+        return Graphics(program, new FixedFunctionDescription(NoBlending(), RasterizerDescription.CullNone, DepthStencilDescription.None));
+    }
+
+    /// <summary>A graphics pipeline with the given blend, rasterizer and depth-stencil state.</summary>
+    public ID3D12PipelineState Graphics(GraphicsProgram program, FixedFunctionDescription state)
+    {
         var description = new GraphicsPipelineStateDescription
         {
             RootSignature = _root,
@@ -43,9 +49,9 @@ public sealed class PipelineBuilder
             RenderTargetFormats = [.. program.Targets],
             DepthStencilFormat = program.DepthFormat,
             SampleDescription = new SampleDescription(1, 0),
-            RasterizerState = RasterizerDescription.CullNone,
-            BlendState = NoBlending(),
-            DepthStencilState = DepthStencilDescription.None,
+            RasterizerState = state.Rasterizer,
+            BlendState = state.Blend,
+            DepthStencilState = state.DepthStencil,
             SampleMask = uint.MaxValue,
         };
 
