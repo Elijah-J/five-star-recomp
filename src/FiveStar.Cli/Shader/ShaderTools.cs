@@ -15,6 +15,7 @@ internal static class ShaderTools
 {
     private const string LlvmVariable = "FIVESTAR_LLVM";
     private const string DxcVariable = "FIVESTAR_DXC";
+    private const string PathVariable = "PATH";
     private const string DefaultLlvmFolder = @"D:\Tools\llvm\bin";
     private const string DefaultDxc = @"C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\dxc.exe";
 
@@ -46,11 +47,26 @@ internal static class ShaderTools
             path = DefaultDxc;
         }
 
-        return path ?? "dxc";
+        return OnPath(path ?? "dxc");
     }
 
     public static DxcCompiler Compiler(CommandArguments arguments, bool retry)
     {
         return new DxcCompiler(DxcOptions.Defaults(Dxc(arguments), retry));
+    }
+
+    /// <summary>The full path of a bare tool name found in a PATH folder; other names unchanged.</summary>
+    private static string OnPath(string tool)
+    {
+        if (Path.IsPathRooted(tool) || tool.Contains(Path.DirectorySeparatorChar, StringComparison.Ordinal))
+        {
+            return tool;
+        }
+
+        var suffix = OperatingSystem.IsWindows() && !Path.HasExtension(tool) ? ".exe" : string.Empty;
+        var folders = (Environment.GetEnvironmentVariable(PathVariable) ?? string.Empty).Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
+        var found = folders.Select(folder => Path.Combine(folder, tool + suffix)).FirstOrDefault(File.Exists);
+
+        return found ?? tool;
     }
 }

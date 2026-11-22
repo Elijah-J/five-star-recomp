@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+using System.Globalization;
 using FiveStar.Shaders.Compilation;
 using FiveStar.Shaders.Disassembly;
 using FiveStar.Shaders.Translation;
@@ -15,6 +16,7 @@ internal static class TranslateCommand
     private const int ReasonsShown = 25;
     private const int CountWidth = 6;
     private const int TwoPaths = 2;
+    private const int BytesPerMebibyte = 1 << 20;
     private const string NoCompileFlag = "no-compile";
     private const string StructuredFlag = "structured";
 
@@ -24,27 +26,45 @@ internal static class TranslateCommand
 
         if (arguments.Positional.Count != TwoPaths)
         {
-            throw new ArgumentException("translate <fssm-or-folder> <out> [--retry results.json] [--stages ps,vs,cs,ms,gs] [--jobs N] [--structured]");
+            throw new ArgumentException(
+                "translate <fssm-or-folder> <out> [--cache <dir>] [--retry results.json] [--stages ps,vs,cs,ms,gs] [--jobs N] [--structured]");
         }
 
         var programs = Programs(arguments);
         var retry = arguments.Option("retry");
-        var loader = new ProgramLoader(new LlvmDisassembler(ShaderTools.Llvm(arguments)));
-        DxcCompiler? compiler = null;
-        MeshFallbackCompiler? fallback = null;
-
-        if (!arguments.Flag(NoCompileFlag))
-        {
-            compiler = ShaderTools.Compiler(arguments, retry is not null);
-            fallback = new MeshFallbackCompiler(compiler);
-        }
-
+        var llvm = ShaderTools.Llvm(arguments);
         var options = new CorpusOptions(arguments.Positional[1], Stages(arguments), arguments.IntegerOption("jobs") ?? Environment.ProcessorCount, retry)
         {
             Translation = new TranslationOptions(arguments.Flag(StructuredFlag), PinWaveSize: true),
         };
-        var results = new CorpusTranslator(loader, compiler, fallback).Run(programs, options);
+
+        var cacheFolder = arguments.Option("cache");
+        CacheFolder? cache = null;
+        TranslationCache? translations = null;
+        IShaderCompiler? compiler = null;
+
+        if (cacheFolder is not null)
+        {
+            cache = new CacheFolder(cacheFolder);
+            translations = new TranslationCache(cache, TranslationCache.Identity(llvm, options.Translation));
+        }
+
+        if (!arguments.Flag(NoCompileFlag))
+        {
+            compiler = ShaderTools.Compiler(arguments, retry is not null);
+            compiler = Cached(compiler, cache);
+        }
+
+        var fallback = compiler is null ? null : new MeshFallbackCompiler(compiler);
+        var progress = new ConsoleProgress(() => Counts(compiler, translations));
+        var loader = new ProgramLoader(new LlvmDisassembler(llvm));
+        var results = new CorpusTranslator(loader, compiler, fallback, translations, progress).Run(programs, options);
         Report(results);
+
+        if (cache is not null)
+        {
+            Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"cache {cache.Root}: {cache.Size() / BytesPerMebibyte} MiB"));
+        }
 
         if (results.Any(result => !ProgramStatus.IsFinal(result.Status)))
         {
@@ -52,6 +72,33 @@ internal static class TranslateCommand
         }
 
         return Success;
+    }
+
+    private static IShaderCompiler Cached(IShaderCompiler compiler, CacheFolder? cache)
+    {
+        if (cache is null)
+        {
+            return compiler;
+        }
+
+        return new CachedCompiler(compiler, cache);
+    }
+
+    private static string Counts(IShaderCompiler? compiler, TranslationCache? translations)
+    {
+        var text = string.Empty;
+
+        if (translations is not null)
+        {
+            text = string.Create(CultureInfo.InvariantCulture, $"translations reused {translations.Hits}, new {translations.Misses}  ");
+        }
+
+        if (compiler is CachedCompiler cached)
+        {
+            text += string.Create(CultureInfo.InvariantCulture, $"compiles reused {cached.Reused}, run {cached.Compiled}");
+        }
+
+        return text;
     }
 
     private static List<string> Programs(CommandArguments arguments)
@@ -104,7 +151,7 @@ internal static class TranslateCommand
 
         foreach (var group in failures.OrderByDescending(group => group.Count()).Take(ReasonsShown))
         {
-            var count = group.Count().ToString(System.Globalization.CultureInfo.InvariantCulture).PadLeft(CountWidth);
+            var count = group.Count().ToString(CultureInfo.InvariantCulture).PadLeft(CountWidth);
             Console.WriteLine($"  {count} {group.Key.Status}: {group.Key.Reason}  e.g. {group.First().Name}");
         }
     }

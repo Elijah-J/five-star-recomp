@@ -45,13 +45,14 @@ public sealed class PassThroughCache
         }
 
         File.WriteAllText(hlslPath, source);
-        var result = _compiler.Compile(hlslPath, "vs", disableOptimizations: false, _compiler.Options.CompileTimeout);
+        var request = new CompileRequest(hlslPath, source, "vs", DisableOptimizations: false);
+        var outcome = _compiler.Compile(request, _compiler.Options.CompileTimeout);
 
-        if (result.ExitCode != 0 || result.TimedOut)
+        if (!outcome.Succeeded)
         {
-            throw new InvalidOperationException("pass-through VS: " + DxcCompiler.FirstError(result));
+            throw new InvalidOperationException("pass-through VS: " + DxcCompiler.FirstError(outcome.Error));
         }
 
-        return File.ReadAllBytes(dxilPath);
+        return File.ReadAllBytes(request.DxilPath);
     }
 }

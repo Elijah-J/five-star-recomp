@@ -8,9 +8,9 @@ namespace FiveStar.Shaders.Compilation;
 /// <summary>Writes and compiles the compute + vertex-pulling replacement of a mesh shader dxc rejected.</summary>
 public sealed class MeshFallbackCompiler
 {
-    private readonly DxcCompiler _compiler;
+    private readonly IShaderCompiler _compiler;
 
-    public MeshFallbackCompiler(DxcCompiler compiler)
+    public MeshFallbackCompiler(IShaderCompiler compiler)
     {
         _compiler = compiler;
     }
@@ -37,16 +37,16 @@ public sealed class MeshFallbackCompiler
         {
             var path = stem + suffix;
             File.WriteAllText(path, source);
-            var result = _compiler.Compile(path, profile, large, _compiler.Options.FallbackTimeout);
+            var outcome = _compiler.Compile(new CompileRequest(path, source, profile, large), _compiler.Options.FallbackTimeout);
 
-            if (result.TimedOut)
+            if (outcome.TimedOut)
             {
                 return "dxc timeout";
             }
 
-            if (result.ExitCode != 0)
+            if (!outcome.Succeeded)
             {
-                return DxcCompiler.FirstError(result);
+                return DxcCompiler.FirstError(outcome.Error);
             }
         }
 

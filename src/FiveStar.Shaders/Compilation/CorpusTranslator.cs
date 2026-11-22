@@ -22,15 +22,27 @@ public sealed partial class CorpusTranslator
     private static readonly string[] DetailedReasons = ["operand", "implicit", "export", "mask"];
 
     private readonly ProgramLoader _loader;
-    private readonly DxcCompiler? _compiler;
+    private readonly IShaderCompiler? _compiler;
     private readonly MeshFallbackCompiler? _fallback;
+    private readonly TranslationCache? _translations;
+    private readonly IProgress<CorpusProgress>? _progress;
 
-    /// <summary>Without a compiler the programs are only translated (status ok when the translation succeeds).</summary>
-    public CorpusTranslator(ProgramLoader loader, DxcCompiler? compiler, MeshFallbackCompiler? fallback)
+    /// <summary>
+    /// Without a compiler the programs are only translated (status ok when the translation succeeds); without a
+    /// translation cache every program is translated.
+    /// </summary>
+    public CorpusTranslator(
+        ProgramLoader loader,
+        IShaderCompiler? compiler,
+        MeshFallbackCompiler? fallback,
+        TranslationCache? translations,
+        IProgress<CorpusProgress>? progress)
     {
         _loader = loader;
         _compiler = compiler;
         _fallback = fallback;
+        _translations = translations;
+        _progress = progress;
     }
 
     /// <summary>Runs every program (or, with a retry file, every program not final there) and writes results.json.</summary>
@@ -50,7 +62,12 @@ public sealed partial class CorpusTranslator
 
         var results = new ProgramResult[paths.Count];
         var parallel = new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, options.Parallelism) };
-        Parallel.For(0, paths.Count, parallel, index => results[index] = Work(paths[index], options));
+        var done = 0;
+        Parallel.For(0, paths.Count, parallel, index =>
+        {
+            results[index] = Work(paths[index], options);
+            _progress?.Report(new CorpusProgress(Interlocked.Increment(ref done), paths.Count));
+        });
 
         var merged = Merge(prior, results);
         ResultsFile.Write(Path.Combine(options.OutputFolder, ResultsName), merged);
@@ -87,66 +104,121 @@ public sealed partial class CorpusTranslator
 
     private ProgramResult Work(string path, CorpusOptions options)
     {
+        var translated = Translate(path, options);
+        string? stageName = null;
+
+        if (translated.Stage is not null)
+        {
+            stageName = ShaderStages.ProfileName(translated.Stage.Value);
+        }
+
+        if (translated.Hlsl is null)
+        {
+            return new ProgramResult(translated.Name, stageName, translated.Status ?? ProgramStatus.Crash, translated.Reason);
+        }
+
+        var hlslPath = Path.Combine(options.OutputFolder, translated.Name + ".hlsl");
+        File.WriteAllText(hlslPath, translated.Hlsl);
+
+        if (_compiler is null)
+        {
+            return new ProgramResult(translated.Name, stageName, ProgramStatus.Ok, null);
+        }
+
+        var (status, reason) = Compile(_compiler, hlslPath, translated);
+
+        return new ProgramResult(translated.Name, stageName, status, reason);
+    }
+
+    /// <summary>The translation from the cache when it has one; otherwise a new one, kept when it is final.</summary>
+    private TranslatedProgram Translate(string path, CorpusOptions options)
+    {
+        if (_translations is null)
+        {
+            return TranslateProgram(path, options);
+        }
+
+        var key = _translations.Key(path);
+        var cached = _translations.Find(key, Path.GetFileNameWithoutExtension(path));
+
+        if (cached is not null)
+        {
+            return SelectStage(cached, options.Stages);
+        }
+
+        var translated = TranslateProgram(path, options);
+
+        if (translated.Hlsl is not null || translated.Status is ProgramStatus.Unsupported or ProgramStatus.Crash)
+        {
+            _translations.Store(key, translated);
+        }
+
+        return translated;
+    }
+
+    private static TranslatedProgram SelectStage(TranslatedProgram program, IReadOnlySet<ShaderStage>? stages)
+    {
+        if (stages is null || (program.Stage is not null && stages.Contains(program.Stage.Value)))
+        {
+            return program;
+        }
+
+        return program with { Hlsl = null, Status = ProgramStatus.SkipStage, Reason = null };
+    }
+
+    private TranslatedProgram TranslateProgram(string path, CorpusOptions options)
+    {
         var loaded = _loader.Load(path, options.Stages);
-        var stageName = loaded.Stage is null ? null : ShaderStages.ProfileName(loaded.Stage.Value);
         var program = loaded.Program;
 
         if (program is null)
         {
-            return new ProgramResult(loaded.Name, stageName, loaded.Status ?? ProgramStatus.Crash, loaded.Reason);
+            return new TranslatedProgram(loaded.Name, loaded.Stage, null, loaded.Status ?? ProgramStatus.Crash, loaded.Reason, 0);
         }
 
-        string hlsl;
+        var count = program.Instructions.Count;
 
         try
         {
-            hlsl = HlslTranslator.Translate(program, options.Translation).Hlsl;
+            var hlsl = HlslTranslator.Translate(program, options.Translation).Hlsl;
+
+            return new TranslatedProgram(loaded.Name, loaded.Stage, hlsl, null, null, count);
         }
         catch (UnsupportedProgramException exception)
         {
-            return new ProgramResult(loaded.Name, stageName, ProgramStatus.Unsupported, UnsupportedReason(exception.Message));
+            return new TranslatedProgram(loaded.Name, loaded.Stage, null, ProgramStatus.Unsupported, UnsupportedReason(exception.Message), count);
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
-            return new ProgramResult(loaded.Name, stageName, ProgramStatus.Crash, Cut($"{exception.GetType().Name}: {exception.Message}", CrashReasonLength));
+            var reason = Cut($"{exception.GetType().Name}: {exception.Message}", CrashReasonLength);
+
+            return new TranslatedProgram(loaded.Name, loaded.Stage, null, ProgramStatus.Crash, reason, count);
         }
-
-        var hlslPath = Path.Combine(options.OutputFolder, loaded.Name + ".hlsl");
-        File.WriteAllText(hlslPath, hlsl);
-
-        if (_compiler is null)
-        {
-            return new ProgramResult(loaded.Name, stageName, ProgramStatus.Ok, null);
-        }
-
-        var (status, reason) = Compile(hlslPath, hlsl, program);
-
-        return new ProgramResult(loaded.Name, stageName, status, reason);
     }
 
-    private (string Status, string? Reason) Compile(string hlslPath, string hlsl, ShaderProgram program)
+    private (string Status, string? Reason) Compile(IShaderCompiler compiler, string hlslPath, TranslatedProgram program)
     {
-        var compiler = _compiler!;
-        var profile = ShaderStages.ProfileName(program.Stage);
+        var hlsl = program.Hlsl!;
+        var profile = ShaderStages.ProfileName(program.Stage!.Value);
         var large = hlsl.Length > compiler.Options.LargeSourceLength;
-        var result = compiler.Compile(hlslPath, profile, large, compiler.Options.CompileTimeout);
+        var outcome = compiler.Compile(new CompileRequest(hlslPath, hlsl, profile, large), compiler.Options.CompileTimeout);
 
-        if (result.TimedOut)
+        if (outcome.TimedOut)
         {
-            result = compiler.Compile(hlslPath, profile, disableOptimizations: true, compiler.Options.RecompileTimeout);
+            outcome = compiler.Compile(new CompileRequest(hlslPath, hlsl, profile, DisableOptimizations: true), compiler.Options.RecompileTimeout);
         }
 
-        if (result.TimedOut)
+        if (outcome.TimedOut)
         {
-            return (ProgramStatus.CompileTimeout, $"{program.Instructions.Count} instructions");
+            return (ProgramStatus.CompileTimeout, $"{program.Instructions} instructions");
         }
 
-        if (result.ExitCode == 0)
+        if (outcome.Succeeded)
         {
             return (ProgramStatus.Ok, null);
         }
 
-        var error = DxcCompiler.FirstError(result);
+        var error = DxcCompiler.FirstError(outcome.Error);
 
         if (program.Stage == ShaderStage.Mesh && _fallback is not null)
         {

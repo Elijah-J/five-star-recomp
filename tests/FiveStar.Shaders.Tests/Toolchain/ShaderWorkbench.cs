@@ -42,11 +42,11 @@ public sealed class ShaderWorkbench
     {
         var path = Path.Combine(_folder, name + ".hlsl");
         File.WriteAllText(path, hlsl);
-        var result = _compiler.Compile(path, profile, disableOptimizations: false, CompileTimeout);
+        var outcome = _compiler.Compile(new CompileRequest(path, hlsl, profile, DisableOptimizations: false), CompileTimeout);
 
-        if (result.ExitCode != 0)
+        if (!outcome.Succeeded)
         {
-            throw new InvalidOperationException($"dxc rejected {name} ({profile}): {DxcCompiler.FirstError(result)}\n{path}");
+            throw new InvalidOperationException($"dxc rejected {name} ({profile}): {DxcCompiler.FirstError(outcome.Error)}\n{path}");
         }
 
         return File.ReadAllBytes(Path.ChangeExtension(path, ".dxil"));

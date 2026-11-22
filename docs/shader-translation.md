@@ -11,7 +11,8 @@ model 6.7. Public entry: `HlslTranslator.Translate(ShaderProgram) -> Translation
 3. **Emitters** (`Translation/Emitters`): one emitter per instruction family turns each instruction into HLSL statements.
 4. **Program** (`Translation/Stages`, `Translation/Structure`): structs, declarations, prologue, dispatch loop (or structured
    control flow) and output mapping.
-5. **Compile** (`CorpusTranslator`): dxc, with the mesh fallback where needed.
+5. **Compile** (`CorpusTranslator`, `DxcCompiler`): dxc, with the mesh fallback where needed; `TranslationCache` and
+   `CachedCompiler` reuse earlier results (see Cache).
 
 ## Execution model
 
@@ -141,19 +142,23 @@ to the generated HLSL.
 ## Commands
 
 ```
-fivestar shader translate <program.fssm | folder> <out> [--retry results.json] [--stages ps,vs,cs,ms,gs]
-                          [--jobs N] [--limit N] [--step K] [--no-compile] [--structured] [--llvm <folder>]
-                          [--dxc <path>]
+fivestar shader translate <program.fssm | folder> <out> [--cache <dir>] [--retry results.json]
+                          [--stages ps,vs,cs,ms,gs] [--jobs N] [--limit N] [--step K] [--no-compile] [--structured]
+                          [--llvm <folder>] [--dxc <path>]
 ```
 
 Translates every `*.fssm` (in name order; `--step K` takes every K-th, `--limit N` the first N), writes
-`<out>/<name>.hlsl`, compiles it to `<name>.dxil` and writes `<out>/results.json`. `--retry` re-runs only programs
-whose status in that file is not final and merges the results. `--no-compile` skips dxc. `--structured` emits the
-structured control-flow form (see Control flow).
+`<out>/<name>.hlsl`, compiles it to `<name>.dxil` and writes `<out>/results.json`. `--cache` keeps translations and
+DXIL between runs (see Cache). `--retry` re-runs only programs whose status in that file is not final and merges the
+results. `--no-compile` skips dxc. `--structured` emits the structured control-flow form (see Control flow). Every
+10 seconds the command prints programs done, elapsed time, estimated time left and finish time, and the cache counts.
 
-dxc runs as `-T <stage>_6_7 -E main -HV 2021 -I <out> -Fo <name>.dxil`, with a 180 s limit; a timed-out compile is
-retried with `-Od` for 300 s (900 s with `--retry`); fallback compiles have 600 s. dxc comes from `--dxc`, then
-`FIVESTAR_DXC`, then the Windows SDK default when it exists, then `PATH`.
+dxc runs as `dxc.exe -T <stage>_6_7 -E main -HV 2021 -I <out> -Fo <name>.dxil`, one process per compile, with a 180 s
+limit; a timed-out compile is retried with `-Od` for 300 s (900 s with `--retry`); fallback compiles have 600 s.
+Sources over 150,000 characters use `-Od` from the start. dxc comes from `--dxc`, then `FIVESTAR_DXC`, then the
+Windows SDK default when it exists, then `PATH`. Compiling in-process through `dxcompiler.dll` was measured no faster
+(a dxc.exe start costs about 10 ms against a median compile of 0.85 s), and a process can be killed at the limit
+while an in-process crash or allocation failure ends the whole run.
 
 `results.json` is an array of `{"name", "stage", "status", "reason"}`:
 
@@ -168,6 +173,25 @@ retried with `-Od` for 300 s (900 s with `--retry`); fallback compiles have 600 
 | `crash` | unexpected translator error |
 | `dxc-fail` | dxc rejected the HLSL (reason: its first error) |
 | `dxc-timeout` | dxc did not finish (reason: instruction count) |
+
+### Cache
+
+`--cache <dir>` keeps work between runs, so a re-run only redoes what changed. A later default is
+`%LOCALAPPDATA%\FiveStar\shader-cache\<title>\`. Every entry is Brotli-compressed at
+`<dir>/<kind>/<key[0..2]>/<key><extension>` and written through a temporary file, so an interrupted run keeps every
+finished entry. Keys are SHA-256 hashes:
+
+| Kind | Key | Entry |
+|---|---|---|
+| `programs/*.json` | FiveStar.Shaders.dll, llvm-mc and llvm-objdump bytes, the translation options, the FSSM and container bytes | stage, status, reason, instruction count, HLSL key (programs that translated, were unsupported or crashed) |
+| `hlsl/*.hlsl` | the HLSL text | the HLSL |
+| `dxil/*.dxil` | dxc.exe, dxcompiler.dll and dxil.dll bytes, the fixed dxc arguments, the runtime headers, profile, `-Od`, the HLSL text | the DXIL |
+| `dxil/*.error` | same | dxc's messages of a failed compile with a source diagnostic (`file:line[:column]: error:`) or `error: validation errors`; crashes and out-of-memory failures are not kept |
+| `dxil/*.timeout` | same | the time limit the compile ran into; reused for limits up to that one, so `--retry` (900 s) tries again |
+
+Programs with the same HLSL compile once, also within one run. Any new build of FiveStar.Shaders invalidates the
+translations (all programs are translated again) but only programs whose HLSL changed are compiled again. Nothing
+is removed; delete the folder to reset it.
 
 ```
 fivestar shader waves <out> <fssm-folder>

@@ -2,58 +2,91 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using FiveStar.Shaders.Tooling;
+using FiveStar.Shaders.Translation;
 
 namespace FiveStar.Shaders.Compilation;
 
 /// <summary>
 /// Compiles translated HLSL with dxc: shader model 6.7 for every stage (programmable texel offsets, helper-lane wave
-/// operations), HLSL 2021, entry point main, the output folder (with the runtime headers) as include path.
+/// operations), HLSL 2021, entry point main, the source's folder (with the runtime headers) as include path. Each compile
+/// is one dxc.exe process, killed at the time limit.
 /// </summary>
-public sealed class DxcCompiler
+public sealed class DxcCompiler : IShaderCompiler
 {
     private const string ShaderModel = "_6_7";
+    private const string CompilerFile = "dxcompiler.dll";
+    private const string ValidatorFile = "dxil.dll";
     private const int ErrorTextLength = 200;
 
     private readonly DxcOptions _options;
+    private readonly Lazy<string> _identity;
 
     public DxcCompiler(DxcOptions options)
     {
         _options = options;
+        _identity = new Lazy<string>(ComputeIdentity);
     }
 
     public DxcOptions Options => _options;
 
-    /// <summary>Compiles one file to <c>&lt;stem&gt;.dxil</c> next to it.</summary>
-    public ToolResult Compile(string hlslPath, string profile, bool disableOptimizations, TimeSpan timeout)
-    {
-        var folder = Path.GetDirectoryName(Path.GetFullPath(hlslPath)) ?? ".";
-        var output = Path.ChangeExtension(hlslPath, ".dxil");
-        var arguments = new List<string>
-        {
-            "-nologo", "-T", profile + ShaderModel, "-E", "main", "-HV", "2021", "-I", folder, "-Fo", output, hlslPath,
-        };
+    public string Identity => _identity.Value;
 
-        if (disableOptimizations)
+    public CompileOutcome Compile(CompileRequest request, TimeSpan timeout)
+    {
+        var arguments = Arguments(request);
+        arguments.InsertRange(arguments.Count - 1, ["-nologo", "-Fo", request.DxilPath]);
+        var result = ExternalTool.Run(_options.Path, arguments, timeout);
+
+        if (result.TimedOut)
+        {
+            return CompileOutcome.Timeout;
+        }
+
+        if (result.ExitCode != 0)
+        {
+            return CompileOutcome.Failure(result.Error);
+        }
+
+        return CompileOutcome.Success with { Error = result.Error };
+    }
+
+    /// <summary>The first error line of a failed compile (or the start of its messages).</summary>
+    public static string FirstError(string error)
+    {
+        var text = error.Replace("\r\n", "\n", StringComparison.Ordinal);
+        var line = text.Split('\n').FirstOrDefault(candidate => candidate.Contains("error", StringComparison.Ordinal));
+
+        if (line is not null)
+        {
+            return line;
+        }
+
+        return text[..Math.Min(ErrorTextLength, text.Length)];
+    }
+
+    /// <summary>The dxc arguments of a request, the source file last.</summary>
+    private static List<string> Arguments(CompileRequest request)
+    {
+        var folder = Path.GetDirectoryName(Path.GetFullPath(request.HlslPath)) ?? ".";
+        var arguments = new List<string> { "-T", request.Profile + ShaderModel, "-E", "main", "-HV", "2021", "-I", folder };
+
+        if (request.DisableOptimizations)
         {
             arguments.Add("-Od");
         }
 
-        return ExternalTool.Run(_options.Path, arguments, timeout);
+        arguments.Add(request.HlslPath);
+
+        return arguments;
     }
 
-    /// <summary>The first error line of a failed compile (or the start of its error output).</summary>
-    public static string FirstError(ToolResult result)
+    /// <summary>The dxc files, the fixed arguments and the runtime headers the sources include.</summary>
+    private string ComputeIdentity()
     {
-        var lines = result.Error.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
-        var error = lines.FirstOrDefault(line => line.Contains("error", StringComparison.Ordinal));
+        var folder = Path.GetDirectoryName(_options.Path) ?? string.Empty;
+        string[] files = [_options.Path, Path.Combine(folder, CompilerFile), Path.Combine(folder, ValidatorFile)];
+        string[] arguments = [ShaderModel, "-E main -HV 2021"];
 
-        if (error is not null)
-        {
-            return error;
-        }
-
-        var text = result.Error.Replace("\r\n", "\n", StringComparison.Ordinal);
-
-        return text[..Math.Min(ErrorTextLength, text.Length)];
+        return ContentHash.OfText([ContentHash.OfFiles(files), .. arguments, .. RuntimeIncludes.Names.Select(RuntimeIncludes.Read)]);
     }
 }
