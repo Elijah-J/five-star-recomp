@@ -44,6 +44,19 @@ internal static unsafe class Kernel32
     [DllImport(Library)]
     public static extern nint GetModuleHandleW(char* name);
 
+    /// <summary>PowerCreateRequest: <paramref name="context"/> is a REASON_CONTEXT.</summary>
+    [DllImport(Library, SetLastError = true)]
+    public static extern nint PowerCreateRequest(byte* context);
+
+    [DllImport(Library, SetLastError = true)]
+    public static extern int PowerSetRequest(nint request, int requestType);
+
+    [DllImport(Library, SetLastError = true)]
+    public static extern int PowerClearRequest(nint request, int requestType);
+
+    [DllImport(Library, SetLastError = true)]
+    public static extern int CloseHandle(nint handle);
+
     [DllImport(Library)]
     public static extern nint GetModuleHandleA(byte* name);
 

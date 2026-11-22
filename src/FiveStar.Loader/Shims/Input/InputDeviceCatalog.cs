@@ -35,8 +35,7 @@ internal static class InputDeviceCatalog
 
         for (int slot = 0; slot < slots; slot++)
         {
-            string name = string.Create(CultureInfo.InvariantCulture, $"XInput gamepad {slot + 1}");
-            devices[slot] = new DeviceDescription(name, GameInputLayout.FamilyXboxOne, GameInputLayout.KindGamepad, Rumble, MicrosoftVendor, XboxSeriesController, GamepadUsage);
+            devices[slot] = new DeviceDescription(GamepadName(slot), GameInputLayout.FamilyXboxOne, GameInputLayout.KindGamepad, Rumble, MicrosoftVendor, XboxSeriesController, GamepadUsage);
         }
 
         devices[slots + KeyboardAfterSlots] = new DeviceDescription("Keyboard", GameInputLayout.FamilyHid, GameInputLayout.KindKeyboard, 0, 0, 0, KeyboardUsage);
@@ -44,5 +43,11 @@ internal static class InputDeviceCatalog
         devices[slots + VirtualAfterSlots] = new DeviceDescription("Keyboard and mouse gamepad", GameInputLayout.FamilyVirtual, GameInputLayout.KindGamepad, 0, 0, 0, GamepadUsage);
 
         return devices;
+    }
+
+    /// <summary>The name of the gamepad in source slot <paramref name="slot"/> (0-based); its device id is derived from it.</summary>
+    public static string GamepadName(int slot)
+    {
+        return string.Create(CultureInfo.InvariantCulture, $"XInput gamepad {slot + 1}");
     }
 }

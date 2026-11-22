@@ -6,7 +6,7 @@ namespace FiveStar.Loader.Shims.Gdk;
 /// <summary>The offline XGameRuntime: every GDK service the shim entry points call into.</summary>
 internal sealed class GdkServices : IDisposable
 {
-    public GdkServices(GdkConfig config, NativeBoundary boundary, TaskQueueService taskQueues, AsyncService async, UserService users, GameSaveService saves, PackageService packages, SystemService system, StoreService store, GameRuntimeService runtime)
+    public GdkServices(GdkConfig config, NativeBoundary boundary, TaskQueueService taskQueues, AsyncService async, UserService users, GameSaveService saves, PackageService packages, SystemService system, StoreService store, GameRuntimeService runtime, GdkPlatformServices platform)
     {
         Config = config;
         Boundary = boundary;
@@ -19,6 +19,11 @@ internal sealed class GdkServices : IDisposable
         System = system;
         Store = store;
         Runtime = runtime;
+
+        Registrations = platform.Registrations;
+        Display = platform.Display;
+        Accessibility = platform.Accessibility;
+        Launcher = platform.Launcher;
     }
 
     public GdkConfig Config { get; }
@@ -41,8 +46,18 @@ internal sealed class GdkServices : IDisposable
 
     public GameRuntimeService Runtime { get; }
 
+    /// <summary>Tokens of the event registrations that never fire offline.</summary>
+    public EventRegistrations Registrations { get; }
+
+    public DisplayService Display { get; }
+
+    public AccessibilityService Accessibility { get; }
+
+    public LauncherService Launcher { get; }
+
     public void Dispose()
     {
         System.Dispose();
+        Display.Dispose();
     }
 }

@@ -41,6 +41,42 @@ internal static unsafe class XSystemShim
         return SystemService.GetSandboxId(size, id, used);
     }
 
+    [Shim(GdkModule.Name, "XSystemGetAppSpecificDeviceId")]
+    [UnmanagedCallersOnly]
+    private static int XSystemGetAppSpecificDeviceId(nuint size, byte* id, nuint* used)
+    {
+        var gdk = ShimContext.Runtime.Gdk;
+
+        try
+        {
+            return gdk.System.GetAppSpecificDeviceId(size, id, used);
+        }
+        catch (Exception e)
+        {
+            return gdk.Boundary.Failed(nameof(XSystemGetAppSpecificDeviceId), e);
+        }
+    }
+
+    /// <summary>void XSystemAllowFullDownloadBandwidth(bool enable): nothing downloads offline.</summary>
+    [Shim(GdkModule.Name, "XSystemAllowFullDownloadBandwidth")]
+    [UnmanagedCallersOnly]
+    private static void XSystemAllowFullDownloadBandwidth(byte enable)
+    {
+    }
+
+    /// <summary>bool XSystemIsHandleValid(XSystemHandle): handle tracking is off, so any non-null handle counts as valid.</summary>
+    [Shim(GdkModule.Name, "XSystemIsHandleValid")]
+    [UnmanagedCallersOnly]
+    private static byte XSystemIsHandleValid(nint handle)
+    {
+        if (handle == 0)
+        {
+            return GdkModule.False;
+        }
+
+        return GdkModule.True;
+    }
+
     /// <summary>HRESULT XThreadSetTimeSensitive(bool isTimeSensitiveThread): per thread.</summary>
     [Shim(GdkModule.Name, "XThreadSetTimeSensitive")]
     [UnmanagedCallersOnly]
@@ -66,6 +102,19 @@ internal static unsafe class XSystemShim
     private static void XThreadAssertNotTimeSensitive()
     {
         ShimContext.Runtime.Gdk.System.AssertNotTimeSensitive();
+    }
+
+    /// <summary>
+    /// XThreadVerifyNotTimeSensitive: exported by the PC library, declared in no public header. Warns like
+    /// XThreadAssertNotTimeSensitive and returns S_OK, which also suits a void caller.
+    /// </summary>
+    [Shim(GdkModule.Name, "XThreadVerifyNotTimeSensitive")]
+    [UnmanagedCallersOnly]
+    private static int XThreadVerifyNotTimeSensitive()
+    {
+        ShimContext.Runtime.Gdk.System.AssertNotTimeSensitive();
+
+        return HResult.Ok;
     }
 
     [Shim(GdkModule.Name, "XGameGetXboxTitleId")]
@@ -127,6 +176,39 @@ internal static unsafe class XSystemShim
         catch (Exception e)
         {
             return gdk.Boundary.Failed(nameof(XPersistentLocalStorageGetPath), e);
+        }
+    }
+
+    /// <summary>HRESULT XPersistentLocalStoragePromptUserForSpaceAsync(uint64_t requestedBytes, XAsyncBlock* asyncBlock).</summary>
+    [Shim(GdkModule.Name, SystemService.PromptForSpaceApi)]
+    [UnmanagedCallersOnly]
+    private static int XPersistentLocalStoragePromptUserForSpaceAsync(ulong requested, nint async)
+    {
+        var gdk = ShimContext.Runtime.Gdk;
+
+        try
+        {
+            return gdk.Async.BeginManaged(async, SystemService.PromptForSpaceApi, new LocalStorageSpaceOperation(gdk.System, requested));
+        }
+        catch (Exception e)
+        {
+            return gdk.Boundary.Failed(nameof(XPersistentLocalStoragePromptUserForSpaceAsync), e);
+        }
+    }
+
+    [Shim(GdkModule.Name, "XPersistentLocalStoragePromptUserForSpaceResult")]
+    [UnmanagedCallersOnly]
+    private static int XPersistentLocalStoragePromptUserForSpaceResult(nint async)
+    {
+        var gdk = ShimContext.Runtime.Gdk;
+
+        try
+        {
+            return gdk.Async.ManagedResult(async, SystemService.PromptForSpaceApi, 0, 0);
+        }
+        catch (Exception e)
+        {
+            return gdk.Boundary.Failed(nameof(XPersistentLocalStoragePromptUserForSpaceResult), e);
         }
     }
 

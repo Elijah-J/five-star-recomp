@@ -436,6 +436,23 @@ internal static unsafe class XGameSaveShim
         }
     }
 
+    /// <summary>HRESULT XGameSaveFilesGetRemainingQuota(XUserHandle, const char* configurationId, int64_t* remainingQuota).</summary>
+    [Shim(GdkModule.Name, "XGameSaveFilesGetRemainingQuota")]
+    [UnmanagedCallersOnly]
+    private static int XGameSaveFilesGetRemainingQuota(nint user, byte* configId, long* remaining)
+    {
+        var gdk = ShimContext.Runtime.Gdk;
+
+        try
+        {
+            return gdk.Saves.GetSaveFilesRemainingQuota(user, configId, remaining);
+        }
+        catch (Exception e)
+        {
+            return gdk.Boundary.Failed(nameof(XGameSaveFilesGetRemainingQuota), e);
+        }
+    }
+
     /// <summary>The *Result half of an async call whose result is a fixed-size value; a null destination is E_POINTER when one is expected.</summary>
     private static int ManagedResult(string api, nint async, string asyncApi, nuint size, void* destination)
     {

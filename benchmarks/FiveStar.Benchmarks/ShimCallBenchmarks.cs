@@ -5,9 +5,6 @@ using System.Runtime.InteropServices;
 using BenchmarkDotNet.Attributes;
 using FiveStar.Loader;
 using FiveStar.Loader.Codegen;
-using FiveStar.Loader.Diagnostics;
-using FiveStar.Loader.Loading;
-using FiveStar.Loader.Shims.Gdk;
 
 namespace FiveStar.Benchmarks;
 
@@ -19,9 +16,6 @@ namespace FiveStar.Benchmarks;
 [MemoryDiagnoser]
 public unsafe class ShimCallBenchmarks : IDisposable
 {
-    /// <summary>The value the native baseline returns (<c>mov eax,7; ret</c>), the same XSystemGetDeviceType returns.</summary>
-    private const uint DeviceType = 7;
-
     private const nuint AllocationSize = 64;
     private const ulong DefaultAttributes = 0;
     private const uint ManualMode = 0;
@@ -41,11 +35,7 @@ public unsafe class ShimCallBenchmarks : IDisposable
     [GlobalSetup]
     public void Setup()
     {
-        var log = new LoaderLog(TextWriter.Null, null, false);
-        var options = new LoaderOptions([], new HashSet<string>(), UnresolvedMode.Stub, false, Path.GetTempPath(), null, 0);
-        var gdk = new GdkOptions(null, Path.GetTempPath(), Path.GetTempPath(), Path.GetTempPath(), DeviceType, new Version());
-        var environment = new LoaderEnvironment(string.Empty, TimeProvider.System, IgnoreFailure);
-        _runtime = new LoaderRuntime(options, gdk, environment, log);
+        _runtime = BenchmarkRuntime.Create();
 
         _nativeBaseline = (delegate* unmanaged<uint>)WriteBaseline(_runtime.CodeHeap);
         _deviceType = (delegate* unmanaged<uint>)Shim("XSystemGetDeviceType");
@@ -102,15 +92,10 @@ public unsafe class ShimCallBenchmarks : IDisposable
     {
     }
 
-    /// <summary>No benchmark reaches an unresolved import in trap mode.</summary>
-    private static void IgnoreFailure(string message)
-    {
-    }
-
     private static nint WriteBaseline(CodeHeap heap)
     {
         var code = new X64Emitter();
-        code.MovEax(DeviceType);
+        code.MovEax(BenchmarkRuntime.DeviceType);
         code.Ret();
         nint function = heap.Write(code.ToArray());
         heap.Seal();
@@ -120,6 +105,6 @@ public unsafe class ShimCallBenchmarks : IDisposable
 
     private nint Shim(string name)
     {
-        return _runtime!.Shims.TryResolve(GdkModule.Name, name, 0)!.Address;
+        return BenchmarkRuntime.Gdk(_runtime!, name);
     }
 }

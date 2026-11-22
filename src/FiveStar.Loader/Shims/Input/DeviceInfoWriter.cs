@@ -24,6 +24,12 @@ internal static unsafe class DeviceInfoWriter
     private const int StringPart = MousePart + GameInputLayout.MouseInfoSize;
     private const int NamePart = StringPart + GameInputLayout.StringSize;
 
+    /// <summary>The APP_LOCAL_DEVICE_ID of a device: the SHA-256 of its name, stable across runs.</summary>
+    public static byte[] DeviceId(string name)
+    {
+        return SHA256.HashData(Encoding.UTF8.GetBytes(name));
+    }
+
     public static nint Write(DeviceDescription device)
     {
         byte[] name = Encoding.UTF8.GetBytes(device.Name);
@@ -57,7 +63,7 @@ internal static unsafe class DeviceInfoWriter
 
     private static void WriteIdentity(byte* info, DeviceDescription device)
     {
-        byte[] id = SHA256.HashData(Encoding.UTF8.GetBytes(device.Name));
+        byte[] id = DeviceId(device.Name);
         *(uint*)(info + GameInputLayout.InfoSizeOffset) = GameInputLayout.DeviceInfoSize;
         *(ushort*)(info + GameInputLayout.InfoVendorIdOffset) = device.VendorId;
         *(ushort*)(info + GameInputLayout.InfoProductIdOffset) = device.ProductId;

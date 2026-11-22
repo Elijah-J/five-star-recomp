@@ -204,4 +204,42 @@ internal static unsafe class XPackageShim
     {
         return GdkModule.True;
     }
+
+    /// <summary>HRESULT XPackageEnumerateFeatures(const char* packageIdentifier, void* context, XPackageFeatureEnumerationCallback*).</summary>
+    [Shim(GdkModule.Name, "XPackageEnumerateFeatures")]
+    [UnmanagedCallersOnly]
+    private static int XPackageEnumerateFeatures(byte* id, nint context, nint callback)
+    {
+        return ShimContext.Runtime.Gdk.Packages.EnumerateFeatures(id, callback);
+    }
+
+    /// <summary>HRESULT XPackageEstimateDownloadSize(const char* id, uint32_t selectorCount, XPackageChunkSelector*, uint64_t* downloadSize, bool* shouldPresentUserConfirmation).</summary>
+    [Shim(GdkModule.Name, "XPackageEstimateDownloadSize")]
+    [UnmanagedCallersOnly]
+    private static int XPackageEstimateDownloadSize(byte* id, uint selectorCount, nint selectors, ulong* size, byte* confirm)
+    {
+        return ShimContext.Runtime.Gdk.Packages.EstimateDownloadSize(id, size, confirm);
+    }
+
+    [Shim(GdkModule.Name, "XPackageGetWriteStats")]
+    [UnmanagedCallersOnly]
+    private static int XPackageGetWriteStats(byte* stats)
+    {
+        return PackageService.GetWriteStats(stats);
+    }
+
+    /// <summary>HRESULT XPackageRegisterPackageInstalled(XTaskQueueHandle, void* context, XPackageInstalledCallback*, XTaskQueueRegistrationToken*): no DLC ever installs.</summary>
+    [Shim(GdkModule.Name, "XPackageRegisterPackageInstalled")]
+    [UnmanagedCallersOnly]
+    private static int XPackageRegisterPackageInstalled(nint queue, nint context, nint callback, ulong* token)
+    {
+        return ShimContext.Runtime.Gdk.Registrations.Register("XPackageRegisterPackageInstalled", callback, token);
+    }
+
+    [Shim(GdkModule.Name, "XPackageUnregisterPackageInstalled")]
+    [UnmanagedCallersOnly]
+    private static byte XPackageUnregisterPackageInstalled(ulong token, byte wait)
+    {
+        return ShimContext.Runtime.Gdk.Registrations.Unregister(token);
+    }
 }

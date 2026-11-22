@@ -32,6 +32,11 @@ internal sealed unsafe class GameRuntimeService
 
     private const char CommentMark = '#';
 
+    // XGameRuntimeFeature values (XGameRuntimeFeature.h) of the features reported unavailable.
+    private const uint FeatureAppCapture = 1;
+    private const uint FeatureSpeechSynthesizer = 13;
+    private const uint FeatureGameStreaming = 21;
+
     private readonly ConcurrentDictionary<uint, bool> _featureQueries = new();
     private readonly ConcurrentDictionary<(Guid Clsid, Guid Iid), int> _census = new();
     private readonly Dictionary<(Guid Clsid, Guid Iid), nint> _objects = [];
@@ -101,15 +106,20 @@ internal sealed unsafe class GameRuntimeService
         return HResult.Ok;
     }
 
-    /// <summary>Every feature is reported available; each feature is logged once.</summary>
+    /// <summary>
+    /// Every feature is available except the ones that need console hardware or services with no PC stand-in: app
+    /// capture, speech synthesis and game streaming. Each feature is logged once.
+    /// </summary>
     public bool IsFeatureAvailable(uint feature)
     {
-        if (_featureQueries.TryAdd(feature, true))
+        bool available = feature != FeatureAppCapture && feature != FeatureSpeechSynthesizer && feature != FeatureGameStreaming;
+
+        if (_featureQueries.TryAdd(feature, available))
         {
-            _log.Info($"  [gdk] XGameRuntimeIsFeatureAvailable({feature}) -> true (logged once per feature)");
+            _log.Info($"  [gdk] XGameRuntimeIsFeatureAvailable({feature}) -> {available} (logged once per feature)");
         }
 
-        return true;
+        return available;
     }
 
     public void ReportError(int hr, byte* message)

@@ -3,6 +3,7 @@
 
 using System.Runtime.InteropServices;
 using FiveStar.Loader.Native;
+using FiveStar.Loader.Shims.Input;
 
 namespace FiveStar.Loader.Shims.Gdk;
 
@@ -21,6 +22,15 @@ internal sealed unsafe class UserService
 
     /// <summary>The name XUserAddAsync / XUserAddResult share as async identity.</summary>
     public const string AddApi = "XUserAddAsync";
+
+    public const string FindControllerApi = "XUserFindControllerForUserWithUiAsync";
+
+    /// <summary>sizeof(APP_LOCAL_DEVICE_ID).</summary>
+    public const int DeviceIdSize = 32;
+
+    // XUserDefaultAudioEndpointKind CommunicationRender and CommunicationCapture.
+    private const uint EndpointRender = 0;
+    private const uint EndpointCapture = 1;
 
     // Unconfirmed XUser error HRESULTs (facility 0x924, codes 0x5100 and up); check against XUser.h.
     private const int DeferralNotAvailable = unchecked((int)0x89245103);
@@ -48,6 +58,9 @@ internal sealed unsafe class UserService
     }
 
     public int RefCount => Volatile.Read(ref _refs);
+
+    /// <summary>The device the player's controller is: the GameInput id of the first XInput gamepad.</summary>
+    public static ReadOnlySpan<byte> ControllerId => DeviceInfoWriter.DeviceId(InputDeviceCatalog.GamepadName(0));
 
     public bool IsUser(nint handle)
     {
@@ -192,6 +205,65 @@ internal sealed unsafe class UserService
         }
 
         *token = (ulong)Interlocked.Increment(ref _changeToken);
+
+        return HResult.Ok;
+    }
+
+    /// <summary>XUserFindForDevice: every input device belongs to the one player.</summary>
+    public int FindForDevice(byte* deviceId, nint* handle)
+    {
+        if (handle == null)
+        {
+            return HResult.Pointer;
+        }
+
+        if (deviceId == null)
+        {
+            return HResult.InvalidArgument;
+        }
+
+        *handle = Reference();
+
+        return HResult.Ok;
+    }
+
+    /// <summary>
+    /// XUserGetDefaultAudioEndpointUtf16: the id of the PC's default communications device for that direction, in
+    /// the UTF-16 string-out convention; E_NOTFOUND when Windows has none.
+    /// </summary>
+    public static int GetDefaultAudioEndpoint(ulong localId, uint kind, nuint count, char* buffer, nuint* used)
+    {
+        if (localId != LocalId)
+        {
+            return UserNotFound;
+        }
+
+        if (kind != EndpointRender && kind != EndpointCapture)
+        {
+            return HResult.InvalidArgument;
+        }
+
+        string? id = AudioEndpointProbe.DefaultCommunications((int)kind);
+
+        if (id is null)
+        {
+            return HResult.NotFound;
+        }
+
+        nuint needed = (nuint)id.Length + 1;
+
+        if (used != null)
+        {
+            *used = needed;
+        }
+
+        if (buffer == null || count < needed)
+        {
+            return HResult.NotSufficientBuffer;
+        }
+
+        id.CopyTo(new Span<char>(buffer, id.Length));
+        buffer[id.Length] = '\0';
 
         return HResult.Ok;
     }

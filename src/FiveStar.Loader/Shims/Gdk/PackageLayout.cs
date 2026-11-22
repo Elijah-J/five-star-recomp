@@ -39,6 +39,9 @@ internal static class PackageLayout
     /// <summary>XPACKAGE_IDENTIFIER_MAX_LENGTH.</summary>
     public const int IdentifierMaxLength = 33;
 
+    /// <summary>struct XPackageWriteStats { uint64_t interval, budget, elapsed, bytesWritten; }.</summary>
+    public const int WriteStatsSize = 32;
+
     /// <summary>The size every installation monitor reports as fully installed: 1 GiB.</summary>
     public const ulong ReportedPackageBytes = 1UL << 30;
 }

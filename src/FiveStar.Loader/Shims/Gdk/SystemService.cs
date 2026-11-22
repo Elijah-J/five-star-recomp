@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+using System.Security.Cryptography;
 using System.Text;
 using FiveStar.Loader.Native;
 
@@ -11,6 +12,8 @@ internal sealed unsafe class SystemService : IDisposable
 {
     /// <summary>XSystemDeviceType::XboxScarlettAnaconda (Series X), the device the shipped build targets.</summary>
     public const uint XboxScarlettAnaconda = 7;
+
+    public const string PromptForSpaceApi = "XPersistentLocalStoragePromptUserForSpaceAsync";
 
     private const string ConsoleId = "XLOADER.0000.0000.0000.0000.0000.0001";
     private const string SandboxId = "RETAIL";
@@ -73,6 +76,17 @@ internal sealed unsafe class SystemService : IDisposable
     public static int GetSandboxId(nuint size, byte* id, nuint* used)
     {
         return Utf8Text.Write(SandboxId, size, id, used);
+    }
+
+    /// <summary>
+    /// XSystemGetAppSpecificDeviceId: Base64 of SHA-256 over the title id and the PC name, 44 characters
+    /// (XSystemAppSpecificDeviceIdBytes is 45 with the NUL); stable for one title on one PC, different across titles.
+    /// </summary>
+    public int GetAppSpecificDeviceId(nuint size, byte* id, nuint* used)
+    {
+        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{_config.TitleIdText}|{Environment.MachineName}"));
+
+        return Utf8Text.Write(Convert.ToBase64String(hash), size, id, used);
     }
 
     public void SetTimeSensitive(bool value)
@@ -140,9 +154,8 @@ internal sealed unsafe class SystemService : IDisposable
             return HResult.Pointer;
         }
 
-        ulong declared = _config.Identity.PersistentLocalStorageBytes;
-        ulong total = declared != 0 ? declared : DefaultLocalStorageBytes;
-        ulong used = (ulong)new DirectoryInfo(LocalStorage()).EnumerateFiles("*", SearchOption.AllDirectories).Sum(f => f.Length);
+        ulong total = LocalStorageTotalBytes();
+        ulong used = LocalStorageUsedBytes();
         ulong free = total > used ? total - used : 0;
         info[SpaceAvailableSlot] = free;
         info[SpaceFreeSlot] = free;
@@ -153,9 +166,31 @@ internal sealed unsafe class SystemService : IDisposable
         return HResult.Ok;
     }
 
+    /// <summary>Whether <paramref name="requested"/> more bytes fit in the local storage the title declared.</summary>
+    public bool LocalStorageFits(ulong requested)
+    {
+        ulong total = LocalStorageTotalBytes();
+        ulong used = LocalStorageUsedBytes();
+
+        return used <= total && requested <= total - used;
+    }
+
     public void Dispose()
     {
         _timeSensitive.Dispose();
+    }
+
+    private ulong LocalStorageTotalBytes()
+    {
+        ulong declared = _config.Identity.PersistentLocalStorageBytes;
+        ulong total = declared != 0 ? declared : DefaultLocalStorageBytes;
+
+        return total;
+    }
+
+    private ulong LocalStorageUsedBytes()
+    {
+        return (ulong)new DirectoryInfo(LocalStorage()).EnumerateFiles("*", SearchOption.AllDirectories).Sum(f => f.Length);
     }
 
     private string LocalStorage()

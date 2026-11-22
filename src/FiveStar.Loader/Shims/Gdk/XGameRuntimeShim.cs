@@ -38,14 +38,17 @@ internal static unsafe class XGameRuntimeShim
         ShimContext.Runtime.Gdk.Runtime.Uninitialize("XGameRuntimeUninitialize");
     }
 
-    /// <summary>bool XGameRuntimeIsFeatureAvailable(XGameRuntimeFeature feature): always true.</summary>
+    /// <summary>bool XGameRuntimeIsFeatureAvailable(XGameRuntimeFeature feature).</summary>
     [Shim(GdkModule.Name, "XGameRuntimeIsFeatureAvailable")]
     [UnmanagedCallersOnly]
     private static byte XGameRuntimeIsFeatureAvailable(uint feature)
     {
-        ShimContext.Runtime.Gdk.Runtime.IsFeatureAvailable(feature);
+        if (ShimContext.Runtime.Gdk.Runtime.IsFeatureAvailable(feature))
+        {
+            return GdkModule.True;
+        }
 
-        return GdkModule.True;
+        return GdkModule.False;
     }
 
     /// <summary>InitializeApiImpl(ecx, edx): two version words (inferred).</summary>

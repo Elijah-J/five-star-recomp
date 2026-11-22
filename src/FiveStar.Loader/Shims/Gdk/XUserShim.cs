@@ -172,6 +172,107 @@ internal static unsafe class XUserShim
         return GdkModule.True;
     }
 
+    /// <summary>HRESULT XUserFindForDevice(const APP_LOCAL_DEVICE_ID* deviceId, XUserHandle* handle).</summary>
+    [Shim(GdkModule.Name, "XUserFindForDevice")]
+    [UnmanagedCallersOnly]
+    private static int XUserFindForDevice(byte* deviceId, nint* handle)
+    {
+        return ShimContext.Runtime.Gdk.Users.FindForDevice(deviceId, handle);
+    }
+
+    /// <summary>HRESULT XUserFindControllerForUserWithUiAsync(XUserHandle user, XAsyncBlock* async).</summary>
+    [Shim(GdkModule.Name, UserService.FindControllerApi)]
+    [UnmanagedCallersOnly]
+    private static int XUserFindControllerForUserWithUiAsync(nint user, nint async)
+    {
+        var gdk = ShimContext.Runtime.Gdk;
+
+        if (!gdk.Users.IsUser(user))
+        {
+            return HResult.InvalidArgument;
+        }
+
+        try
+        {
+            return gdk.Async.BeginManaged(async, UserService.FindControllerApi, new ControllerPairOperation());
+        }
+        catch (Exception e)
+        {
+            return gdk.Boundary.Failed(nameof(XUserFindControllerForUserWithUiAsync), e);
+        }
+    }
+
+    /// <summary>HRESULT XUserFindControllerForUserWithUiResult(XAsyncBlock* async, APP_LOCAL_DEVICE_ID* deviceId).</summary>
+    [Shim(GdkModule.Name, "XUserFindControllerForUserWithUiResult")]
+    [UnmanagedCallersOnly]
+    private static int XUserFindControllerForUserWithUiResult(nint async, byte* deviceId)
+    {
+        var gdk = ShimContext.Runtime.Gdk;
+
+        if (deviceId == null)
+        {
+            return HResult.Pointer;
+        }
+
+        try
+        {
+            return gdk.Async.ManagedResult(async, UserService.FindControllerApi, UserService.DeviceIdSize, (nint)deviceId);
+        }
+        catch (Exception e)
+        {
+            return gdk.Boundary.Failed(nameof(XUserFindControllerForUserWithUiResult), e);
+        }
+    }
+
+    /// <summary>HRESULT XUserGetDefaultAudioEndpointUtf16(XUserLocalId, XUserDefaultAudioEndpointKind, size_t count, wchar_t* id, size_t* used).</summary>
+    [Shim(GdkModule.Name, "XUserGetDefaultAudioEndpointUtf16")]
+    [UnmanagedCallersOnly]
+    private static int XUserGetDefaultAudioEndpointUtf16(ulong localId, uint kind, nuint count, char* endpoint, nuint* used)
+    {
+        var gdk = ShimContext.Runtime.Gdk;
+
+        try
+        {
+            return UserService.GetDefaultAudioEndpoint(localId, kind, count, endpoint, used);
+        }
+        catch (Exception e)
+        {
+            return gdk.Boundary.Failed(nameof(XUserGetDefaultAudioEndpointUtf16), e);
+        }
+    }
+
+    /// <summary>HRESULT XUserRegisterForDeviceAssociationChanged(XTaskQueueHandle, void* context, callback, XTaskQueueRegistrationToken*).</summary>
+    [Shim(GdkModule.Name, "XUserRegisterForDeviceAssociationChanged")]
+    [UnmanagedCallersOnly]
+    private static int XUserRegisterForDeviceAssociationChanged(nint queue, nint context, nint callback, ulong* token)
+    {
+        return ShimContext.Runtime.Gdk.Registrations.Register("XUserRegisterForDeviceAssociationChanged", callback, token);
+    }
+
+    [Shim(GdkModule.Name, "XUserRegisterForDefaultAudioEndpointUtf16Changed")]
+    [UnmanagedCallersOnly]
+    private static int XUserRegisterForDefaultAudioEndpointUtf16Changed(nint queue, nint context, nint callback, ulong* token)
+    {
+        return ShimContext.Runtime.Gdk.Registrations.Register("XUserRegisterForDefaultAudioEndpointUtf16Changed", callback, token);
+    }
+
+    /// <summary>bool XUserUnregisterFor*(XTaskQueueRegistrationToken token, bool wait).</summary>
+    [Shim(GdkModule.Name, "XUserUnregisterForDeviceAssociationChanged")]
+    [Shim(GdkModule.Name, "XUserUnregisterForDefaultAudioEndpointUtf16Changed")]
+    [UnmanagedCallersOnly]
+    private static byte XUserUnregisterForEvent(ulong token, byte wait)
+    {
+        return ShimContext.Runtime.Gdk.Registrations.Unregister(token);
+    }
+
+    /// <summary>bool XUserIsSignOutPresent(): the offline user never signs out.</summary>
+    [Shim(GdkModule.Name, "XUserIsSignOutPresent")]
+    [UnmanagedCallersOnly]
+    private static byte XUserIsSignOutPresent()
+    {
+        return GdkModule.False;
+    }
+
     [Shim(GdkModule.Name, "XUserGetSignOutDeferral")]
     [UnmanagedCallersOnly]
     private static int XUserGetSignOutDeferral(nint* deferral)

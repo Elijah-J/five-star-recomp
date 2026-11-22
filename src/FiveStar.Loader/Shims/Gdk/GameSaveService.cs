@@ -396,12 +396,38 @@ internal sealed unsafe class GameSaveService
             return HResult.InvalidArgument;
         }
 
+        return _async.BeginManaged(async, SaveFolderApi, new SaveFolderOperation(SaveFilesFolderFor(configId)));
+    }
+
+    /// <summary>XGameSaveFilesGetRemainingQuota: the XGameSave quota less what the configuration's save-files folder holds.</summary>
+    public int GetSaveFilesRemainingQuota(nint user, byte* configId, long* remaining)
+    {
+        if (!_users.IsUser(user) || remaining == null)
+        {
+            return HResult.InvalidArgument;
+        }
+
+        var folder = new DirectoryInfo(SaveFilesFolderFor(configId));
+        long used = 0;
+
+        if (folder.Exists)
+        {
+            used = folder.EnumerateFiles("*", SearchOption.AllDirectories).Sum(f => f.Length);
+        }
+
+        *remaining = Math.Max(0, SaveLayout.QuotaBytes - used);
+
+        return HResult.Ok;
+    }
+
+    /// <summary>&lt;save root&gt;\savefiles\&lt;xuid&gt;\&lt;configId&gt;.</summary>
+    private string SaveFilesFolderFor(byte* configId)
+    {
         _config.Ensure();
         string id = NameEscaping.Encode(Utf8Text.Read((nint)configId) ?? DefaultConfigId);
         string xuid = UserService.Xuid.ToString(XuidFormat, CultureInfo.InvariantCulture);
-        string folder = Path.Combine(_config.SaveRoot, SaveFilesFolder, xuid, id);
 
-        return _async.BeginManaged(async, SaveFolderApi, new SaveFolderOperation(folder));
+        return Path.Combine(_config.SaveRoot, SaveFilesFolder, xuid, id);
     }
 
     private static string[]? ReadNames(byte** names, uint count)

@@ -61,15 +61,25 @@ ntdll answers only for OS-loaded modules; mapping it lets the loader bind that i
 | `GetProcAddress` (any module) | mapped image: its exports; virtual module: the shim table (unknown name: NULL, error 127); OS module: the "*" shim of that name if there is one, else the real export |
 | `FreeLibrary` (any module) | mapped image: reference count down; an image first mapped by `LoadLibrary` and imported by no other image is unloaded at 0; virtual module: TRUE |
 | `CreateFile{W,A}`, `CreateFile2`, `GetFileAttributes{W,ExW}`, `fopen`, `_wfopen`, `_fsopen`, `_wfsopen`, `_open`, `_wopen` (any module) | the file overlay (below), then the real function; an ANSI call that is redirected opens the mod file through the wide function |
-| `XGameRuntimeInitialize*`, `XGameRuntimeIsFeatureAvailable` | succeed; every feature available |
+| `XGameRuntimeInitialize*`, `XGameRuntimeIsFeatureAvailable` | succeed; every feature available except XAppCapture, XSpeechSynthesizer and XGameStreaming |
 | `XTaskQueue*` | Manual, ThreadPool, SerializedThreadPool and Immediate ports; composite queues; delayed callbacks; waiters (re-armed after each signal); monitors; terminate (pending callbacks run with `canceled = true`); duplicate and close reference counted; a process queue (ThreadPool/ThreadPool) created on first use |
 | `XAsync*` | Begin, Schedule, Complete, GetStatus (with wait), GetResultSize, GetResult (identity and buffer checked), Cancel, Run; DoWork on the work port, the completion routine on the completion port, Cleanup once |
-| `XUser*` | one signed-in offline user "Player" (fixed XUID); add, duplicate, close, find, compare, gamertag, state, adult age group, every privilege granted; change events register and never fire |
-| `XGameSave*`, `XGameSaveFilesGetFolderWithUi*` | folders under `--save-dir`: `saves\<xuid>\<configId>\<container>\<blob>`, names %-escaped; updates staged and written per blob through a temporary file; sync and async reads, enumeration, deletes; 256 MB quota |
-| `XPackage*` | one installed game package at the package root with the identity from `MicrosoftGame.config`; mount returns the package root; chunks ready; installation monitors at 100 %; no DLC |
+| `XUser*` | one signed-in offline user "Player" (fixed XUID); add, duplicate, close, find (by id, local id or any device), compare, gamertag, state, adult age group, every privilege granted; the controller picker answers the first XInput gamepad's GameInput device id; the audio endpoint is the PC's default communications device (MMDevice id); change, device-association and endpoint events register and never fire; never signing out |
+| `XGameSave*`, `XGameSaveFiles*` | folders under `--save-dir`: `saves\<xuid>\<configId>\<container>\<blob>`, names %-escaped; updates staged and written per blob through a temporary file; sync and async reads, enumeration, deletes; 256 MB quota, also for the save-files folder |
+| `XPackage*` | one installed game package at the package root with the identity from `MicrosoftGame.config`; mount returns the package root; chunks ready; installation monitors at 100 %; no DLC, no features, nothing to download, no install writes |
 | `XStoreCreateContext`, `XStoreQueryGameLicense*` | an active, full, never-expiring license |
-| `XSystem*`, `XThread*`, `XGameGetXboxTitleId`, `XGameEventWrite`, `XError*`, `XPersistentLocalStorage*` | device type 7 (Series X) unless `--device-type`; fixed console and sandbox ids; time sensitivity per thread; title id from the config; events dropped; local storage in `--save-dir\localstorage` |
-| other `xgameruntime.dll` functions of the public headers | not implemented: E_NOTIMPL, or 0 for bool and void functions; first call logged |
+| `XSystem*`, `XThread*`, `XGameGetXboxTitleId`, `XGameEventWrite`, `XError*`, `XPersistentLocalStorage*` | device type 7 (Series X) unless `--device-type`; fixed console and sandbox ids; app-specific device id: Base64 SHA-256 of title id and PC name; any non-null handle valid; time sensitivity per thread; title id from the config; events dropped; local storage in `--save-dir\localstorage`, a space prompt succeeds when the space is free, else E_ABORT |
+| `XGameUi*` | no system UI: dialogs complete through XAsync as if closed at once; S_OK for achievements, profile card, invites, error and state share; the message dialog answers its cancel button; the player picker picks nobody; text entry and web sign-in end with E_ABORT |
+| `XNetworking*` | connectivity hint: network initialized, level None, cost unrestricted; preferred UDP port 3074 (sync and async); change events register and never fire |
+| `XDisplay*` | HDR: Enabled with the display's luminance when the primary display's desktop runs HDR10 (DXGI `GetDesc1`), else Disabled; a timeout deferral holds a "display required" power request |
+| `XClosedCaption*`, `XHighContrastGetMode`, `XSpeechSynthesizerEnumerateInstalledVoices` | captions white on black at scale 1, enabled as the game last set; high contrast from the Windows setting; no voices |
+| `XLaunchUri`, `XLaunchRestartOnCrash`, `XGameInvite*`, `XGameActivation*`, `XGameProtocol*` | an http(s) URI opens in the browser, others are logged; restart arguments recorded; invite, activation and protocol events register and never fire |
+| other `xgameruntime.dll` functions of the public headers | not implemented: E_NOTIMPL, E_GAMESTREAMING_NOT_INITIALIZED for game streaming, or 0 for bool, count and void functions; first call logged |
+
+Of the 365 named thunks in `libHttpClient.GDK.dll`, 154 have a shim and 211 a not-implemented entry, so each one returns
+a deliberate value (before this table grew: 88 shims, 186 entries, 91 left to the module default). Of the 418 thunks of
+the PC GDK library, 177 have a shim. The library has no XAchievements, XUserStats, XThread affinity, XMemory or clock
+functions; achievements and stats are Xbox services that titles reach over HTTP.
 | `gameinput.dll` `GameInputCreate` | an IGameInput over XInput, the keyboard, the mouse and a keyboard-and-mouse virtual gamepad (below); also registered as `xgameruntime.dll!GameInputCreate` for the thunk ABI table |
 
 The GDK shims also answer for any `api-ms-win-*gaming*` or `ext-ms-win-*gaming*` module name, for symbols starting
@@ -242,8 +252,29 @@ The output lists the images, an import table per image and module, the totals an
 `dotnet test tests/FiveStar.Loader.Tests`; with `FIVESTAR_DUMP` set to the dump folder they also load the six Xbox
 DLLs (825 imports, none unresolved), run the inspected exports and read the package identity.
 
+## Call cost
+
+`dotnet run -c Release --project benchmarks/FiveStar.Benchmarks -- --filter * --job short` (BenchmarkDotNet short job,
+3 iterations; Ryzen 9 7950X3D, .NET 10.0.7):
+
+| Path | Mean | Allocated |
+|---|---:|---:|
+| native to native (`mov eax,7; ret`), the baseline | 3.0 ns | 0 |
+| native to shim (`XSystemGetDeviceType` through its IAT pointer) | 6.5 ns | 0 |
+| a GDK call as the game makes it: `QueryApiImpl`, the slot through the drop-this thunk, `Release` | 58 ns | 0 |
+| XTaskQueue submit and dispatch of a no-op on a manual queue | 58 ns | 0 |
+| XAsync round trip: `XAsyncRun`, work and completion dispatched on a manual queue, `XAsyncGetStatus` | 308 ns | 576 B |
+| a callback submitted to a thread-pool queue, waited for until a pool thread ran it | 841 ns | 56 B |
+| `XMemAlloc` and `XMemFree` of 64 bytes | 74 ns | 56 B |
+
+Most of the thunk path is `QueryApiImpl`'s lookup of the (clsid, iid) object under a lock; the shim behind it is the
+6.5 ns path.
+
 ## Unknown
 
+- The signatures of `XThreadVerifyNotTimeSensitive` and `XPackageGetIdentifier`, which the PC library exports but no
+  public header declares (the first is answered with S_OK, the second is not implemented).
+- Whether the console reports connectivity level None or LocalAccess when Xbox services are unreachable.
 - The names of console-only thunks the PC GDK lacks (43 in `libHttpClient.GDK.dll`, most of them XUser through a
   console-only interface id), and the API-set names the game imports GDK functions from (the alias is a pattern).
 - Signatures inferred from call sites: `InitializeApiImpl*`, `QueryApiImpl`, `XErrorReport`, `XMemVirtualQuery`,

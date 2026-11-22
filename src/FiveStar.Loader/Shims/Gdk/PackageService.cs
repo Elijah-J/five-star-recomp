@@ -203,6 +203,58 @@ internal sealed unsafe class PackageService
         return HResult.Ok;
     }
 
+    /// <summary>XPackageEnumerateFeatures: the game declares no optional features, so the callback is never called.</summary>
+    public int EnumerateFeatures(byte* id, nint callback)
+    {
+        if (callback == 0)
+        {
+            return HResult.InvalidArgument;
+        }
+
+        if (!IsOurs(Utf8Text.Read((nint)id)))
+        {
+            return HResult.NotFound;
+        }
+
+        return HResult.Ok;
+    }
+
+    /// <summary>XPackageEstimateDownloadSize: everything is installed, so nothing is left to download.</summary>
+    public int EstimateDownloadSize(byte* id, ulong* size, byte* confirm)
+    {
+        if (size == null)
+        {
+            return HResult.Pointer;
+        }
+
+        if (!IsOurs(Utf8Text.Read((nint)id)))
+        {
+            return HResult.NotFound;
+        }
+
+        *size = 0;
+
+        if (confirm != null)
+        {
+            *confirm = GdkModule.False;
+        }
+
+        return HResult.Ok;
+    }
+
+    /// <summary>XPackageGetWriteStats: no install writes, so interval, budget, elapsed and bytes written are all 0.</summary>
+    public static int GetWriteStats(byte* stats)
+    {
+        if (stats == null)
+        {
+            return HResult.Pointer;
+        }
+
+        new Span<byte>(stats, PackageLayout.WriteStatsSize).Clear();
+
+        return HResult.Ok;
+    }
+
     private static void WriteDetails(byte* details, nint[] pointers, Version version)
     {
         new Span<byte>(details, PackageLayout.DetailsSize).Clear();
