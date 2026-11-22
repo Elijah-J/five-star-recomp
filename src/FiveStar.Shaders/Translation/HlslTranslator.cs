@@ -7,23 +7,29 @@ namespace FiveStar.Shaders.Translation;
 
 /// <summary>
 /// Translates a native RDNA program into HLSL (shader model 6.7). One HLSL invocation is one GPU lane: registers are
-/// uint variables, EXEC is a per-lane bool, control flow is a wave-uniform dispatch over basic blocks and resources are
-/// bindless heap indices. docs/shader-translation.md describes the model.
+/// uint variables, EXEC is a per-lane bool, control flow is a wave-uniform dispatch over basic blocks (or, as an option,
+/// structured if/else and loops) and resources are bindless heap indices. docs/shader-translation.md describes the model.
 /// </summary>
 public static class HlslTranslator
 {
-    /// <summary>Translates a program; throws <see cref="UnsupportedProgramException"/> for what it cannot handle.</summary>
+    /// <summary>Translates a program in the dispatch form; throws <see cref="UnsupportedProgramException"/> for what it cannot handle.</summary>
     public static TranslationResult Translate(ShaderProgram program)
+    {
+        return Translate(program, new TranslationOptions(StructuredControlFlow: false));
+    }
+
+    /// <summary>Translates a program; throws <see cref="UnsupportedProgramException"/> for what it cannot handle.</summary>
+    public static TranslationResult Translate(ShaderProgram program, TranslationOptions options)
     {
         string hlsl;
 
         if (program.Stage == ShaderStage.Geometry)
         {
-            hlsl = GeometryProgramBuilder.Build(program);
+            hlsl = GeometryProgramBuilder.Build(program, options);
         }
         else
         {
-            hlsl = ProgramTranslator.Translate(program, program.Instructions, program.Stage, copyShader: false);
+            hlsl = ProgramTranslator.Translate(program, program.Instructions, program.Stage, copyShader: false, options);
         }
 
         return new TranslationResult(program.Stage, hlsl);

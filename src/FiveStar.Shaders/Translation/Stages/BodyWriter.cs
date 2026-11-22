@@ -2,13 +2,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using FiveStar.Shaders.Translation.Core;
+using FiveStar.Shaders.Translation.Structure;
 
 namespace FiveStar.Shaders.Translation.Stages;
 
 /// <summary>
 /// Writes the entry point body: register declarations (uint per register, bool per lane mask, <c>active</c> for EXEC),
 /// the prologue of hardware inputs, then the blocks. With control flow the blocks run in a wave-uniform dispatch loop
-/// over <c>pc</c>; a two-phase mesh shader runs it twice around SetMeshOutputCounts.
+/// over <c>pc</c>, or as structured if/else and loops when that option is set and the graph allows it; a two-phase mesh
+/// shader runs its body twice around SetMeshOutputCounts.
 /// </summary>
 internal sealed class BodyWriter
 {
@@ -28,11 +30,15 @@ internal sealed class BodyWriter
 
     private readonly TranslationState _state;
     private readonly MeshDeclarations _mesh;
+    private readonly StructuredBodyWriter _structured;
+    private readonly bool _useStructured;
 
-    public BodyWriter(TranslationState state, MeshDeclarations mesh)
+    public BodyWriter(TranslationState state, MeshDeclarations mesh, StructuredBodyWriter structured, bool useStructured)
     {
         _state = state;
         _mesh = mesh;
+        _structured = structured;
+        _useStructured = useStructured;
     }
 
     public void Write(List<string> lines)
@@ -45,6 +51,10 @@ internal sealed class BodyWriter
             {
                 lines.AddRange(block.Lines.Where(line => !line.Contains("pc = ", StringComparison.Ordinal)));
             }
+        }
+        else if (_useStructured)
+        {
+            WriteStructured(lines);
         }
         else
         {
@@ -94,28 +104,58 @@ internal sealed class BodyWriter
         lines.AddRange(_state.Prologue);
     }
 
+    private bool IsTwoPhaseMesh => _state.MeshYield && _state.Stage == ShaderStage.Mesh;
+
+    /// <summary>The structured form; the dispatch form (with a comment naming the reason) when the graph does not allow it.</summary>
+    private void WriteStructured(List<string> lines)
+    {
+        List<string> body;
+
+        try
+        {
+            body = IsTwoPhaseMesh ? Phases(_structured.Phase) : _structured.Program();
+        }
+        catch (StructuringFailedException exception)
+        {
+            lines.Add($"  // control flow: dispatch loop ({exception.Message})");
+            WriteDispatch(lines);
+
+            return;
+        }
+
+        lines.AddRange(body);
+    }
+
     private void WriteDispatch(List<string> lines)
     {
-        lines.Add("  uint pc = 0, pc_resume = 0;");
-
-        if (!_state.MeshYield || _state.Stage != ShaderStage.Mesh)
+        if (!IsTwoPhaseMesh)
         {
+            lines.Add("  uint pc = 0, pc_resume = 0;");
             lines.AddRange(Dispatch(dropOutputs: false));
 
             return;
         }
 
-        // Phase 1 runs without output writes until the first barrier after GS_ALLOC_REQ; SetMeshOutputCounts then
-        // dominates every output write; phase 2 resumes with direct exports. Barriers stay at the top level of the outer
-        // loop (a barrier inside the switch, even in a block never re-entered, crashes WARP's shader compiler).
-        lines.Add("  [loop] for (;;) {");
-        lines.AddRange(Dispatch(dropOutputs: true));
+        lines.AddRange(Phases(Dispatch));
+    }
+
+    /// <summary>
+    /// Phase 1 runs without output writes until the first barrier after GS_ALLOC_REQ; SetMeshOutputCounts then
+    /// dominates every output write; phase 2 resumes with direct exports. Barriers stay at the top level of the outer
+    /// loop (a barrier inside the switch, even in a block never re-entered, crashes WARP's shader compiler).
+    /// </summary>
+    private List<string> Phases(Func<bool, List<string>> phase)
+    {
+        var lines = new List<string> { "  uint pc = 0, pc_resume = 0;", "  [loop] for (;;) {" };
+        lines.AddRange(phase(true));
         lines.AddRange(PhaseOneEnd);
 
         lines.Add($"  SetMeshOutputCounts(min(g_ms_nv, {_mesh.MaxVertices}u), min(g_ms_np, {_mesh.MaxPrimitives}u));");
         lines.Add("  [loop] for (;;) {");
-        lines.AddRange(Dispatch(dropOutputs: false));
+        lines.AddRange(phase(false));
         lines.AddRange(PhaseTwoEnd);
+
+        return lines;
     }
 
     /// <summary>The wave-uniform block dispatch: every lane follows the same pc; divergence lives in <c>active</c>.</summary>

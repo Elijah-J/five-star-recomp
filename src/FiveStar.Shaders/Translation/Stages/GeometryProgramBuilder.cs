@@ -48,7 +48,7 @@ internal static partial class GeometryProgramBuilder
         [5] = "TriangleStream",
     };
 
-    public static string Build(ShaderProgram program)
+    public static string Build(ShaderProgram program, TranslationOptions options)
     {
         var psv = program.PipelineState;
         var recordDwords = GsVertexLayout.VertexDwords(program.Instructions);
@@ -73,8 +73,8 @@ internal static partial class GeometryProgramBuilder
             throw new UnsupportedProgramException("GS max vertex count unknown");
         }
 
-        var copy = CopyShader(program);
-        var main = ProgramTranslator.Translate(program, program.Instructions, ShaderStage.Geometry, copyShader: false);
+        var copy = CopyShader(program, options);
+        var main = ProgramTranslator.Translate(program, program.Instructions, ShaderStage.Geometry, copyShader: false, options);
         main = ExportStructPattern().Replace(main.Replace(PreludeInclude, string.Empty, StringComparison.Ordinal), string.Empty);
 
         var inputs = program.Signatures.Inputs;
@@ -99,7 +99,7 @@ internal static partial class GeometryProgramBuilder
     }
 
     /// <summary>The copy shader as a function <c>gs_copy</c> returning the Out struct.</summary>
-    private static string CopyShader(ShaderProgram program)
+    private static string CopyShader(ShaderProgram program, TranslationOptions options)
     {
         var copyProgram = program with
         {
@@ -109,7 +109,7 @@ internal static partial class GeometryProgramBuilder
             PipelineState = null,
         };
         var instructions = program.CopyShader ?? throw new UnsupportedProgramException("GS copy shader missing");
-        var text = ProgramTranslator.Translate(copyProgram, instructions, ShaderStage.Vertex, copyShader: true);
+        var text = ProgramTranslator.Translate(copyProgram, instructions, ShaderStage.Vertex, copyShader: true, options);
 
         if (!text.Contains(CopyEntry, StringComparison.Ordinal))
         {

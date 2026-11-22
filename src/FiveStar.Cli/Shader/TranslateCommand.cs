@@ -16,14 +16,15 @@ internal static class TranslateCommand
     private const int CountWidth = 6;
     private const int TwoPaths = 2;
     private const string NoCompileFlag = "no-compile";
+    private const string StructuredFlag = "structured";
 
     public static int Run(IReadOnlyList<string> args)
     {
-        var arguments = new CommandArguments(args, new HashSet<string> { NoCompileFlag });
+        var arguments = new CommandArguments(args, new HashSet<string> { NoCompileFlag, StructuredFlag });
 
         if (arguments.Positional.Count != TwoPaths)
         {
-            throw new ArgumentException("translate <fssm-or-folder> <out> [--retry results.json] [--stages ps,vs,cs,ms,gs] [--jobs N]");
+            throw new ArgumentException("translate <fssm-or-folder> <out> [--retry results.json] [--stages ps,vs,cs,ms,gs] [--jobs N] [--structured]");
         }
 
         var programs = Programs(arguments);
@@ -38,7 +39,10 @@ internal static class TranslateCommand
             fallback = new MeshFallbackCompiler(compiler);
         }
 
-        var options = new CorpusOptions(arguments.Positional[1], Stages(arguments), arguments.IntegerOption("jobs") ?? Environment.ProcessorCount, retry);
+        var options = new CorpusOptions(arguments.Positional[1], Stages(arguments), arguments.IntegerOption("jobs") ?? Environment.ProcessorCount, retry)
+        {
+            Translation = new TranslationOptions(arguments.Flag(StructuredFlag)),
+        };
         var results = new CorpusTranslator(loader, compiler, fallback).Run(programs, options);
         Report(results);
 

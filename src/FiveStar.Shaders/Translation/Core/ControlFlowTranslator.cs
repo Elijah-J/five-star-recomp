@@ -16,6 +16,9 @@ internal sealed class ControlFlowTranslator
     private readonly OperandAccess _operands;
     private readonly InstructionTranslator _instructions;
 
+    // How the block being translated ends, once its terminator has been translated.
+    private BlockExit? _exit;
+
     public ControlFlowTranslator(TranslationState state, OperandAccess operands, InstructionTranslator instructions)
     {
         _state = state;
@@ -230,10 +233,11 @@ internal sealed class ControlFlowTranslator
 
             if (isLeader)
             {
-                CloseBlock(current, terminated, Hlsl.Hex(instruction.Address));
+                CloseBlock(current, terminated, instruction.Address);
                 current = instruction.Address;
                 _state.Body = [];
                 terminated = false;
+                _exit = null;
                 _state.Constants.Clear();
             }
 
@@ -243,10 +247,11 @@ internal sealed class ControlFlowTranslator
             }
         }
 
-        CloseBlock(current, terminated, "PC_END");
+        CloseBlock(current, terminated, null);
     }
 
-    private void CloseBlock(int? block, bool terminated, string next)
+    /// <summary>Ends a block; one that has no terminator falls through to <paramref name="next"/> (null: past the end).</summary>
+    private void CloseBlock(int? block, bool terminated, long? next)
     {
         if (block is null)
         {
@@ -255,10 +260,20 @@ internal sealed class ControlFlowTranslator
 
         if (!terminated)
         {
-            _state.Emit($"  pc = {next};");
+            if (next is null)
+            {
+                _state.Emit("  pc = PC_END;");
+                _exit = new BlockExit(BlockExitKind.End, null, null, null);
+            }
+            else
+            {
+                _state.Emit($"  pc = {Hlsl.Hex(next.Value)};");
+                _exit = new BlockExit(BlockExitKind.Jump, next, null, null);
+            }
         }
 
-        _state.Blocks.Add(new CodeBlock(block.Value, _state.Body));
+        var exit = _exit ?? throw new InvalidOperationException("block without exit");
+        _state.Blocks.Add(new CodeBlock(block.Value, _state.Body, exit));
     }
 
     /// <summary>Translates one instruction; true when it ends its block.</summary>
@@ -290,6 +305,7 @@ internal sealed class ControlFlowTranslator
         if (mnemonic == "s_endpgm")
         {
             _state.Emit("  pc = PC_END;");
+            _exit = new BlockExit(BlockExitKind.End, null, null, null);
 
             return true;
         }
@@ -297,6 +313,7 @@ internal sealed class ControlFlowTranslator
         if (mnemonic == "s_barrier" && _state.MeshYield)
         {
             _state.Emit($"  pc_resume = {Hlsl.Hex(instruction.Next)}; pc = PC_YIELD;");
+            _exit = new BlockExit(BlockExitKind.Yield, instruction.Next, null, null);
 
             return true;
         }
@@ -340,11 +357,13 @@ internal sealed class ControlFlowTranslator
         if (condition is null)
         {
             _state.Emit($"  pc = {Hlsl.Hex(target)};");
+            _exit = new BlockExit(BlockExitKind.Jump, target, null, null);
 
             return;
         }
 
         _state.Emit($"  pc = ({condition}) ? {Hlsl.Hex(target)} : {Hlsl.Hex(next)};");
+        _exit = new BlockExit(BlockExitKind.Conditional, target, next, condition);
     }
 
     private string? BranchCondition(string mnemonic)

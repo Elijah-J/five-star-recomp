@@ -27,7 +27,7 @@ internal static class ShaderCommands
         "  extract <shaders.rpf> <out>            write <out>/dxbc/*.dxbc (+ _manifest.tsv) and <out>/fssm/*.fssm",
         "  disasm <program.fssm> [--count N]      list the program's instructions (address, size, text)",
         "  translate <fssm-or-folder> <out>       translate to HLSL and compile with dxc, write <out>/results.json",
-        "        [--retry results.json] [--stages ps,vs,cs,ms,gs] [--jobs N] [--limit N] [--step K] [--no-compile]",
+        "        [--retry results.json] [--stages ps,vs,cs,ms,gs] [--jobs N] [--limit N] [--step K] [--no-compile] [--structured]",
         "  waves <out> <fssm-folder>              classify translated programs by wave-size dependence",
         "  unwrap <in.dxbc> <out.dxbc>            rewrite a container whose XDAT holds bitcode as standard DXBC",
         "  tool options: --llvm <bin folder> (or FIVESTAR_LLVM), --dxc <dxc path> (or FIVESTAR_DXC)",

@@ -9,4 +9,8 @@ namespace FiveStar.Shaders.Compilation;
 /// A corpus run: where the HLSL goes, which stages to translate (all when null), how many programs run at once, and
 /// the results.json of an earlier run whose final programs (ok, ok-msfb, skip-stage) are kept instead of re-run.
 /// </summary>
-public sealed record CorpusOptions(string OutputFolder, IReadOnlySet<ShaderStage>? Stages, int Parallelism, string? RetryResults);
+public sealed record CorpusOptions(string OutputFolder, IReadOnlySet<ShaderStage>? Stages, int Parallelism, string? RetryResults)
+{
+    /// <summary>The translator choices (the dispatch form unless set).</summary>
+    public TranslationOptions Translation { get; init; } = new(StructuredControlFlow: false);
+}

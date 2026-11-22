@@ -9,7 +9,8 @@ model 6.7. Public entry: `HlslTranslator.Translate(ShaderProgram) -> Translation
    programs with `+wavefrontsize64`); read ISG1/OSG1/PSV0 from `<fssm folder>/../dxbc/<name>.dxbc` when present.
 2. **Blocks** (`ControlFlowTranslator`): rewrite long jumps, split into basic blocks, drop unreachable blocks.
 3. **Emitters** (`Translation/Emitters`): one emitter per instruction family turns each instruction into HLSL statements.
-4. **Program** (`Translation/Stages`): structs, declarations, prologue, dispatch loop and output mapping.
+4. **Program** (`Translation/Stages`, `Translation/Structure`): structs, declarations, prologue, dispatch loop (or structured
+   control flow) and output mapping.
 5. **Compile** (`CorpusTranslator`): dxc, with the mesh fallback where needed.
 
 ## Execution model
@@ -31,6 +32,31 @@ lanes of a wave follow the same path and divergence lives only in `active`. Bloc
 leaders are the entry, branch targets and the instruction after a branch or an early `s_endpgm`; blocks not reachable
 from the entry (constant tables after the last `s_endpgm`) are skipped. A program without branches is emitted as
 straight-line code without the loop.
+
+**Structured form** (`TranslationOptions.StructuredControlFlow`, CLI `--structured`). The blocks become nested
+statements instead of `switch` cases:
+
+| Graph shape | HLSL |
+|---|---|
+| Natural loop (back edge to a header that dominates its source) | `[loop] for (;;) { ... }`; back edge = end of body or `continue`, edge out = `break` |
+| Loop with several exit targets | `uint loop_exitN` set before each `break`, tested by an if/else chain after the loop |
+| Conditional branch | `if`/`else` whose arms end at the branch's immediate post-dominator |
+| Arms that leave the loop on some paths | the join is the post-dominator once the edges out of the loop are set aside; the leaving arm ends in `break` |
+| Arms that end the program on some paths | the join is the post-dominator once small exit tails (at most 64 lines that only lead to the end, such as a kill-and-end block) are set aside; the tails are copied into each arm |
+| Arms that never join | the smaller ones inside the `if`, ending in `break`/`continue`; the largest after it |
+| Early end outside every loop | `break` out of a `do { ... } while (false)` around the body |
+
+A block reached on paths that do not join before it is copied into each path. When the copies make a scope (the top
+level or one loop body) more than 1.5 times its own lines plus 256, or nesting passes 120 levels, that scope is
+emitted guarded instead: `uint flowN` holds the number of the node to run, and the scope's blocks follow in
+topological order, each as `if (flowN == k) { ...; flowN = <successor>; }`, so one pass runs one path; loops nested in
+it stay structured. A two-phase mesh shader keeps its phase loops and `[loop] while (pc < PC_YIELD) switch (pc)`, with
+one case per region (the entry and each resume point after a barrier) holding the structured code up to the next barrier
+or the end; WARP's shader compiler crashes when the `while` is left out.
+
+The whole program keeps the dispatch form, with a comment `// control flow: dispatch loop (<reason>)`, when its graph
+is irreducible (a cycle entered other than through one dominating header: `irreducible`) or has a loop that never
+exits (`loop without exit`; DXIL requires every loop to have a break).
 
 `s_getpc; s_add_u32/s_sub_u32; s_addc_u32/s_subb_u32; s_setpc` on one register pair is a long branch and becomes a
 static branch. Other `s_setpc`/`s_swappc` (indirect jumps) are not supported, except the fetch-shader call at a
@@ -116,12 +142,14 @@ to the generated HLSL.
 
 ```
 fivestar shader translate <program.fssm | folder> <out> [--retry results.json] [--stages ps,vs,cs,ms,gs]
-                          [--jobs N] [--limit N] [--step K] [--no-compile] [--llvm <folder>] [--dxc <path>]
+                          [--jobs N] [--limit N] [--step K] [--no-compile] [--structured] [--llvm <folder>]
+                          [--dxc <path>]
 ```
 
 Translates every `*.fssm` (in name order; `--step K` takes every K-th, `--limit N` the first N), writes
 `<out>/<name>.hlsl`, compiles it to `<name>.dxil` and writes `<out>/results.json`. `--retry` re-runs only programs
-whose status in that file is not final and merges the results. `--no-compile` skips dxc.
+whose status in that file is not final and merges the results. `--no-compile` skips dxc. `--structured` emits the
+structured control-flow form (see Control flow).
 
 dxc runs as `-T <stage>_6_7 -E main -HV 2021 -I <out> -Fo <name>.dxil`, with a 180 s limit; a timed-out compile is
 retried with `-Od` for 300 s (900 s with `--retry`); fallback compiles have 600 s. dxc comes from `--dxc`, then
@@ -148,6 +176,21 @@ fivestar shader waves <out> <fssm-folder>
 Classifies every `ok` program of a run by wave size and dependence: wave-size agnostic, lane/EXEC bookkeeping only,
 quad and first-lane operations only, or lane-indexed data movement (readlane, permlane, bpermute, DPP rows), which
 breaks when a wave64 program runs on 32-lane waves or the reverse.
+
+## Testing
+
+`tests/FiveStar.Shaders.Tests` assembles handwritten gfx1013 programs with llvm-mc, translates them, compiles them with
+dxc and runs them on D3D12 WARP. Results are compared with a reference model of the ISA (`Reference/`), never with the
+translator's output. Covered: pixel shaders (VALU, SALU, packed f16, cross-lane, EXEC, helper lanes, control flow,
+memory, exports), compute (ids, LDS, wave32/wave64 wave operations, buffer and global memory, atomics), ray
+intersection, the mesh path and its fallback (including overflow), vertex fetch, a handwritten GS and the real
+VoxelizeGeneric GS programs.
+
+Run `dotnet test tests/FiveStar.Shaders.Tests`. `FIVESTAR_LLVM` (LLVM bin folder) and `FIVESTAR_DXC` (dxc path) override
+the default tool locations; the real-GS tests need `FIVESTAR_DUMP` and `FIVESTAR_SHADER_DIR` (folder of extracted
+`.fssm`, containers in `../dxbc`). A test skips with the reason when a tool or WARP is missing. WARP runs 4-lane waves,
+so cases that need a full 32/64-lane wave are skipped, and `v_fma_f32` is compared unfused (see FMA above). Test
+classes run one at a time (`xunit.runner.json`): WARP crashes the test host when they run in parallel.
 
 ## Unknown
 

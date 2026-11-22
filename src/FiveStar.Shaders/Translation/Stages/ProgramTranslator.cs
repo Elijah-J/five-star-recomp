@@ -10,7 +10,8 @@ namespace FiveStar.Shaders.Translation.Stages;
 internal static class ProgramTranslator
 {
     /// <summary>Translates <paramref name="instructions"/> as <paramref name="stage"/>; a copy shader is emitted as a function.</summary>
-    public static string Translate(ShaderProgram program, IReadOnlyList<Instruction> instructions, ShaderStage stage, bool copyShader)
+    public static string Translate(
+        ShaderProgram program, IReadOnlyList<Instruction> instructions, ShaderStage stage, bool copyShader, TranslationOptions options)
     {
         var state = new TranslationState(program, instructions, stage, copyShader);
         var operands = new OperandAccess(state, new ImplicitInputs(state));
@@ -18,7 +19,8 @@ internal static class ProgramTranslator
         new ControlFlowTranslator(state, operands, translator).Run();
 
         var mesh = new MeshDeclarations(state);
-        var emitter = new ProgramEmitter(state, new OutputWriter(state), mesh, new BodyWriter(state, mesh));
+        var body = new BodyWriter(state, mesh, new StructuredBodyWriter(state), options.StructuredControlFlow);
+        var emitter = new ProgramEmitter(state, new OutputWriter(state), mesh, body);
 
         return emitter.Emit();
     }

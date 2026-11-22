@@ -100,7 +100,7 @@ public sealed partial class CorpusTranslator
 
         try
         {
-            hlsl = HlslTranslator.Translate(program).Hlsl;
+            hlsl = HlslTranslator.Translate(program, options.Translation).Hlsl;
         }
         catch (UnsupportedProgramException exception)
         {
