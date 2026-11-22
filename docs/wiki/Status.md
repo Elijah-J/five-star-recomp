@@ -22,4 +22,5 @@ work covers everything that can be built and checked without it.
 | Audio | all 1,603,231 sounds in `audio.rpf` export as Ogg Opus or WAV (Opus, XMA2, PCM) |
 | Loader | the six Xbox libraries in the package load with all 825 imports resolved |
 | Console runtime | task queues and async run for real; user, saves, package and store work offline |
-| Graphics API (D3D12.X) | device, root signature and pipeline creation on PC; translating the game's calls needs the executable |
+| Graphics API (D3D12.X) | a game texture draws through the game's own translated shaders and cached pipeline state on PC; translating the game's calls needs the executable |
+| Setup | `fivestar setup` prepares a dump in one resumable command; a re-run with nothing changed takes under a second |

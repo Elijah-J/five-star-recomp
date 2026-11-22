@@ -15,7 +15,6 @@
 | Item | State |
 |---|---|
 | BCPack | header and entropy-coder parameters known; the data models are not ([details](Textures-and-BCPack.md)) |
-| `audio.rpf` | the payload is raw audio banks, not zlib; banks not decoded yet |
 | Type names | PSO structures are identified by hashes; naming them needs lists of engine class names |
 | Geometry | the older paged resources with vertex and index data are mapped but not decoded |
 | BVH data | ray tracing needs acceleration structures in AMD's layout ([details](Shader-Translation.md#ray-tracing)) |
@@ -31,7 +30,7 @@
 | Pipeline sweep | sampled runs done; a full run, and the AMD driver crashes on some pixel shaders, are open |
 | Shader cache location | `--cache` works; a default folder per user and removal of old translator builds are open |
 | Call overhead benchmarks | measure game-to-runtime calls and command translation |
-| First frame | swap chain and real draws |
+| First frame | a textured quad draws with a real shader pair; real models need the geometry decode |
 | Proton | test the Windows build on Linux and Steam Deck through Proton |
 
 Platform and performance strategy: [Platforms and performance](Platforms-and-Performance.md).
