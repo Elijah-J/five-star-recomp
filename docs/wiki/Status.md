@@ -14,7 +14,7 @@ work covers everything that can be built and checked without it.
 | Shader cache | a re-run with nothing changed takes 26 seconds instead of about 70 minutes |
 | Driver pipelines | on an RTX 4090, 9,511 of 9,716 sampled pipelines build; the rest are wave64 compute programs on a wave32-only GPU and two out-of-memory compiles |
 | Console pipeline cache | 25,471 graphics and 2,693 compute pipelines read from `shaders.rpf`, linked to our programs, with blend, depth and raster state decoded |
-| Translator checks | 100 behaviour tests pass on D3D12 WARP and 4 are skipped (they need a full 32 or 64-lane wave); ray intersection is bit-exact |
+| Translator checks | 129 tests pass, most of them on D3D12 WARP, and 4 are skipped (they need a full 32 or 64-lane wave); ray intersection is bit-exact; the built-in RDNA decoder matches LLVM on all 44 million instructions of the corpus |
 | Archives | about 68% of all archive bytes extract without the encrypted file table; file names are not known |
 | Metadata (PSO) | 6,026 metadata files and about 39,700 paged resources parse completely |
 | Textures | 315,483 of 357,115 (88.3%) export across all 57 texture files; most of the rest use BCPack pages |

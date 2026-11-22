@@ -28,7 +28,6 @@
 | Wave size | emulated or pinned; still open: 19 compute programs with several waves per group need 64-lane waves, and 445 wave64 pixel, 1 vertex and 115 mesh programs read lanes a 32-lane GPU does not have ([details](Shader-Translation.md#wave-size)) |
 | Structured shader control flow | optional and working (DXIL 39% smaller); needs a check on real game data before it becomes the default, and the 3 largest programs still take 25 to 80 minutes in dxc |
 | Pipeline sweep | sampled runs done; a full run, and the AMD driver crashes on some pixel shaders, are open |
-| Shader cache location | `--cache` works; a default folder per user and removal of old translator builds are open |
 | Call overhead benchmarks | measure game-to-runtime calls and command translation |
 | First frame | a textured quad draws with a real shader pair; real models need the geometry decode |
 | Proton | test the Windows build on Linux and Steam Deck through Proton |
