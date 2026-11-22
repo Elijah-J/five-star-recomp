@@ -15,8 +15,8 @@ These protect the project. A change that breaks one of them is closed, however g
 
 ## Getting started
 
-1. Install the .NET 10 SDK. Shader work also needs LLVM 18+ with the AMDGPU target (`llvm-mc`, `llvm-objdump`) and
-   the DirectX shader compiler (`dxc`, Windows SDK).
+1. Install the .NET 10 SDK. Shader work also needs the DirectX shader compiler (`dxc`, Windows SDK). The shader tests
+   and `fivestar shader decode-check` also need LLVM 18+ with the AMDGPU target (`llvm-mc`, `llvm-objdump`).
 2. `dotnet build FiveStar.slnx` and `dotnet test`. Tests that need game files are skipped until you set
    `FIVESTAR_DUMP` to the folder of your own dump.
 3. The `docs/` folder explains each format and tool; `README.md` lists where to start.

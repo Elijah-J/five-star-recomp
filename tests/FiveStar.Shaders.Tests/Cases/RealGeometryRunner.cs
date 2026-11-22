@@ -48,7 +48,7 @@ public sealed class RealGeometryRunner
             return [$"no *GS_VoxelizeGeneric_{hash}*.fssm in {folder}"];
         }
 
-        var loaded = new ProgramLoader(new LlvmDisassembler(ShaderToolchain.Find().Llvm)).Load(path, null);
+        var loaded = new ProgramLoader(new RdnaDecoder()).Load(path, null);
         var program = loaded.Program ?? throw new InvalidOperationException($"{loaded.Status}: {loaded.Reason}");
         var hlsl = ShaderWorkbench.Translate(program);
         var (pixelSource, semantics) = PassThroughPixelShader.Build(hlsl, null, flat: false);

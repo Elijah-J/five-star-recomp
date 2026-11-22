@@ -6,7 +6,7 @@ An interrupted run continues where it stopped.
 
 ```
 fivestar setup <dump folder> [--work <dir>] [--only <step,...>] [--force] [--limit N] [--step K] [--jobs N]
-                             [--llvm <bin folder>] [--dxc <dxc.exe>] [--gdk-lib <xgameruntime.lib>]
+                             [--dxc <dxc.exe>] [--gdk-lib <xgameruntime.lib>]
 fivestar setup <dump folder> --status
 fivestar setup <dump folder> --clean-cache
 ```
@@ -67,16 +67,16 @@ sample counts as different inputs.
 
 ## Requirements
 
-`shader-translate` needs dxc and, for now, LLVM (`llvm-mc`, `llvm-objdump`). They are found as for
-`fivestar shader translate`: `--dxc`/`FIVESTAR_DXC`, then the Windows SDK, then `PATH`; `--llvm`/`FIVESTAR_LLVM`,
-then the default folder, then `PATH`. When one is missing setup names it and how to provide it before any step runs.
+`shader-translate` needs dxc, found as for `fivestar shader translate`: `--dxc`/`FIVESTAR_DXC`, then the Windows SDK,
+then `PATH`. The RDNA code is decoded in-process, so LLVM is not needed. When dxc is missing setup says so and how to
+provide it before any step runs.
 
 ## Shader cache
 
 The cache (`shader-cache/`, layout in [shader-translation.md](shader-translation.md#cache)) keys every entry by a
 hash, so the hash does not tell which build made it. Each run of `fivestar shader translate --cache` (which setup
 uses) therefore records the entries it reads or writes in `shader-cache/used/<identity>.txt`, one entry path per
-line, appended as it goes. The identity hashes the translator identity (FiveStar.Shaders, the LLVM tools, the
+line, appended as it goes. The identity hashes the translator identity (FiveStar.Shaders and the
 translation options) and the dxc identity.
 
 `--clean-cache` removes every entry the current identity's record does not list, the records of other identities and

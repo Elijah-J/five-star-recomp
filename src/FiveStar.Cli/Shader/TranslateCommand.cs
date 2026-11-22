@@ -22,17 +22,17 @@ internal static class TranslateCommand
 
     public static int Run(IReadOnlyList<string> args)
     {
-        var arguments = new CommandArguments(args, new HashSet<string> { NoCompileFlag, StructuredFlag });
+        var arguments = new CommandArguments(args, new HashSet<string> { NoCompileFlag, StructuredFlag, ShaderTools.LlvmDisassemblerFlag });
 
         if (arguments.Positional.Count != TwoPaths)
         {
             throw new ArgumentException(
-                "translate <fssm-or-folder> <out> [--cache <dir>] [--retry results.json] [--stages ps,vs,cs,ms,gs] [--jobs N] [--structured]");
+                "translate <fssm-or-folder> <out> [--cache <dir>] [--retry results.json] [--stages ps,vs,cs,ms,gs] [--jobs N] [--structured] [--llvm-disassembler]");
         }
 
         var programs = Programs(arguments);
         var retry = arguments.Option("retry");
-        var llvm = ShaderTools.Llvm(arguments);
+        var (disassembler, llvm) = ShaderTools.Disassembler(arguments);
         var options = new CorpusOptions(arguments.Positional[1], Stages(arguments), arguments.IntegerOption("jobs") ?? Environment.ProcessorCount, retry)
         {
             Translation = new TranslationOptions(arguments.Flag(StructuredFlag), PinWaveSize: true),
@@ -53,7 +53,7 @@ internal static class TranslateCommand
         var compiler = Cached(dxc, cache);
         var fallback = compiler is null ? null : new MeshFallbackCompiler(compiler);
         var progress = new ConsoleProgress(() => Counts(compiler, translations));
-        var loader = new ProgramLoader(new LlvmDisassembler(llvm));
+        var loader = new ProgramLoader(disassembler);
         var results = new CorpusTranslator(loader, compiler, fallback, translations, progress).Run(programs, options);
         Report(results);
 
@@ -71,7 +71,7 @@ internal static class TranslateCommand
     }
 
     /// <summary>The usage record of this translator and compiler build in the cache, or null without a cache.</summary>
-    private static CacheUsage? OpenUsage(string? cacheFolder, LlvmToolPaths llvm, TranslationOptions translation, IShaderCompiler? dxc)
+    private static CacheUsage? OpenUsage(string? cacheFolder, LlvmToolPaths? llvm, TranslationOptions translation, IShaderCompiler? dxc)
     {
         if (cacheFolder is null)
         {
@@ -118,7 +118,8 @@ internal static class TranslateCommand
         return text;
     }
 
-    private static List<string> Programs(CommandArguments arguments)
+    /// <summary>The programs of a command: the file or the folder's *.fssm in name order, every --step K-th, the first --limit N.</summary>
+    internal static List<string> Programs(CommandArguments arguments)
     {
         var input = arguments.Positional[0];
         List<string> programs = [input];

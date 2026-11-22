@@ -6,7 +6,8 @@ using FiveStar.Shaders.Disassembly;
 namespace FiveStar.Shaders.Tests.Toolchain;
 
 /// <summary>
-/// The external tools of the translator tests: llvm-mc / llvm-objdump from FIVESTAR_LLVM (default D:\Tools\llvm\bin),
+/// The external tools of the translator tests: llvm-mc (assembles the test programs) and llvm-objdump (the decoder
+/// comparison) from FIVESTAR_LLVM (default D:\Tools\llvm\bin),
 /// dxc from FIVESTAR_DXC (default: the Windows SDK), and D3D12 WARP. <see cref="MissingReason"/> says why the tests
 /// cannot run, or is null.
 /// </summary>

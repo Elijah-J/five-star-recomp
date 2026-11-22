@@ -4,6 +4,7 @@
 using FiveStar.Cli.Graphics;
 using FiveStar.Cli.Tests.Support;
 using FiveStar.Graphics;
+using FiveStar.Shaders.Disassembly;
 using Vortice.DXGI;
 using Xunit;
 
@@ -29,7 +30,7 @@ public sealed class DrawSampleTests
         {
             var inputs = SampleInputs.Load(
                 DumpFactAttribute.Folder!, DumpFactAttribute.ShaderFolder!, Path.Combine(DumpFactAttribute.Folder!, TexturePath), TextureIndex,
-                work.FullName, RenderFactAttribute.Llvm, RenderFactAttribute.Dxc);
+                work.FullName, new RdnaDecoder(), RenderFactAttribute.Dxc);
             using var device = GpuDevice.CreateWarp(debugLayer: false);
 
             var frame = UnlitRenderer.Render(device, inputs.Pipeline, inputs.Vertex, inputs.Pixel, inputs.Texture);

@@ -48,7 +48,9 @@ internal sealed class ShaderTranslateStep : ISetupStep
     {
         var compiler = ShaderTools.Compiler(arguments, retry: false);
 
-        return ShaderCacheIdentity.Of(ShaderTools.Llvm(arguments), Translation, compiler);
+        var (_, llvm) = ShaderTools.Disassembler(arguments);
+
+        return ShaderCacheIdentity.Of(llvm, Translation, compiler);
     }
 
     public StepFingerprint Fingerprint(SetupContext context)

@@ -7,9 +7,9 @@ using FiveStar.Shaders.Disassembly;
 namespace FiveStar.Cli.Shader;
 
 /// <summary>
-/// Finds the external tools: the LLVM bin folder (llvm-mc, llvm-objdump) from <c>--llvm</c>, then FIVESTAR_LLVM, then the
-/// default install folder when it exists, then PATH; dxc from <c>--dxc</c>, then FIVESTAR_DXC, then the Windows SDK
-/// default when it exists, then PATH.
+/// Finds the external tools: the LLVM bin folder (llvm-mc, llvm-objdump; only for <c>--llvm-disassembler</c> and
+/// <c>decode-check</c>) from <c>--llvm</c>, then FIVESTAR_LLVM, then the default install folder when it exists, then PATH;
+/// dxc from <c>--dxc</c>, then FIVESTAR_DXC, then the Windows SDK default when it exists, then PATH.
 /// </summary>
 internal static class ShaderTools
 {
@@ -18,6 +18,25 @@ internal static class ShaderTools
     private const string PathVariable = "PATH";
     private const string DefaultLlvmFolder = @"D:\Tools\llvm\bin";
     private const string DefaultDxc = @"C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\dxc.exe";
+
+    /// <summary>The switch that disassembles with llvm-mc/llvm-objdump instead of the in-process decoder.</summary>
+    public const string LlvmDisassemblerFlag = "llvm-disassembler";
+
+    /// <summary>
+    /// The disassembler of a command: the in-process <see cref="RdnaDecoder"/>, or with <c>--llvm-disassembler</c> the
+    /// LLVM tools, which are also returned (null for the decoder).
+    /// </summary>
+    public static (IDisassembler Disassembler, LlvmToolPaths? Llvm) Disassembler(CommandArguments arguments)
+    {
+        if (!arguments.Flag(LlvmDisassemblerFlag))
+        {
+            return (new RdnaDecoder(), null);
+        }
+
+        var llvm = Llvm(arguments);
+
+        return (new LlvmDisassembler(llvm), llvm);
+    }
 
     public static LlvmToolPaths Llvm(CommandArguments arguments)
     {

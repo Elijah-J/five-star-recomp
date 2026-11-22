@@ -10,18 +10,21 @@ internal static class ToolCheck
 {
     private const string PathVariable = "PATH";
 
-    /// <summary>What is missing of dxc and the LLVM tools, as one message per tool with how to provide it.</summary>
+    /// <summary>
+    /// What is missing of dxc, and of the LLVM tools when <c>--llvm-disassembler</c> asks for them, as one message per
+    /// tool with how to provide it.
+    /// </summary>
     public static IReadOnlyList<string> MissingShaderTools(CommandArguments arguments)
     {
         var missing = new List<string>();
-        var llvm = ShaderTools.Llvm(arguments);
+        var (_, llvm) = ShaderTools.Disassembler(arguments);
 
         if (!Exists(ShaderTools.Dxc(arguments)))
         {
             missing.Add("dxc not found: install the Windows SDK, or pass --dxc <path to dxc.exe> (or set FIVESTAR_DXC)");
         }
 
-        if (!Exists(llvm.Assembler) || !Exists(llvm.Objdump))
+        if (llvm is not null && (!Exists(llvm.Assembler) || !Exists(llvm.Objdump)))
         {
             missing.Add("LLVM (llvm-mc, llvm-objdump) not found: install LLVM 18+, or pass --llvm <bin folder> (or set FIVESTAR_LLVM)");
         }

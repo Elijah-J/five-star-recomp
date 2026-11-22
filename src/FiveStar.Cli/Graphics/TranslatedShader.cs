@@ -15,10 +15,10 @@ public sealed record TranslatedShader(string Name, string Hlsl, byte[] Dxil)
     /// <paramref name="workFolder"/>, as <c>fivestar shader translate</c> does.
     /// </summary>
     public static IReadOnlyList<TranslatedShader> Translate(
-        IReadOnlyList<string> names, string programFolder, string workFolder, LlvmToolPaths llvm, string dxc)
+        IReadOnlyList<string> names, string programFolder, string workFolder, IDisassembler disassembler, string dxc)
     {
         var compiler = new DxcCompiler(DxcOptions.Defaults(dxc, retry: false));
-        var loader = new ProgramLoader(new LlvmDisassembler(llvm));
+        var loader = new ProgramLoader(disassembler);
         var paths = names.Select(name => Path.Combine(programFolder, name + ".fssm")).ToList();
         var options = new CorpusOptions(workFolder, null, names.Count, null)
         {

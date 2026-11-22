@@ -8,7 +8,7 @@ namespace FiveStar.Shaders.Tests.Assembly;
 
 /// <summary>
 /// Assembles a handwritten gfx1013 program (llvm-mc syntax) to code bytes, then disassembles them with the same
-/// <see cref="LlvmDisassembler"/> the real pipeline uses, so the translator sees exactly what it sees for a dump.
+/// <see cref="RdnaDecoder"/> the real pipeline uses, so the translator sees exactly what it sees for a dump.
 /// </summary>
 public sealed class RdnaAssembler
 {
@@ -27,7 +27,7 @@ public sealed class RdnaAssembler
     {
         var code = Code(name, source, waveSize);
 
-        return new AssembledProgram(code, new LlvmDisassembler(_tools).Disassemble(code, waveSize));
+        return new AssembledProgram(code, new RdnaDecoder().Disassemble(code, waveSize));
     }
 
     private byte[] Code(string name, string source, int waveSize)

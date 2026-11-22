@@ -45,11 +45,11 @@ public sealed class CorpusCacheTests : IDisposable
         var tools = ShaderToolchain.Find();
         var cache = new CacheFolder(Path.Combine(_folder.FullName, "cache"));
         var options = new CorpusOptions(Path.Combine(_folder.FullName, run), Stages: null, Parallelism: 2, RetryResults: null);
-        var translations = new TranslationCache(cache, TranslationCache.Identity(tools.Llvm, options.Translation));
+        var translations = new TranslationCache(cache, TranslationCache.Identity(null, options.Translation));
 
         var dxc = DxcOptions.Defaults(tools.Dxc, retry: false);
         var compiler = new CachedCompiler(new DxcCompiler(dxc), cache);
-        var loader = new ProgramLoader(new LlvmDisassembler(tools.Llvm));
+        var loader = new ProgramLoader(new RdnaDecoder());
         var corpus = new CorpusTranslator(loader, compiler, new MeshFallbackCompiler(compiler), translations, progress: null);
 
         return (corpus.Run(programs, options), translations, compiler);

@@ -5,6 +5,7 @@ using System.Diagnostics;
 using FiveStar.Cli.Shader;
 using FiveStar.Formats.Images;
 using FiveStar.Graphics;
+using FiveStar.Shaders.Disassembly;
 
 namespace FiveStar.Cli.Graphics;
 
@@ -41,7 +42,7 @@ internal static class DrawSampleCommand
         var work = arguments.Option("work") ?? Path.Combine(Path.GetDirectoryName(output)!, Path.GetFileNameWithoutExtension(output) + "-shaders");
         var clock = Stopwatch.StartNew();
 
-        var inputs = SampleInputs.Load(dump, programs, texture, arguments.IntegerOption("index") ?? 0, work, ShaderTools.Llvm(arguments), ShaderTools.Dxc(arguments));
+        var inputs = SampleInputs.Load(dump, programs, texture, arguments.IntegerOption("index") ?? 0, work, new RdnaDecoder(), ShaderTools.Dxc(arguments));
         Console.WriteLine($"pipeline {inputs.Pipeline.Record.Index}: {inputs.Pipeline.VertexProgram} + {inputs.Pipeline.PixelProgram}");
         Console.WriteLine($"texture {texture} #{arguments.IntegerOption("index") ?? 0}: {inputs.Texture.Width}x{inputs.Texture.Height} {inputs.Texture.Format}");
 

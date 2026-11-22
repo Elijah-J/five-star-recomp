@@ -102,11 +102,12 @@ A register read before any write is a hardware input:
 ## Command
 
 ```
-fivestar shader disasm <program.fssm> [--count N]
+fivestar shader disasm <program.fssm> [--count N] [--llvm-disassembler]
 ```
 
-Prints `address size text` for each instruction (branch targets as `@T0x<address>`). The bytes are assembled into an
-object file with `llvm-mc` and listed with `llvm-objdump`, CPU `gfx1013`; wave64 programs add
+Prints `address size text` for each instruction (branch targets as `@T0x<address>`). The code is decoded in-process
+(`RdnaDecoder`, see [shader-translation.md](shader-translation.md)). With `--llvm-disassembler` the bytes are instead
+assembled into an object file with `llvm-mc` and listed with `llvm-objdump`, CPU `gfx1013`; wave64 programs add
 `--mattr=+wavefrontsize64` (otherwise lane masks decode as wave32). The LLVM bin folder comes from `--llvm <folder>`,
 then `FIVESTAR_LLVM`, then a default install folder when it exists, then `PATH`.
 

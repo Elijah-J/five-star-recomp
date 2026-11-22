@@ -10,7 +10,7 @@ namespace FiveStar.Shaders.Compilation;
 
 /// <summary>
 /// Translations kept in a <see cref="CacheFolder"/>. The key of a program is the hash of the translator identity (this
-/// assembly, the LLVM tools and the translation options) and the FSSM and container bytes. The entry holds the stage,
+/// assembly, the LLVM tools when they disassemble, and the translation options) and the FSSM and container bytes. The entry holds the stage,
 /// status, reason and instruction count; its HLSL is stored once per distinct text.
 /// </summary>
 public sealed class TranslationCache
@@ -35,12 +35,22 @@ public sealed class TranslationCache
 
     public int Misses => Volatile.Read(ref _misses);
 
-    /// <summary>The identity of this translator build with its disassembler and options.</summary>
-    public static string Identity(LlvmToolPaths tools, TranslationOptions options)
+    /// <summary>
+    /// The identity of this translator build with its disassembler and options: the in-process
+    /// <see cref="RdnaDecoder"/> when <paramref name="llvm"/> is null (it is part of this assembly), else the LLVM tools.
+    /// </summary>
+    public static string Identity(LlvmToolPaths? llvm, TranslationOptions options)
     {
-        var files = ContentHash.OfFiles([typeof(HlslTranslator).Assembly.Location, tools.Assembler, tools.Objdump]);
+        var assembly = typeof(HlslTranslator).Assembly.Location;
 
-        return ContentHash.OfText(files, tools.Cpu, options.ToString());
+        if (llvm is null)
+        {
+            return ContentHash.OfText(ContentHash.OfFiles([assembly]), nameof(RdnaDecoder), options.ToString());
+        }
+
+        var files = ContentHash.OfFiles([assembly, llvm.Assembler, llvm.Objdump]);
+
+        return ContentHash.OfText(files, llvm.Cpu, options.ToString());
     }
 
     public string Key(string programPath)

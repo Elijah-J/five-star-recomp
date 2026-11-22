@@ -5,14 +5,34 @@ model 6.7. Public entry: `HlslTranslator.Translate(ShaderProgram) -> Translation
 
 ## Pipeline
 
-1. **Load** (`ProgramLoader`): decode the FSSM header; disassemble the code with llvm-mc/llvm-objdump (gfx1013, wave64
-   programs with `+wavefrontsize64`); read ISG1/OSG1/PSV0 from `<fssm folder>/../dxbc/<name>.dxbc` when present.
+1. **Load** (`ProgramLoader`): decode the FSSM header; disassemble the code (see Disassembly); read ISG1/OSG1/PSV0
+   from `<fssm folder>/../dxbc/<name>.dxbc` when present.
 2. **Blocks** (`ControlFlowTranslator`): rewrite long jumps, split into basic blocks, drop unreachable blocks.
 3. **Emitters** (`Translation/Emitters`): one emitter per instruction family turns each instruction into HLSL statements.
 4. **Program** (`Translation/Stages`, `Translation/Structure`): structs, declarations, prologue, dispatch loop (or structured
    control flow) and output mapping.
 5. **Compile** (`CorpusTranslator`, `DxcCompiler`): dxc, with the mesh fallback where needed; `TranslationCache` and
    `CachedCompiler` reuse earlier results (see Cache).
+
+## Disassembly
+
+`RdnaDecoder` (`src/FiveStar.Shaders/Disassembly`) decodes RDNA 2 code in-process. The emitters parse instruction
+text, so the decoder prints every instruction exactly as llvm-objdump does for gfx1013 (wave64 lane masks as with
+`+wavefrontsize64`), branch targets appended as `@T0x<target>`. It also keeps the listing's quirks: a dword that is no
+instruction is `.long 0x...`, a run of 8 or more zero bytes is left out, and an instruction llvm-objdump lists with an
+alignment warning is dropped, as the listing parser drops that line. Opcode numbers and field layouts come from AMD's
+"RDNA 2 Instruction Set Architecture" reference guide.
+
+`LlvmDisassembler` (llvm-mc wraps the bytes in an object file, llvm-objdump lists it, `ObjdumpParser` reads the
+listing) is the reference: `fivestar shader decode-check` compares both on every program of a folder, and
+`--llvm-disassembler` makes `disasm` and `translate` use it.
+
+```
+fivestar shader decode-check <fssm-folder> [--jobs N] [--limit N] [--step K] [--llvm <folder>]
+```
+
+Prints the program, code block and instruction counts and the first difference of each mismatched program; exit code
+1 when any differ. On the 25,884 programs of the dump no program differs.
 
 ## Execution model
 
@@ -149,13 +169,14 @@ to the generated HLSL.
 ```
 fivestar shader translate <program.fssm | folder> <out> [--cache <dir>] [--retry results.json]
                           [--stages ps,vs,cs,ms,gs] [--jobs N] [--limit N] [--step K] [--no-compile] [--structured]
-                          [--llvm <folder>] [--dxc <path>]
+                          [--llvm-disassembler] [--llvm <folder>] [--dxc <path>]
 ```
 
 Translates every `*.fssm` (in name order; `--step K` takes every K-th, `--limit N` the first N), writes
 `<out>/<name>.hlsl`, compiles it to `<name>.dxil` and writes `<out>/results.json`. `--cache` keeps translations and
 DXIL between runs (see Cache). `--retry` re-runs only programs whose status in that file is not final and merges the
-results. `--no-compile` skips dxc. `--structured` emits the structured control-flow form (see Control flow). Every
+results. `--no-compile` skips dxc. `--structured` emits the structured control-flow form (see Control flow).
+`--llvm-disassembler` disassembles with llvm-mc/llvm-objdump instead of `RdnaDecoder` (see Disassembly). Every
 10 seconds the command prints programs done, elapsed time, estimated time left and finish time, and the cache counts.
 
 dxc runs as `dxc.exe -T <stage>_6_7 -E main -HV 2021 -I <out> -Fo <name>.dxil`, one process per compile, with a 180 s
@@ -188,7 +209,7 @@ finished entry. Keys are SHA-256 hashes:
 
 | Kind | Key | Entry |
 |---|---|---|
-| `programs/*.json` | FiveStar.Shaders.dll, llvm-mc and llvm-objdump bytes, the translation options, the FSSM and container bytes | stage, status, reason, instruction count, HLSL key (programs that translated, were unsupported or crashed) |
+| `programs/*.json` | FiveStar.Shaders.dll (with `--llvm-disassembler` also the llvm-mc and llvm-objdump bytes), the translation options, the FSSM and container bytes | stage, status, reason, instruction count, HLSL key (programs that translated, were unsupported or crashed) |
 | `hlsl/*.hlsl` | the HLSL text | the HLSL |
 | `dxil/*.dxil` | dxc.exe, dxcompiler.dll and dxil.dll bytes, the fixed dxc arguments, the runtime headers, profile, `-Od`, the HLSL text | the DXIL |
 | `dxil/*.error` | same | dxc's messages of a failed compile with a source diagnostic (`file:line[:column]: error:`) or `error: validation errors`; crashes and out-of-memory failures are not kept |
@@ -270,15 +291,17 @@ largest error groups (numbers in messages replaced by `#`).
 
 ## Testing
 
-`tests/FiveStar.Shaders.Tests` assembles handwritten gfx1013 programs with llvm-mc, translates them, compiles them with
-dxc and runs them on D3D12 WARP. Results are compared with a reference model of the ISA (`Reference/`), never with the
+`tests/FiveStar.Shaders.Tests` assembles handwritten gfx1013 programs with llvm-mc (the tests and `decode-check` are
+the only users of LLVM), decodes them with `RdnaDecoder`, translates them, compiles them with dxc and runs them on D3D12
+WARP. Results are compared with a reference model of the ISA (`Reference/`), never with the
 translator's output. Covered: pixel shaders (VALU, SALU, packed f16, cross-lane, EXEC, helper lanes, control flow,
 memory, exports), compute (ids, LDS, wave32/wave64 wave operations, buffer and global memory, atomics), ray
 intersection, the mesh path and its fallback (including overflow), vertex fetch, a handwritten GS and the real
 VoxelizeGeneric GS programs.
 
 Run `dotnet test tests/FiveStar.Shaders.Tests`. `FIVESTAR_LLVM` (LLVM bin folder) and `FIVESTAR_DXC` (dxc path) override
-the default tool locations; the real-GS tests need `FIVESTAR_DUMP` and `FIVESTAR_SHADER_DIR` (folder of extracted
+the default tool locations; the real-GS tests and the decoder comparison on real programs need `FIVESTAR_DUMP` and
+`FIVESTAR_SHADER_DIR` (folder of extracted
 `.fssm`, containers in `../dxbc`). A test skips with the reason when a tool or WARP is missing. WARP runs 4-lane waves,
 so cases that need a full 32/64-lane wave are skipped, and `v_fma_f32` is compared unfused (see FMA above). Test
 classes run one at a time (`xunit.runner.json`): WARP crashes the test host when they run in parallel.

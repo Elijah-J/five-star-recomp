@@ -15,12 +15,12 @@ namespace FiveStar.Cli.Graphics;
 public sealed record SampleInputs(SamplePipeline Pipeline, TranslatedShader Vertex, TranslatedShader Pixel, TextureData Texture)
 {
     /// <summary>Loads the cache from <c>&lt;dump&gt;/shaders.rpf</c>, finds the unlit pipeline, translates it and reads the texture.</summary>
-    public static SampleInputs Load(string dump, string programFolder, string texturePath, int textureIndex, string workFolder, LlvmToolPaths llvm, string dxc)
+    public static SampleInputs Load(string dump, string programFolder, string texturePath, int textureIndex, string workFolder, IDisassembler disassembler, string dxc)
     {
         var cache = PipelineCacheSource.Load(Path.Combine(dump, "shaders.rpf"));
         var programs = CacheProgramMap.Build(cache, ProgramIndex.Load(programFolder));
         var pipeline = SamplePipeline.Find(cache, programs, SamplePipeline.UnlitVertex, SamplePipeline.UnlitPixel);
-        var shaders = TranslatedShader.Translate([pipeline.VertexProgram, pipeline.PixelProgram], programFolder, workFolder, llvm, dxc);
+        var shaders = TranslatedShader.Translate([pipeline.VertexProgram, pipeline.PixelProgram], programFolder, workFolder, disassembler, dxc);
         var texture = SampleTexture.Load(texturePath, textureIndex);
 
         return new SampleInputs(pipeline, shaders[0], shaders[1], texture);

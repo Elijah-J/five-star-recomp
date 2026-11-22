@@ -4,7 +4,6 @@
 using System.Globalization;
 using FiveStar.Cli.Shader;
 using FiveStar.Shaders.Containers;
-using FiveStar.Shaders.Disassembly;
 using FiveStar.Shaders.Hardware;
 
 namespace FiveStar.Cli;
@@ -26,8 +25,11 @@ internal static class ShaderCommands
         "usage: fivestar shader <command> [arguments]",
         "  extract <shaders.rpf> <out>            write <out>/dxbc/*.dxbc (+ _manifest.tsv) and <out>/fssm/*.fssm",
         "  disasm <program.fssm> [--count N]      list the program's instructions (address, size, text)",
+        "  decode-check <fssm-folder>             disassemble every program in-process and with LLVM, report differences",
+        "        [--jobs N] [--limit N] [--step K]",
         "  translate <fssm-or-folder> <out>       translate to HLSL and compile with dxc, write <out>/results.json",
         "        [--cache <dir>] [--retry results.json] [--stages ps,vs,cs,ms,gs] [--jobs N] [--limit N] [--step K] [--no-compile] [--structured]",
+        "  disasm and translate decode in-process; --llvm-disassembler uses llvm-mc/llvm-objdump instead",
         "  waves <out> <fssm-folder>              classify translated programs by wave-size dependence",
         "  pso <out> [--adapter <index|name>]     create a D3D12 pipeline state per compiled program, write <out>/pso-<adapter>.jsonl",
         "        [--stages ...] [--limit N] [--step K] [--jobs N] [--timeout S] [--max-memory GB]",
@@ -36,7 +38,7 @@ internal static class ShaderCommands
         "  unwrap <in.dxbc> <out.dxbc>            rewrite a container whose XDAT holds bitcode as standard DXBC",
         "  psocache <shaders.rpf | blob>          summarise the driver pipeline cache and match its shaders to programs",
         "        [--programs <fssm folder>] [--out <dir>]   (programs default to FIVESTAR_SHADER_DIR; --out writes code/ and pipelines.json)",
-        "  tool options: --llvm <bin folder> (or FIVESTAR_LLVM), --dxc <dxc path> (or FIVESTAR_DXC)",
+        "  tool options: --llvm <bin folder> (or FIVESTAR_LLVM; decode-check and --llvm-disassembler), --dxc <dxc path> (or FIVESTAR_DXC)",
     ];
 
     public static int Run(IReadOnlyList<string> args)
@@ -58,6 +60,8 @@ internal static class ShaderCommands
                     return Extract(rest);
                 case "disasm":
                     return Disassemble(rest);
+                case "decode-check":
+                    return DecodeCheckCommand.Run(rest);
                 case "translate":
                     return TranslateCommand.Run(rest);
                 case "waves":
@@ -126,16 +130,16 @@ internal static class ShaderCommands
 
     private static int Disassemble(IReadOnlyList<string> args)
     {
-        var arguments = new CommandArguments(args, new HashSet<string>());
+        var arguments = new CommandArguments(args, new HashSet<string> { ShaderTools.LlvmDisassemblerFlag });
 
         if (arguments.Positional.Count != OnePath)
         {
-            throw new ArgumentException("disasm <program.fssm> [--count N]");
+            throw new ArgumentException("disasm <program.fssm> [--count N] [--llvm-disassembler]");
         }
 
         var program = File.ReadAllBytes(arguments.Positional[0]);
         var config = FssmHeader.Decode(program);
-        var disassembler = new LlvmDisassembler(ShaderTools.Llvm(arguments));
+        var (disassembler, _) = ShaderTools.Disassembler(arguments);
         var instructions = disassembler.Disassemble(FssmHeader.ProgramCode(program), config.WaveSize ?? Wave64);
         var count = arguments.IntegerOption("count") ?? instructions.Count;
 
