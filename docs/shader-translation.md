@@ -115,7 +115,7 @@ strip. The record size `GS_VTX_DW` is derived from the LDS write offsets between
 |---|---|
 | Mesh output over 32 KB (D3D12 PC limit) | rewritten as a compute shader plus a vertex-pulling vertex shader (`MeshComputeFallback`, files `.msfb_cs.hlsl` / `.msfb_vs.hlsl`) |
 | HLSL over 150,000 characters | compiled with `-Od` (dxc's optimizer is very slow on huge dispatch loops) |
-| Wave size | AMD lane numbers are kept; `fivestar shader waves` lists which programs depend on them |
+| Wave size | AMD lane numbers are kept; a compute program that reads other lanes by number gets `[WaveSize(32 or 64)]` (`TranslationOptions.PinWaveSize`, on in `fivestar shader translate`), so it fails to load on a GPU without that wave size instead of computing wrong results. Other stages cannot pin a wave size; `fivestar shader waves` lists which programs depend on it |
 | f32 → f16 | `f32tof16_rne` (round to nearest even, as AMD) |
 | FMA | `mad` (the prelude's exact `fma32` exists but is slow) |
 

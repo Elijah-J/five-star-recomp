@@ -51,26 +51,49 @@ public static partial class WaveUsageAnalyzer
     /// <summary>Classifies the code after the entry point (helpers above it are not counted).</summary>
     public static WaveUsageEntry Classify(ProgramResult result, int waveSize, string hlsl)
     {
-        var entry = hlsl.IndexOf(EntryMarker, StringComparison.Ordinal);
-        var body = entry < 0 ? hlsl[^1..] : hlsl[entry..];
-        var data = DataPattern().Matches(body).Select(match => match.Groups[1].Value).ToList();
-        var bookkeeping = BookkeepingPattern().IsMatch(body);
-        var dependence = WaveDependence.Agnostic;
+        var data = DataOperations(hlsl);
+
+        return new WaveUsageEntry(result.Name, result.Stage, waveSize, Dependence(hlsl), data.ToHashSet());
+    }
+
+    /// <summary>How the code after the entry point depends on the wave size.</summary>
+    public static WaveDependence Dependence(string hlsl)
+    {
+        var data = DataOperations(hlsl);
 
         if (data.Any(IsLaneIndexed))
         {
-            dependence = WaveDependence.LaneIndexed;
-        }
-        else if (data.Count > 0)
-        {
-            dependence = WaveDependence.QuadAndFirstLane;
-        }
-        else if (bookkeeping)
-        {
-            dependence = WaveDependence.Bookkeeping;
+            return WaveDependence.LaneIndexed;
         }
 
-        return new WaveUsageEntry(result.Name, result.Stage, waveSize, dependence, data.ToHashSet());
+        if (data.Count > 0)
+        {
+            return WaveDependence.QuadAndFirstLane;
+        }
+
+        if (BookkeepingPattern().IsMatch(Body(hlsl)))
+        {
+            return WaveDependence.Bookkeeping;
+        }
+
+        return WaveDependence.Agnostic;
+    }
+
+    private static List<string> DataOperations(string hlsl)
+    {
+        return DataPattern().Matches(Body(hlsl)).Select(match => match.Groups[1].Value).ToList();
+    }
+
+    private static string Body(string hlsl)
+    {
+        var entry = hlsl.IndexOf(EntryMarker, StringComparison.Ordinal);
+
+        if (entry < 0)
+        {
+            return string.Empty;
+        }
+
+        return hlsl[entry..];
     }
 
     private static int? WaveSize(string programPath)

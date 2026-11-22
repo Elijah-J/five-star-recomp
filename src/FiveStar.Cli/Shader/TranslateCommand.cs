@@ -41,7 +41,7 @@ internal static class TranslateCommand
 
         var options = new CorpusOptions(arguments.Positional[1], Stages(arguments), arguments.IntegerOption("jobs") ?? Environment.ProcessorCount, retry)
         {
-            Translation = new TranslationOptions(arguments.Flag(StructuredFlag)),
+            Translation = new TranslationOptions(arguments.Flag(StructuredFlag), PinWaveSize: true),
         };
         var results = new CorpusTranslator(loader, compiler, fallback).Run(programs, options);
         Report(results);
