@@ -40,6 +40,12 @@ internal sealed partial class OperandAccess
 
         var key = operand.At(component);
 
+        if (operand.Kind == OperandKind.Scalar && key == SpecialRegisters.Exec)
+        {
+            // EXEC lives in `active`; s_exec is only refreshed by integer writes, so rebuild the bits from the lanes.
+            return $"WaveActiveBallot(active).{Halves[LowDword]}";
+        }
+
         if (operand.Kind == OperandKind.Scalar && _state.Masks.Contains(operand.At(0)))
         {
             // A lane mask used as an integer: rebuild it with a ballot (wave-size dependent).

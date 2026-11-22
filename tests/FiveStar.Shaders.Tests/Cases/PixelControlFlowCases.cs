@@ -14,6 +14,7 @@ public static class PixelControlFlowCases
             IfElse(),
             ScalarLoop(),
             DivergentLoop(),
+            NestedExecSave(),
             VccBranches(),
             DiscardChecker(),
             DiscardQuad(),
@@ -109,6 +110,32 @@ public static class PixelControlFlowCases
         return new PixelCase("cf_loop_divergent", Program, 2, pixel => [pixel.X + 1, 9]) { Raw = true };
     }
 
+    // EXEC written as an integer, narrowed as a lane mask, then read as an integer and restored: x < 6 runs v21, x < 3
+    // runs v20.
+    private static PixelCase NestedExecSave()
+    {
+        const string Program = """
+            v_cvt_u32_f32_e32 v10, v2
+            v_mov_b32 v20, 0
+            v_mov_b32 v21, 0
+            s_mov_b32 s13, -1
+            s_and_b32 exec_lo, exec_lo, s13
+            v_cmp_gt_u32_e32 vcc_lo, 6, v10
+            s_and_saveexec_b32 s10, vcc_lo
+            s_and_b32 s12, exec_lo, s13
+            v_cmp_gt_u32_e32 vcc_lo, 3, v10
+            s_and_b32 exec_lo, exec_lo, vcc_lo
+            v_mov_b32 v20, 1
+            s_mov_b32 exec_lo, s12
+            v_mov_b32 v21, 2
+            s_or_b32 exec_lo, exec_lo, s10
+            {EXPORT}
+            s_endpgm
+            """;
+
+        return new PixelCase("cf_exec_saved", Program, 2, ExecSavedResult) { Raw = true };
+    }
+
     // s_cbranch_vccnz / vccz / s_branch on wave-uniform conditions (the PC wave is one quad; x < 4 is uniform per quad).
     private static PixelCase VccBranches()
     {
@@ -195,6 +222,21 @@ public static class PixelControlFlowCases
         }
 
         return [2000 + pixel.Y, 1];
+    }
+
+    private static Expected[] ExecSavedResult(PixelContext pixel)
+    {
+        if (pixel.X < 3)
+        {
+            return [1, 2];
+        }
+
+        if (pixel.X < 6)
+        {
+            return [0, 2];
+        }
+
+        return [0, 0];
     }
 
     private static Expected[] VccResult(PixelContext pixel)

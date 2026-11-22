@@ -8,7 +8,7 @@ using FiveStar.Shaders.Tests.Warp;
 namespace FiveStar.Shaders.Tests;
 
 /// <summary>
-/// One WARP device, work folder and tool set per test class (classes run in parallel), created on first use so a
+/// One WARP device, work folder and tool set per test class (classes run one at a time), created on first use so a
 /// skipped class creates nothing. The probes record the PC wave layout that lane-dependent expectations need.
 /// </summary>
 public sealed class WarpFixture : IDisposable
