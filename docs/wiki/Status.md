@@ -1,0 +1,21 @@
+# Status
+
+GTA VI does not run yet. Its main executable (`game_scarlett_master.exe`) is not available to the project, so the
+work covers everything that can be built and checked without it.
+
+![Progress](progress.svg)
+
+| Area | Result |
+|---|---|
+| Shaders extracted | 26,491 records from `shaders.rpf`, 25,884 native GPU programs |
+| Shaders translated | all 25,884 compile to DXIL (all stages); the 3 largest compute programs still take 25 to 80 minutes each in dxc |
+| Structured control flow | optional; 14,059 programs fully structured, 8,765 mesh programs partly, 23 stay in the dispatch form; DXIL 39% smaller, dxc 16% faster |
+| Wave size | 1,122 compute programs that read lanes by number are pinned to their wave size (32 or 64); 1,982 pixel, vertex and mesh programs with the same dependence still need wave emulation |
+| Translator checks | 100 behaviour tests pass on D3D12 WARP and 4 are skipped (they need a full 32 or 64-lane wave); ray intersection is bit-exact |
+| Archives | about 68% of all archive bytes extract without the encrypted file table; file names are not known |
+| Metadata (PSO) | 6,026 metadata files and about 39,700 paged resources parse completely |
+| Textures | 315,483 of 357,115 (88.3%) export across all 57 texture files; most of the rest use BCPack pages |
+| Videos | 515 Bink 2 videos extract from `movies.rpf` |
+| Loader | the six Xbox libraries in the package load with all 825 imports resolved |
+| Console runtime | task queues and async run for real; user, saves, package and store work offline |
+| Graphics API (D3D12.X) | not started |

@@ -67,6 +67,8 @@ Short, factual and to the point.
 - Facts only. Mark what is unconfirmed once, in an "Unknown" section.
 - No status notes, history or task lists. There is no changelog file: the git history is the changelog, so commit
   subjects must say what changed.
+- Status, roadmap and research notes go in `docs/wiki/`, which is published to the GitHub wiki on every push to `main`.
+  Edit them there, not on the Wiki tab (the next publish overwrites it). Link pages as `Page.md`.
 - A doc changes in the same pull request as the code it describes.
 
 ## Submitting a change

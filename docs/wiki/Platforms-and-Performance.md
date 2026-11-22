@@ -1,0 +1,34 @@
+# Platforms and performance
+
+## Why C# is fast enough
+
+The console's CPU is x86-64, so GTA VI's own code runs as native machine code at full speed. C# only hosts it: the
+loader, the console runtime and the graphics translation layer. What has to stay fast are the calls from the game
+into that layer, thousands per frame.
+
+| Rule | Purpose |
+|---|---|
+| NativeAOT builds | no JIT warm-up, native startup |
+| Entry points are function pointers (`UnmanagedCallersOnly`) | a game-to-shim call costs about as much as a native call |
+| `[HotPath]` methods allocate nothing and take no per-call locks | no garbage collection during a frame; enforced by the code-rule tests |
+| Benchmarks for call and command-translation overhead | regressions show up as numbers, not as stutter |
+
+## GPU performance
+
+| Item | Approach |
+|---|---|
+| Shader control flow | translated programs currently use a dispatch loop; rebuilding structured `if`/`else` and loops brings them close to the original and lets the largest programs compile |
+| Shader compilation | every program is compiled ahead of time and shipped with a pipeline cache, so nothing compiles during play |
+| Memory | the console's unified, directly addressed GPU memory maps onto D3D12 heaps; designed once the executable shows how the game uses it |
+
+## Platforms
+
+| Platform | Route |
+|---|---|
+| Windows | primary target; D3D12 is the closest match to the console's D3D12.X |
+| Linux and Steam Deck | the Windows build through Proton (Wine with vkd3d-proton); tested as a supported target |
+| Linux, native | later: a runtime for the Windows parts the game uses and thunks between the Windows and Linux x64 calling conventions |
+| macOS | the Windows build through CrossOver or Apple's Game Porting Toolkit (Rosetta 2 for x86-64, D3D12 on Metal); a native port would need x86-64 to ARM64 recompilation and is out of scope |
+
+GPUs with 32-lane waves (NVIDIA, Apple) need the emulated path for the 1,226 programs that index lanes of a 64-lane
+wave; see [Shader translation](Shader-Translation.md#wave-size).

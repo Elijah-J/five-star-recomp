@@ -61,6 +61,7 @@ The loader is a separate program, `fivestar-loader`; see [docs/loader.md](docs/l
 | `src/FiveStar.Cli` | the `fivestar` command |
 | `tests/` | tests per project, plus the code-rule checks |
 | `docs/` | one page per format and tool |
+| `docs/wiki/` | the source of the project wiki: status, roadmap and research notes |
 
 ## Contributing
 
