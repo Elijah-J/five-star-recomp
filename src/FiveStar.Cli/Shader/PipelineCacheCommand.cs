@@ -74,6 +74,20 @@ internal static class PipelineCacheCommand
             .Select(meta => ShaderMetaParser.Parse(cache.Meta(meta).Span))
             .SelectMany(meta => meta?.UserData ?? []);
         Console.WriteLine("shader bindings: " + Top(kinds.Select(entry => entry.RegisterClass)));
+        PrintStates(cache);
+    }
+
+    private static void PrintStates(PipelineCache cache)
+    {
+        var states = cache.Graphics
+            .Select(cache.State)
+            .Where(registers => registers is not null)
+            .Select(registers => FixedFunctionDecoder.Decode(registers!))
+            .ToList();
+        Console.WriteLine($"fixed-function state: {states.Count} of {cache.Graphics.Count} decoded");
+        Console.WriteLine("render targets per pipeline: " + Top(states.Select(state => state.RenderTargetCount)));
+        Console.WriteLine("cull mode (D3D12): " + Top(states.Select(state => state.Rasterizer.CullMode)));
+        Console.WriteLine($"blend on target 0: {states.Count(state => state.Blend[0].Enable)}, dual-source {states.Count(state => state.DualSource)}, depth test {states.Count(state => state.DepthStencil.DepthEnable)}, depth clip off {states.Count(state => !state.Rasterizer.DepthClipEnable)}");
     }
 
     private static CacheProgramMap MatchPrograms(PipelineCache cache, string? folder)

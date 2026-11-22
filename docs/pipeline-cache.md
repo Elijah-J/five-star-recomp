@@ -85,6 +85,54 @@ Each shader has exactly one metadata entry, whichever pipelines use it.
 The numthreads equal the PSV0 values of the shader's container for all 2,682 compute pipelines with an extracted
 program.
 
+### Fixed-function state
+
+The graphics record's 0x08 entry is a fixed run of hardware context register values (names from AMD's RDNA2 register
+reference). It starts with the u32 version (0x4005D800, 0x4005D808, 0x4005D810), then a layout kind: 4 for vertex
+pipelines (380 bytes before the tail), 6 for mesh pipelines (464). The mesh layout holds 0x54 more bytes of NGG
+registers ahead of the pixel-shader block, so from 0x58 on its offsets are 0x54 higher. The low byte of 0x0C is the
+number of dwords in a tail after the fixed part (not decoded). Code: `GraphicsStateParser`, `FixedFunctionDecoder`.
+
+| Vertex layout | Register | Evidence |
+|---|---|---|
+| 0x2C | VGT_GS_OUT_PRIM_TYPE | 2 (triangles) everywhere except the two slot-6 pipelines (1, lines): slot 6 is a geometry shader |
+| 0x58 | SPI_PS_INPUT_ENA | equals the pixel shader's FSSM value in most pipelines |
+| 0x68 | DB_SHADER_CONTROL | equals the FSSM value in 88% to 99.7% of each layout's pipelines |
+| 0x70 | SPI_SHADER_COL_FORMAT | export formats, compacted over holes; 0 when no target is bound |
+| 0x78 | CB_SHADER_MASK | the FSSM mask restricted to the bound targets |
+| 0x9C | PA_CL_CLIP_CNTL | ZCLIP_NEAR/FAR_DISABLE on 960 pipelines, 939 of the 945 with programs are shadow-cascade passes |
+| 0xA0 | PA_SU_SC_MODE_CNTL | front-face culling on 62 pipelines, 43 of them `*_BackFace` pixel shaders |
+| 0xAC, 0xB0, 0xB4 | PA_SU_POLY_OFFSET_CLAMP, FRONT_SCALE, FRONT_OFFSET (floats) | non-zero on shadow and entity-mask passes |
+| 0xB8 | DB_DEPTH_CONTROL | reverse-Z GEQUAL/GREATER in the main passes, LESS/LEQUAL in shadow and linear-depth passes |
+| 0xBC | DB_STENCIL_CONTROL | stencil ops set when stencil writes are on (6 exceptions in 25,471) |
+| 0xC0, 0xC4 | DB_STENCILREFMASK, DB_STENCILREFMASK_BF | |
+| 0xCC | CB_TARGET_MASK | D3D write masks (0x88888888 alpha-only passes, 0 for colour-less passes) |
+| 0xD0 | CB_BLEND0..7_CONTROL | 1,937 use SRC1 factors; all of those pixel shaders write SV_Target0 and SV_Target1 |
+| 0xF4 | SX_PS_DOWNCONVERT | format class per written target |
+| 0xF8, 0xFC | SX_BLEND_OPT_EPSILON, SX_BLEND_OPT_CONTROL | |
+| 0x100 | SX_MRT0..7_BLEND_OPT | `06000600` (blend disabled) as often as CB_BLEND is disabled, per target |
+| 0x120 | DB_EQAA | `00100000` except 94 UAV-only and conservative passes (16 samples, forced) |
+
+Further checks on the reference dump: the colour exports equal the OSG1 SV_Target registers in 22,021 of 24,088
+pipelines with a pixel shader (most others write targets the pipeline does not bind, and the driver drops those
+exports); `uint` outputs always use 32-bit or UINT16 exports; pipelines without a pixel shader export nothing; no
+pipeline whose pixel shader is named `*Opaque*` blends, while all `ptfx` and `Transparent` ones do.
+
+`psocache --out` writes each graphics pipeline's `state` in D3D12 enum values: blend per target, render targets with
+a DXGI format guess, depth-stencil, rasterizer, topology type, sample counts, and the raw registers.
+
+| Field | Confidence |
+|---|---|
+| Blend factors, ops, enable, write mask; dual source | high |
+| Depth enable/write/func, stencil enable, ops, funcs, masks | high |
+| Cull mode, depth clip, fill mode (always solid) | high |
+| Depth bias | medium: the registers are certain; slope = scale / 16 and bias = offset follow AMD's units |
+| Render-target count | medium: one past the highest written, bound target; bound but unwritten targets are invisible |
+| Render-target format | low: a family guess; UNORM vs SRGB, RGBA vs BGRA and float vs integer 32-bit are not stored |
+| Topology type | medium: the rasterised primitive (triangles); a GS pipeline's input type is not stored |
+| Sample count | medium: 1 everywhere; DB_EQAA shows MSAA only as forced counts |
+| Front counter-clockwise | low: taken as the hardware's FACE bit (0 = CCW front), so almost every pipeline reads `true` |
+
 ## Shaders
 
 A shader index entry is the shader's code block. It starts with the same 24 bytes as the code block of the FSSM
@@ -149,16 +197,18 @@ fivestar shader psocache <shaders.rpf | cache blob> [--programs <fssm folder>] [
 
 Prints the header, the slot patterns, input-layout and binding statistics and, with a program folder (default
 `FIVESTAR_SHADER_DIR`), how many shaders and pipelines resolve to extracted programs. `--out` writes
-`code/<shader index>.bin` (the raw code blocks) and `pipelines.json`: every graphics pipeline (input layout, slots with
-shader index and program names), every compute pipeline (numthreads, shader) and every shader (program names, 0x41 and 0x42 entries).
+`code/<shader index>.bin` (the raw code blocks) and `pipelines.json`: every graphics pipeline (fixed-function state,
+input layout, slots with shader index and program names), every compute pipeline (numthreads, shader) and every shader (program names, 0x41 and 0x42 entries).
 A blob cut short (such as the `bin` entry `archive carve` writes) reads up to its end; shaders past it are skipped.
 
 ## Unknown
 
 - Header 0x04 and 0x48, graphics record 0x10..0x37, compute record 0x0C.
 - Compute state words 0x04, 0x14 and 0x18 (0x14 looks like COMPUTE_PGM_RSRC2 but differs from the FSSM header's).
-- The fixed-function state entry (versions 0x4005D800, 0x4005D808, 0x4005D810, 380 to 520 bytes); it looks like
-  hardware context registers (eight blend-control words), not decoded.
+- In the fixed-function state: the header words 0x08 to 0x28, the tail, the NGG block of the mesh layout and the
+  words not in the table above; the depth-stencil format (no PA_SU_POLY_OFFSET_DB_FMT_CNTL or DXGI value is stored);
+  the exact render-target formats; alpha-to-coverage, logic op, conservative rasterisation and the sample mask.
+- Graphics record 0x20..0x37: hashes; neither half of 0x20 determines the render-target format class.
 - Shader metadata header words 0x08 and 0x0C, 0x41 entry fields +0x10 and +0x14, 0x42 entries with low byte 2.
 - Where the 0x41 byte offsets point (a user-data table of the second compile is likely).
 - How a cache code block maps to FSSM register configuration; it has none of its own, so it is not a translator input.

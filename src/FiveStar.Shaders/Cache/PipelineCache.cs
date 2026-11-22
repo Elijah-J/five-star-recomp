@@ -87,6 +87,12 @@ public sealed class PipelineCache
         return _blob.Slice((int)(Header.MetaOffset + offset), (int)size);
     }
 
+    /// <summary>The fixed-function state registers of a graphics pipeline, or null when its entry has an unknown layout.</summary>
+    public GraphicsStateRegisters? State(GraphicsPipelineRecord pipeline)
+    {
+        return GraphicsStateParser.Parse(Meta(pipeline.StateMeta).Span);
+    }
+
     private (long Offset, long Size) IndexEntry(long table, int count, int index)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(index);

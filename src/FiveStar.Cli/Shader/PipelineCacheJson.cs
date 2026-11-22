@@ -58,6 +58,7 @@ internal static class PipelineCacheJson
         json.WriteString("groupA", pipeline.GroupA);
         json.WriteString("groupB", pipeline.GroupB);
         json.WriteNumber("stateMeta", pipeline.StateMeta);
+        FixedStateJson.Write(json, cache.State(pipeline));
         WriteInputLayout(json, InputLayoutParser.Parse(cache.Meta(pipeline.InputLayoutMeta).Span));
         json.WriteStartArray("stages");
 
