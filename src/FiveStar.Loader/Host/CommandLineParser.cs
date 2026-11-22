@@ -73,6 +73,10 @@ internal sealed class CommandLineParser
                 return SetGdkAbi();
             case "--device-type":
                 return SetDeviceType();
+            case "--patches":
+                return AddFullPath(_options.Patches);
+            case "--mods":
+                return AddFullPath(_options.ModFolders);
             case "-v":
                 return SetVerbose();
             case "--list-safe-calls":
@@ -100,6 +104,13 @@ internal sealed class CommandLineParser
     private bool Add(List<string> values)
     {
         values.Add(Next());
+
+        return true;
+    }
+
+    private bool AddFullPath(List<string> values)
+    {
+        values.Add(Path.GetFullPath(Next()));
 
         return true;
     }

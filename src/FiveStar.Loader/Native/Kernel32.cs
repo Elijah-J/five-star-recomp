@@ -73,4 +73,19 @@ internal static unsafe class Kernel32
 
     [DllImport(Library)]
     public static extern int TlsSetValue(uint index, nint value);
+
+    [DllImport(Library, SetLastError = true)]
+    public static extern nint CreateFileW(char* name, uint access, uint share, nint security, uint disposition, uint flags, nint template);
+
+    [DllImport(Library, SetLastError = true)]
+    public static extern nint CreateFileA(byte* name, uint access, uint share, nint security, uint disposition, uint flags, nint template);
+
+    [DllImport(Library, SetLastError = true)]
+    public static extern nint CreateFile2(char* name, uint access, uint share, uint disposition, nint parameters);
+
+    [DllImport(Library, SetLastError = true)]
+    public static extern uint GetFileAttributesW(char* name);
+
+    [DllImport(Library, SetLastError = true)]
+    public static extern int GetFileAttributesExW(char* name, int level, void* information);
 }

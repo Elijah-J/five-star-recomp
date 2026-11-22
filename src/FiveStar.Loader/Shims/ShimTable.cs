@@ -18,6 +18,9 @@ internal sealed class ShimTable
 {
     private const BindingFlags StaticMembers = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
 
+    /// <summary>Microsoft x64 ABI: the first four arguments travel in rcx, rdx, r8 and r9.</summary>
+    private const int RegisterArguments = 4;
+
     private readonly Dictionary<(string Module, string Symbol), ShimEntry> _entries = [];
     private readonly HashSet<string> _exclusiveModules = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, ShimModuleAttribute> _moduleInfo = new(StringComparer.OrdinalIgnoreCase);
@@ -186,7 +189,8 @@ internal sealed class ShimTable
 
             if (shims.Any(s => s.SetsLastError))
             {
-                address = _lastError.Wrap(address);
+                int stackArguments = Math.Max(0, method.GetParameters().Length - RegisterArguments);
+                address = _lastError.Wrap(address, stackArguments);
             }
 
             foreach (var shim in shims)

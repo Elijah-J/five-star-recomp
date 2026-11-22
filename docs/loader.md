@@ -12,6 +12,7 @@ nothing is translated. Until the game executable is available it is exercised on
 | Relocate | `.reloc` entries DIR64, HIGHLOW, HIGH and LOW, when the base moved |
 | Exports | read before the imports are bound, so import cycles resolve |
 | Imports | normal and delay-load imports (delay imports bound at load), by name and by ordinal; order below |
+| Patch | the code patches for this module (below), while the pages are still writable |
 | Protect | `PAGE_*` per section from its characteristics; headers read-only |
 | `.pdata` | `RtlAddFunctionTable`, so SEH, C++ EH and stack walks work through the image |
 | TLS | a generated "TLS host" DLL (below) |
@@ -59,6 +60,7 @@ ntdll answers only for OS-loaded modules; mapping it lets the loader bind that i
 | `LoadLibrary{A,W,ExA,ExW}` (any module) | a mapped image: its base, reference counted; an Xbox-only module: a read-only page with a minimal PE header (a virtual module); a manual module or a DLL in the search directories, by name or by a path inside one: mapped now; data-file loads and the rest: the OS |
 | `GetProcAddress` (any module) | mapped image: its exports; virtual module: the shim table (unknown name: NULL, error 127); OS module: the "*" shim of that name if there is one, else the real export |
 | `FreeLibrary` (any module) | mapped image: reference count down; an image first mapped by `LoadLibrary` and imported by no other image is unloaded at 0; virtual module: TRUE |
+| `CreateFile{W,A}`, `CreateFile2`, `GetFileAttributes{W,ExW}`, `fopen`, `_wfopen`, `_fsopen`, `_wfsopen`, `_open`, `_wopen` (any module) | the file overlay (below), then the real function; an ANSI call that is redirected opens the mod file through the wide function |
 | `XGameRuntimeInitialize*`, `XGameRuntimeIsFeatureAvailable` | succeed; every feature available |
 | `XTaskQueue*` | Manual, ThreadPool, SerializedThreadPool and Immediate ports; composite queues; delayed callbacks; waiters (re-armed after each signal); monitors; terminate (pending callbacks run with `canceled = true`); duplicate and close reference counted; a process queue (ThreadPool/ThreadPool) created on first use |
 | `XAsync*` | Begin, Schedule, Complete, GetStatus (with wait), GetResultSize, GetResult (identity and buffer checked), Cancel, Run; DoWork on the work port, the completion routine on the completion port, Cleanup once |
@@ -73,7 +75,54 @@ The GDK shims also answer for any `api-ms-win-*gaming*` or `ext-ms-win-*gaming*`
 with `X`; other functions of those API sets go to System32.
 
 A shim that reports a last error is entered through a generated wrapper that writes `TEB.LastErrorValue` after the
-managed method returns, because the runtime's return path resets the value a managed `SetLastError` set.
+managed method returns, because the runtime's return path resets the value a managed `SetLastError` set. The wrapper
+copies up to 8 stack arguments (the fifth and later) into its own call.
+
+## Code patches
+
+`--patches <file or folder>` (repeatable) reads patch files; a folder contributes its `*.fspatch` files in name
+order. A `[name]` line starts a patch, `key = value` lines describe it, `#` starts a comment.
+
+| Key | Meaning |
+|---|---|
+| `module` | image file name (required) |
+| `sha256` | SHA-256 of the image file; another build skips the patch |
+| `enabled` | `true` (default) or `false` |
+| `description` | free text |
+| `pattern` | hex bytes separated by spaces, `??` for any byte (required) |
+| `matches` | how many matches the pattern must have, default 1; each one is patched |
+| `offset` | from the start of a match to the first written byte; decimal, `0x` hex, may be negative; default 0 |
+| `bytes` | the replacement bytes |
+| `jump` | `module!symbol` of a shim; writes `mov rax,<shim>; jmp rax` (12 bytes) |
+
+Exactly one of `bytes` and `jump` is given. A jump target is looked up like an import (module, alias, then `*`), so
+`jump` sends a game function to any shim, for example one written for raw mouse input.
+
+```
+# Bink2Scarlett.dll: BinkUtilCPUs is mov eax,7; ret
+[twelve-cpus]
+module = Bink2Scarlett.dll
+description = report 12 CPUs
+pattern = B8 07 00 00 00 C3 CC ?? ?? ?? ?? ?? ?? ?? ?? ?? F7 DA
+offset = 1
+bytes = 0C
+```
+
+Patches run in the order given, after relocation and import binding and before section protection, TLS and
+`DllMain`. The pattern is searched over the whole mapped image. Each patch is logged as `applied` (with the written
+offsets), `skipped` (disabled, or a different SHA-256) or `failed` (not found, a different match count, a write
+outside the image, an unknown shim). A skipped or failed patch writes nothing.
+
+## File overlay
+
+`--mods <dir>` (repeatable) adds a mod folder; the first given has priority. When mapped code opens a path inside the
+package root (`--package-root`, else the main image's directory) through one of the file shims, the loader takes the
+path relative to the root and opens the same relative path in the first mod folder that contains that file. Paths
+outside the root, and files no mod folder has, open unchanged. `\\?\` prefixes and relative paths are resolved first.
+Each redirect is a detail line in the log (`[overlay] CreateFileW("...") -> "..."`). Without `--mods` the shims only
+forward.
+
+Directory listings (`FindFirstFile*`) are not merged: a file only a mod folder has opens, but is not listed.
 
 ## The GDK thunk ABI
 
@@ -118,6 +167,8 @@ fivestar-loader --load $dump\XboxBvhBuilder.dll --load $dump\Bink2Scarlett.dll -
 | `--gdk-abi <file>` | the thunk ABI table |
 | `--package-root <dir>` | where `MicrosoftGame.config` is read; default the main image's directory |
 | `--device-type <n>` | `XSystemGetDeviceType` result |
+| `--patches <file or folder>` | code patches (repeatable) |
+| `--mods <dir>` | mod folder over the package root (repeatable, first has priority) |
 | `--manual <a.dll,b.dll>`, `--system-crt`, `--search <dir>` | which modules the loader maps itself |
 | `--unresolved stub\|trap\|error`, `--no-shim <module!symbol>` | unresolved-import handling; disable one shim |
 | `--no-entry`, `--no-exports`, `--unload`, `--work-dir <dir>` | skip DllMain; skip the export listing; unload at the end; folder of the TLS host DLLs |
@@ -139,3 +190,5 @@ DLLs (825 imports, none unresolved), run the inspected exports and read the pack
 - `XGameRuntimeInitializeWithOptions` options; waiters re-arming after each signal; `XGameSaveGetContainerInfo` on a
   missing container (S_OK, no callback).
 - D3D12.X beyond root signatures, and whether its root-signature versions and flags match the PC ones.
+- Overrides of files inside `.rpf` archives: the archive file table is encrypted, so the overlay works on whole files
+  only. Which functions the game executable opens its files with.

@@ -18,6 +18,12 @@ internal sealed record HostOptions
 
     public List<string> DisabledShims { get; } = [];
 
+    /// <summary>Patch files and folders of patch files, in order.</summary>
+    public List<string> Patches { get; } = [];
+
+    /// <summary>Mod folders, highest priority first.</summary>
+    public List<string> ModFolders { get; } = [];
+
     public bool SystemCrt { get; set; }
 
     public UnresolvedMode Unresolved { get; set; } = UnresolvedMode.Stub;

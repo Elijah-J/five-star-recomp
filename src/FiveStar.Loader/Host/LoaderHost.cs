@@ -4,6 +4,7 @@
 using FiveStar.Loader.Calls;
 using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Loading;
+using FiveStar.Loader.Mods;
 
 namespace FiveStar.Loader.Host;
 
@@ -44,6 +45,12 @@ internal sealed class LoaderHost
         _log.Info($"fivestar-loader pid {_processId}; manual modules: {listed}; unresolved={_options.Unresolved}");
 
         LoadAbiTable();
+
+        if (!ConfigureMods())
+        {
+            return UsageError;
+        }
+
         var (targets, rc) = LoadTargets();
         LoadReport.Print(_runtime, targets, _options.ListExports);
         ReportMainImage();
@@ -61,6 +68,42 @@ internal sealed class LoaderHost
         {
             _runtime.Gdk.Runtime.LoadAbiTable(_options.GdkAbiTable);
         }
+    }
+
+    /// <summary>Reads the patch files and adds the mod folders; false after a reported error.</summary>
+    private bool ConfigureMods()
+    {
+        try
+        {
+            var patches = PatchFileReader.ReadPaths(_options.Patches);
+            _runtime.Patcher.Add(patches);
+
+            if (patches.Count > 0)
+            {
+                _log.Info($"patches: {patches.Count} from {string.Join(", ", _options.Patches)}");
+            }
+        }
+        catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            _log.Error($"patches: {e.Message}");
+
+            return false;
+        }
+
+        foreach (string folder in _options.ModFolders)
+        {
+            if (!Directory.Exists(folder))
+            {
+                _log.Error($"mod folder {folder} does not exist");
+
+                return false;
+            }
+
+            _runtime.Overlay.AddFolder(folder);
+            _log.Info($"mod folder {_runtime.Overlay.Folders.Count}: {folder}");
+        }
+
+        return true;
     }
 
     private (List<LoadedImage> Targets, int Rc) LoadTargets()

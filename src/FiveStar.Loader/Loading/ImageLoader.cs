@@ -3,6 +3,7 @@
 
 using FiveStar.Loader.Codegen;
 using FiveStar.Loader.Diagnostics;
+using FiveStar.Loader.Mods;
 using FiveStar.Loader.Native;
 using FiveStar.Loader.Pe;
 using FiveStar.Loader.Shims;
@@ -11,7 +12,7 @@ namespace FiveStar.Loader.Loading;
 
 /// <summary>
 /// Manual PE32+ loader. Per image: map (preferred base, else anywhere), relocate, read exports, bind imports and
-/// delay imports, set section protections, register .pdata, attach TLS through a generated host DLL, then call
+/// delay imports, apply code patches, set section protections, register .pdata, attach TLS through a generated host DLL, then call
 /// DllMain(PROCESS_ATTACH). Dependencies finish first; unloading runs in reverse order.
 /// </summary>
 internal sealed class ImageLoader
@@ -20,18 +21,20 @@ internal sealed class ImageLoader
     private readonly ImageTable _table;
     private readonly CodeHeap _heap;
     private readonly TlsHostAttacher _tls;
+    private readonly ImagePatcher _patcher;
     private readonly LoaderLog _log;
     private readonly ImportResolver _resolver;
     private readonly List<string> _searchDirectories;
     private readonly Dictionary<string, LoadedImage> _images = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<LoadedImage> _initOrder = [];
 
-    public ImageLoader(LoaderOptions options, ShimTable shims, UnresolvedStubs stubs, ImageTable table, CodeHeap heap, TlsHostAttacher tls, LoaderLog log)
+    public ImageLoader(LoaderOptions options, ShimTable shims, UnresolvedStubs stubs, ImageTable table, CodeHeap heap, TlsHostAttacher tls, ImagePatcher patcher, LoaderLog log)
     {
         _options = options;
         _table = table;
         _heap = heap;
         _tls = tls;
+        _patcher = patcher;
         _log = log;
 
         _searchDirectories = [.. options.SearchDirectories];
@@ -225,6 +228,9 @@ internal sealed class ImageLoader
         image.Exports = new ExportTable(image.Base, image.Pe.Directory(DataDirectoryIndex.Export));
         _resolver.BindImports(image);
         _resolver.BindDelayImports(image);
+
+        // Patches write while the pages are still writable and before any code of the image runs.
+        _patcher.Apply(image);
 
         // Unresolved-import stubs become executable before any code of the image runs.
         _heap.Seal();

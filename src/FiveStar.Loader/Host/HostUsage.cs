@@ -20,6 +20,8 @@ internal static class HostUsage
           --gdk-abi <file>       XGameRuntime thunk ABI table: "clsid iid slot FunctionName" per line
           --package-root <dir>   package root for XPackage / MicrosoftGame.config (default: main image directory)
           --device-type <n>      XSystemGetDeviceType result (default 7 = XboxScarlettAnaconda)
+          --patches <path>       code patch file, or folder of *.fspatch files (repeatable, applied in order)
+          --mods <dir>           mod folder laid over the package root (repeatable, first has priority)
           --manual <a.dll,b.dll> map these modules with this loader instead of LoadLibrary (repeatable)
           --system-crt           do not map the shipped MSVC runtime (default: msvcp140*/vcruntime140*/concrt140/
                                  vccorlib140/vcomp140 are mapped from the target's directory if present)

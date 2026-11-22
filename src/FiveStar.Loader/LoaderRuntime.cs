@@ -5,6 +5,7 @@ using FiveStar.Loader.Calls;
 using FiveStar.Loader.Codegen;
 using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Loading;
+using FiveStar.Loader.Mods;
 using FiveStar.Loader.Shims;
 using FiveStar.Loader.Shims.Gdk;
 
@@ -27,7 +28,9 @@ internal sealed class LoaderRuntime : IDisposable
 
         Images = new ImageTable();
         VirtualModules = new VirtualModules(log);
-        Loader = new ImageLoader(options, Shims, Stubs, Images, CodeHeap, new TlsHostAttacher(options.WorkDirectory, options.ProcessId, log), log);
+        Patcher = new ImagePatcher(Shims, log);
+
+        Loader =new ImageLoader(options, Shims, Stubs, Images, CodeHeap, new TlsHostAttacher(options.WorkDirectory, options.ProcessId, log), Patcher, log);
         Router = new RuntimeLibraryRouter(Loader, VirtualModules, Shims, Images, log);
         Identity = new ProcessIdentity(log);
         ModuleIdentity = new ModuleIdentity(Loader, Router, Images, VirtualModules, Shims, Stubs, LastError, Counters, log, environment.SystemDirectory);
@@ -35,6 +38,7 @@ internal sealed class LoaderRuntime : IDisposable
         XMem = new XMemAllocator(Images, log);
         D3D12 = new D3D12Forwarder(log);
         Gdk = CreateGdk(gdk, environment.Time);
+        Overlay = new FileOverlay(Gdk.Config, log);
         RecipeAllocator = new RecipeAllocator();
         ShimContext.Activate(this);
     }
@@ -59,6 +63,12 @@ internal sealed class LoaderRuntime : IDisposable
     public VirtualModules VirtualModules { get; }
 
     public ImageLoader Loader { get; }
+
+    /// <summary>The code patches applied to images as they are mapped.</summary>
+    public ImagePatcher Patcher { get; }
+
+    /// <summary>The mod folders the file shims consult.</summary>
+    public FileOverlay Overlay { get; }
 
     public RuntimeLibraryRouter Router { get; }
 
