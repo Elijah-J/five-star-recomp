@@ -40,6 +40,20 @@ dotnet build FiveStar.slnx
 dotnet test
 ```
 
+### Preparing your dump
+
+```
+fivestar setup <your dump folder>
+```
+
+One command prepares everything the port needs: it checks the dump, extracts and translates the shaders, reads the
+console pipeline cache and exports the textures into `%LOCALAPPDATA%\FiveStar\<titleid>-<version>\` (`--work` picks
+another folder). The first run takes one to several hours, depending on the processor, and needs over 100 GB free; a
+re-run skips finished steps, and a run that was stopped continues where it left off. `fivestar setup <dump> --status` shows what is done. See
+[docs/setup.md](docs/setup.md).
+
+### Single tools
+
 The `fivestar` command holds all tools; `fivestar <group> help` lists a group's commands.
 
 ```

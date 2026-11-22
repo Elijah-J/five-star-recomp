@@ -38,23 +38,19 @@ internal static class TranslateCommand
             Translation = new TranslationOptions(arguments.Flag(StructuredFlag), PinWaveSize: true),
         };
 
-        var cacheFolder = arguments.Option("cache");
+        var dxc = Compiler(arguments, retry is not null);
+        using var usage = OpenUsage(arguments.Option("cache"), llvm, options.Translation, dxc);
         CacheFolder? cache = null;
         TranslationCache? translations = null;
-        IShaderCompiler? compiler = null;
 
-        if (cacheFolder is not null)
+        if (usage is not null)
         {
-            cache = new CacheFolder(cacheFolder);
+            cache = new CacheFolder(arguments.Option("cache")!);
+            cache.RecordUsage(usage);
             translations = new TranslationCache(cache, TranslationCache.Identity(llvm, options.Translation));
         }
 
-        if (!arguments.Flag(NoCompileFlag))
-        {
-            compiler = ShaderTools.Compiler(arguments, retry is not null);
-            compiler = Cached(compiler, cache);
-        }
-
+        var compiler = Cached(dxc, cache);
         var fallback = compiler is null ? null : new MeshFallbackCompiler(compiler);
         var progress = new ConsoleProgress(() => Counts(compiler, translations));
         var loader = new ProgramLoader(new LlvmDisassembler(llvm));
@@ -74,9 +70,30 @@ internal static class TranslateCommand
         return Success;
     }
 
-    private static IShaderCompiler Cached(IShaderCompiler compiler, CacheFolder? cache)
+    /// <summary>The usage record of this translator and compiler build in the cache, or null without a cache.</summary>
+    private static CacheUsage? OpenUsage(string? cacheFolder, LlvmToolPaths llvm, TranslationOptions translation, IShaderCompiler? dxc)
     {
-        if (cache is null)
+        if (cacheFolder is null)
+        {
+            return null;
+        }
+
+        return new CacheUsage(cacheFolder, ShaderCacheIdentity.Of(llvm, translation, dxc));
+    }
+
+    private static IShaderCompiler? Compiler(CommandArguments arguments, bool retry)
+    {
+        if (arguments.Flag(NoCompileFlag))
+        {
+            return null;
+        }
+
+        return ShaderTools.Compiler(arguments, retry);
+    }
+
+    private static IShaderCompiler? Cached(IShaderCompiler? compiler, CacheFolder? cache)
+    {
+        if (compiler is null || cache is null)
         {
             return compiler;
         }

@@ -8,14 +8,18 @@ namespace FiveStar.Shaders.Compilation;
 /// <summary>
 /// The shader cache on disk: one Brotli-compressed file per entry at <c>&lt;kind&gt;/&lt;key[0..2]&gt;/&lt;key&gt;&lt;extension&gt;</c>.
 /// An entry is written to a temporary file and moved into place, so a reader never sees a partial entry and an
-/// interrupted run leaves only complete ones.
+/// interrupted run leaves only complete ones. With a <see cref="CacheUsage"/> attached, every entry found or written is
+/// recorded there.
 /// </summary>
 public sealed class CacheFolder
 {
+    /// <summary>The extension of an entry still being written.</summary>
+    public const string TemporaryExtension = ".tmp";
+
     private const int ShardLength = 2;
-    private const string TemporaryExtension = ".tmp";
 
     private readonly string _root;
+    private CacheUsage? _usage;
 
     public CacheFolder(string root)
     {
@@ -24,9 +28,28 @@ public sealed class CacheFolder
 
     public string Root => _root;
 
+    /// <summary>Records every entry found or written from now on in the usage record.</summary>
+    public void RecordUsage(CacheUsage usage)
+    {
+        _usage = usage;
+    }
+
+    /// <summary>The entry's path below the root with forward slashes, as a usage record lists it.</summary>
+    public static string EntryName(string kind, string key, string extension)
+    {
+        return $"{kind}/{key[..ShardLength]}/{key}{extension}";
+    }
+
     public bool Contains(string kind, string key, string extension)
     {
-        return File.Exists(EntryPath(kind, key, extension));
+        var found = File.Exists(EntryPath(kind, key, extension));
+
+        if (found)
+        {
+            _usage?.Record(EntryName(kind, key, extension));
+        }
+
+        return found;
     }
 
     /// <summary>The entry's bytes, or null when there is none.</summary>
@@ -43,6 +66,7 @@ public sealed class CacheFolder
         using var brotli = new BrotliStream(file, CompressionMode.Decompress);
         using var memory = new MemoryStream();
         brotli.CopyTo(memory);
+        _usage?.Record(EntryName(kind, key, extension));
 
         return memory.ToArray();
     }
@@ -63,6 +87,8 @@ public sealed class CacheFolder
             // Another writer stored the same entry and a reader holds it open; its content is the same.
             File.Delete(temporary);
         }
+
+        _usage?.Record(EntryName(kind, key, extension));
     }
 
     /// <summary>The total size of the entries, in bytes.</summary>

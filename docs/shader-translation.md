@@ -181,8 +181,8 @@ while an in-process crash or allocation failure ends the whole run.
 
 ### Cache
 
-`--cache <dir>` keeps work between runs, so a re-run only redoes what changed. A later default is
-`%LOCALAPPDATA%\FiveStar\shader-cache\<title>\`. Every entry is Brotli-compressed at
+`--cache <dir>` keeps work between runs, so a re-run only redoes what changed. `fivestar setup` uses
+`<work folder>/shader-cache` (see [setup.md](setup.md)). Every entry is Brotli-compressed at
 `<dir>/<kind>/<key[0..2]>/<key><extension>` and written through a temporary file, so an interrupted run keeps every
 finished entry. Keys are SHA-256 hashes:
 
@@ -195,8 +195,9 @@ finished entry. Keys are SHA-256 hashes:
 | `dxil/*.timeout` | same | the time limit the compile ran into; reused for limits up to that one, so `--retry` (900 s) tries again |
 
 Programs with the same HLSL compile once, also within one run. Any new build of FiveStar.Shaders invalidates the
-translations (all programs are translated again) but only programs whose HLSL changed are compiled again. Nothing
-is removed; delete the folder to reset it.
+translations (all programs are translated again) but only programs whose HLSL changed are compiled again. Each run lists the entries it used in
+`used/<identity>.txt`; `fivestar setup <dump> --clean-cache` removes the entries of older builds (see
+[setup.md](setup.md#shader-cache)). Deleting the folder resets it.
 
 ```
 fivestar shader waves <out> <fssm-folder>

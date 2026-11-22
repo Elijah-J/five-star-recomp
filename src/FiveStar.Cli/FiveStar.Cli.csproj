@@ -6,6 +6,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="FiveStar.Cli.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\FiveStar.Formats\FiveStar.Formats.csproj" />
     <ProjectReference Include="..\FiveStar.Graphics\FiveStar.Graphics.csproj" />
     <ProjectReference Include="..\FiveStar.Shaders\FiveStar.Shaders.csproj" />

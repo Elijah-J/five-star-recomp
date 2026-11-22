@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+using FiveStar.Cli.Setup;
+
 namespace FiveStar.Cli;
 
 /// <summary>Entry point of the <c>fivestar</c> command: the first argument picks a command group.</summary>
@@ -33,6 +35,8 @@ public static class Program
                 return GraphicsCommands.Run(rest);
             case "progress":
                 return ProgressCommands.Run(rest);
+            case "setup":
+                return SetupCommand.Run(rest);
             default:
                 PrintUsage();
 
@@ -42,7 +46,8 @@ public static class Program
 
     private static void PrintUsage()
     {
-        Console.Error.WriteLine("usage: fivestar <archive|texture|platform|shader|graphics|progress> <command> [arguments]");
+        Console.Error.WriteLine("usage: fivestar setup <dump folder> [options]     prepare everything the port needs (fivestar setup help)");
+        Console.Error.WriteLine("       fivestar <archive|texture|platform|shader|graphics|progress> <command> [arguments]");
         Console.Error.WriteLine("       fivestar <group> help    lists the commands of a group");
     }
 }
