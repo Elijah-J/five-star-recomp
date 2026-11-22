@@ -25,6 +25,8 @@ internal sealed class PageReports
     private const int StatusWidth = 20;
     private const int HeaderReadLimit = 256;
     private const long DefaultLimit = 20;
+    private const int TopModels = 6;
+    private const double PercentScale = 100.0;
 
     private readonly TextWriter _output;
 
@@ -148,6 +150,64 @@ internal sealed class PageReports
         {
             _output.WriteLine($"codec {key.Codec}  {key.Status,-StatusWidth} {totals[key]}");
         }
+    }
+
+    /// <summary>Model use per codec and lane over every page file below a folder, then the twin-lane check.</summary>
+    public void BcPackModels(string root)
+    {
+        var survey = new BcPackLaneSurvey();
+
+        foreach (var path in TextureReports.PageFiles(root))
+        {
+            using var source = new MappedFileSource(path);
+            var file = new TexturePageFile(source, new ZlibInflater());
+
+            foreach (var page in BcPackPagesOf(file))
+            {
+                survey.Add(source.Read(page.FileOffset, (int)Math.Min(page.FileLength, BcPackLaneSurvey.HeadBytes)), page.Codec);
+            }
+
+            _output.WriteLine(Path.GetFileName(path));
+            _output.Flush();
+        }
+
+        var byLane = new SortedDictionary<(int Codec, int Lane), List<(BcPackModel Model, long Count)>>();
+
+        foreach (var pair in survey.Models)
+        {
+            var key = (pair.Key.Codec, pair.Key.Lane);
+
+            if (!byLane.TryGetValue(key, out var list))
+            {
+                list = [];
+                byLane[key] = list;
+            }
+
+            list.Add((pair.Key.Model, pair.Value));
+        }
+
+        foreach (var pair in byLane)
+        {
+            var list = pair.Value;
+            list.Sort((left, right) => right.Count.CompareTo(left.Count));
+            long total = 0;
+
+            foreach (var item in list)
+            {
+                total += item.Count;
+            }
+
+            var parts = new List<string>();
+
+            foreach (var item in list.Take(TopModels))
+            {
+                parts.Add($"{item.Model} {DecimalText.Fixed(PercentScale * item.Count / total, 1)}%");
+            }
+
+            _output.WriteLine($"codec {pair.Key.Codec} lane {pair.Key.Lane}  {string.Join("  ", parts)}");
+        }
+
+        _output.WriteLine($"pages {survey.Pages}  twin lanes {survey.TwinPairs}  equal first bytes {survey.TwinMatches}");
     }
 
     private static int CompareKeys((int Codec, string Status) left, (int Codec, string Status) right)

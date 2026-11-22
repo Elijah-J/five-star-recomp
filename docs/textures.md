@@ -89,8 +89,10 @@ decoder exists. A BCPack page starts with a 48-byte header of 6 rows by 8 lanes 
 The coder renormalises byte-wise with 16-bit probabilities and lower bound 2^24. Model bytes 0xDB, 0xDC, 0xDD, 0xDE
 give one symbol the frequency 65536 - E (E = 2, 4, 8, 32) at cumulative start 1. A lane that codes only that symbol N
 times (N = blocks per page, or twice that for 16-byte blocks) has a start state that depends only on N;
-`texture bcpack` checks these lanes. After the header, the first refill byte of each lane with a budget above 3
-follows in lane order.
+`texture bcpack` checks these lanes. The model byte splits into a family (bits 5-7) and a parameter (bits 0-4).
+After the header, every lane whose budget is not 3 reads one byte, in lane order; the budget wraps at 256, so budgets
+0-2 read too. Lanes read the shared stream in lane order from there on, but a lane's bytes go past its budget and the
+rest of the layout is not known. Research notes: `docs/wiki/Textures-and-BCPack.md`.
 
 ## DDS output
 
@@ -107,6 +109,7 @@ fivestar texture codecs   <dir>                  pages and stored bytes per stor
 fivestar texture pages    <file.ttpf>            three sample entries per flag value, then counts per flag and kind
 fivestar texture bcpack   <file.ttpf> [--limit N] [--codec C]
 fivestar texture bcpack   <dir> --stats
+fivestar texture bcpack   <dir> --models         model use per codec and lane, and the twin-lane check
 ```
 
 Statuses: `ok`, `skip_fmt_N` (format not supported), `skip_modeN` (no swizzle known), `skip_cube_span`,

@@ -13,7 +13,7 @@ internal static class TextureCommands
     private const int UsageError = 2;
     private const int TwoArguments = 2;
 
-    private static readonly string[] Flags = ["--no-dds", "--stats"];
+    private static readonly string[] Flags = ["--no-dds", "--stats", "--models"];
 
     public static int Run(IReadOnlyList<string> args)
     {
@@ -98,12 +98,16 @@ internal static class TextureCommands
     {
         if (arguments.Positionals.Count < 1)
         {
-            return Usage("texture bcpack <file.ttpf> [--limit N] [--codec C] | texture bcpack <dir> --stats");
+            return Usage("texture bcpack <file.ttpf> [--limit N] [--codec C] | texture bcpack <dir> --stats | --models");
         }
 
         if (arguments.HasFlag("--stats"))
         {
             reports.BcPackStats(arguments.Positionals[0]);
+        }
+        else if (arguments.HasFlag("--models"))
+        {
+            reports.BcPackModels(arguments.Positionals[0]);
         }
         else
         {
@@ -144,5 +148,6 @@ internal static class TextureCommands
         output.WriteLine("  pages    <file.ttpf>               sample page-table entries per flag value with their storage kind");
         output.WriteLine("  bcpack   <file.ttpf> [--limit N] [--codec C]   BCPack page headers and near-constant lane checks");
         output.WriteLine("  bcpack   <dir> --stats             lane check totals over every page file");
+        output.WriteLine("  bcpack   <dir> --models            model use per codec and lane, and the twin-lane check");
     }
 }
