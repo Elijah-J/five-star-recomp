@@ -17,6 +17,11 @@
     <ProjectReference Include="..\..\src\FiveStar.Shaders\FiveStar.Shaders.csproj" />
   </ItemGroup>
 
+  <!-- One D3D12 device at a time: WARP crashes the test host when test classes run in parallel. -->
+  <ItemGroup>
+    <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <!-- Helper shaders (fullscreen / half-coverage VS, wave probes, GS pass-through VS), compiled by the tests. -->
   <ItemGroup>
     <EmbeddedResource Include="Shaders\*.hlsl" LogicalName="%(Filename)%(Extension)" />
