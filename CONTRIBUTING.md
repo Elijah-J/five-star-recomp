@@ -18,7 +18,8 @@ These protect the project. A change that breaks one of them is closed, however g
 1. Install the .NET 10 SDK. Shader work also needs the DirectX shader compiler (`dxc`, Windows SDK). The shader tests
    and `fivestar shader decode-check` also need LLVM 18+ with the AMDGPU target (`llvm-mc`, `llvm-objdump`).
 2. `dotnet build FiveStar.slnx` and `dotnet test`. Tests that need game files are skipped until you set
-   `FIVESTAR_DUMP` to the folder of your own dump.
+   `FIVESTAR_DUMP` to the folder of your own dump. Tests that need a tool skip with the reason when it is missing:
+   `FIVESTAR_LLVM` names the LLVM `bin` folder, `FIVESTAR_DXC` the `dxc.exe` to use.
 3. The `docs/` folder explains each format and tool; `README.md` lists where to start.
 
 ## Code
@@ -57,6 +58,8 @@ lists each violation as `path:line: [Rule] message`.
 - Unit tests use small hand-made inputs. Tests on real game files read `FIVESTAR_DUMP` and skip without it.
 - Shader translator tests run on D3D12 WARP and compare against a reference model of the RDNA instruction set,
   never against the translator's own output.
+- CI (`.github/workflows/ci.yml`) builds and tests every push and pull request. Windows runs every test that needs no
+  game files, the WARP tests included (dxc from the Windows SDK, llvm-mc and llvm-objdump from the LLVM release). Linux builds the solution and runs every test project except the loader's, which needs Windows.
 
 ## Documentation
 
