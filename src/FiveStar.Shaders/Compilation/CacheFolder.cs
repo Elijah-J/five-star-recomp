@@ -82,9 +82,10 @@ public sealed class CacheFolder
         {
             File.Move(temporary, path, overwrite: true);
         }
-        catch (IOException)
+        catch (Exception exception) when (exception is IOException || (exception is UnauthorizedAccessException && File.Exists(path)))
         {
-            // Another writer stored the same entry and a reader holds it open; its content is the same.
+            // Another writer stored the same entry (Windows denies replacing a file another move or reader holds); an
+            // entry's content is fixed by its key, so the stored one is the same.
             File.Delete(temporary);
         }
 
