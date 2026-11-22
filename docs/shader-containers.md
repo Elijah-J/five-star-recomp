@@ -2,7 +2,8 @@
 
 The game ships its shaders in `shaders.rpf`. Unlike the other archives its payload is not encrypted: it holds SGD5
 tables whose shader records each compress one DXBC container. The DXIL chunk of that container carries no LLVM
-bitcode; an Xbox XDAT wrapper in its place holds the native RDNA program (FSSM, see [fssm.md](fssm.md)). Code:
+bitcode; an Xbox XDAT wrapper in its place holds the native RDNA program (FSSM, see [fssm.md](fssm.md)). The archive also holds the driver's pipeline cache
+([pipeline-cache.md](pipeline-cache.md)). Code:
 `src/FiveStar.Shaders/Containers`.
 
 All integers are little-endian.

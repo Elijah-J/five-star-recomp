@@ -34,6 +34,8 @@ internal static class ShaderCommands
         "        [--debug-layer] [--recheck]",
         "  pso --list-adapters                    list the adapters with wave lane counts, shader model and mesh tier",
         "  unwrap <in.dxbc> <out.dxbc>            rewrite a container whose XDAT holds bitcode as standard DXBC",
+        "  psocache <shaders.rpf | blob>          summarise the driver pipeline cache and match its shaders to programs",
+        "        [--programs <fssm folder>] [--out <dir>]   (programs default to FIVESTAR_SHADER_DIR; --out writes code/ and pipelines.json)",
         "  tool options: --llvm <bin folder> (or FIVESTAR_LLVM), --dxc <dxc path> (or FIVESTAR_DXC)",
     ];
 
@@ -64,6 +66,8 @@ internal static class ShaderCommands
                     return PsoCommand.Run(rest);
                 case "unwrap":
                     return Unwrap(rest);
+                case "psocache":
+                    return PipelineCacheCommand.Run(rest);
                 case "help":
                     return Help();
                 default:
