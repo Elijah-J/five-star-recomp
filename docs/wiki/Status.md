@@ -19,6 +19,7 @@ work covers everything that can be built and checked without it.
 | Metadata (PSO) | 6,026 metadata files and about 39,700 paged resources parse completely |
 | Textures | 315,483 of 357,115 (88.3%) export across all 57 texture files; most of the rest use BCPack pages |
 | Videos | 515 Bink 2 videos extract from `movies.rpf` |
+| Audio | all 1,603,231 sounds in `audio.rpf` export as Ogg Opus or WAV (Opus, XMA2, PCM) |
 | Loader | the six Xbox libraries in the package load with all 825 imports resolved |
 | Console runtime | task queues and async run for real; user, saves, package and store work offline |
 | Graphics API (D3D12.X) | device, root signature and pipeline creation on PC; translating the game's calls needs the executable |

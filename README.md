@@ -58,6 +58,7 @@ The `fivestar` command holds all tools; `fivestar <group> help` lists a group's 
 
 ```
 fivestar archive carve <archive.rpf> <out-folder>     extract an archive's contents
+fivestar audio export <audio.rpf> <out-folder>        export sounds as Ogg Opus and WAV
 fivestar texture extract <file.ttpf> <out-folder>     export textures as DDS
 fivestar shader extract <shaders.rpf> <out-folder>    extract the GPU programs
 fivestar shader translate <programs> <out-folder>     translate them to HLSL and compile

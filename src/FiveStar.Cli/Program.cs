@@ -25,6 +25,8 @@ public static class Program
         {
             case "archive":
                 return ArchiveCommands.Run(rest);
+            case "audio":
+                return AudioCommands.Run(rest);
             case "texture":
                 return TextureCommands.Run(rest);
             case "platform":
@@ -47,7 +49,7 @@ public static class Program
     private static void PrintUsage()
     {
         Console.Error.WriteLine("usage: fivestar setup <dump folder> [options]     prepare everything the port needs (fivestar setup help)");
-        Console.Error.WriteLine("       fivestar <archive|texture|platform|shader|graphics|progress> <command> [arguments]");
+        Console.Error.WriteLine("       fivestar <archive|audio|texture|platform|shader|graphics|progress> <command> [arguments]");
         Console.Error.WriteLine("       fivestar <group> help    lists the commands of a group");
     }
 }
