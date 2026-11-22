@@ -115,8 +115,9 @@ internal sealed class ExportEmitter
             return values;
         }
 
-        // compr: each register holds two f16 values.
-        foreach (var source in sources.Take(CompressedRegisters))
+        // compr: each register holds two f16 values. The disassembler prints a compressed export as
+        // "src0, src0, src1, src1", so the registers are the first and the third operand.
+        foreach (var source in sources.Where((_, index) => index % CompressedRegisters == 0).Take(CompressedRegisters))
         {
             if (source == "off")
             {

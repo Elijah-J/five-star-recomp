@@ -97,6 +97,11 @@ shading (POPS) every writable view becomes `RasterizerOrdered*`, the exiting-wav
 **Packed f16 attributes.** A PS reading half of an attribute channel reads `ATTRLO<n>`/`ATTRHI<n>`; a VS with up to 10
 params (a mesh shader with up to 2) also exports each param unpacked into those two halves.
 
+**Linkage.** D3D12 links a VS and a PS by semantic and register, and dxc assigns registers in declaration order. A VS
+declares its params in number order, then the unpacked halves; a PS declares every non-system ISG1 register, read or
+not, then `ATTRLO<k>`/`ATTRHI<k>` pairs from 0 up to the highest half it reads. A pair compiled together by the game
+then links. A VS that does not export every param of its signature still shifts the later registers.
+
 **Mesh shaders (NGG).** `s_sendmsg(MSG_GS_ALLOC_REQ)` (M0 = primitives << 12 | vertices) records the output counts.
 When every export follows a barrier that follows the allocation, the program runs in two phases: phase 1 without
 output writes until that barrier, then `SetMeshOutputCounts` at top level, then phase 2 resumes and writes `verts`,
@@ -283,4 +288,4 @@ classes run one at a time (`xunit.runner.json`): WARP crashes the test host when
 - PA_CL_VS_OUT_CNTL: a misc pos export (point size, layer, viewport) is passed as a plain `POSEXP<n>` interpolant.
 - Typed views: one heap slot has one view type, but integer formats and image atomics need `uint` views.
 - POPS ordering beyond what rasterizer-ordered views provide.
-- Pipeline-time VS/PS linkage: producer outputs are emitted without the consumer's interpolation modes.
+- Pipeline-time VS/PS linkage beyond register layout: producer outputs are emitted without the consumer's interpolation modes.

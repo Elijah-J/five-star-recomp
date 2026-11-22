@@ -35,6 +35,7 @@ public static class PixelMemoryCases
             ImageLoadInteger(),
             ImageSampleLinear(),
             FloatExport(),
+            CompressedExport(),
         ];
     }
 
@@ -291,6 +292,24 @@ public static class PixelMemoryCases
         {
             Bindings = new Bindings { UserSgprs = [F(1.5), 0x3EAAAAAB, F(-0.0)] },
             FloatTargets = true,
+        };
+    }
+
+    // A compressed export: v0 packs red and green, v1 blue and alpha (printed "v0, v0, v1, v1").
+    private static PixelCase CompressedExport()
+    {
+        const string Program = """
+            v_cvt_pkrtz_f16_f32_e64 v0, s0, s1
+            v_cvt_pkrtz_f16_f32_e64 v1, s2, s3
+            exp mrt0 v0, v0, v1, v1 done compr vm
+            s_endpgm
+            """;
+
+        return new PixelCase("export_compressed", Program, 4, _ => [F(1.5), F(0.25), F(-2), F(0.5)])
+        {
+            Bindings = new Bindings { UserSgprs = [F(1.5), F(0.25), F(-2), F(0.5)] },
+            FloatTargets = true,
+            Raw = true,
         };
     }
 }

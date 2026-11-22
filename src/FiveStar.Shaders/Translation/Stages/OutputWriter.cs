@@ -43,7 +43,9 @@ internal sealed class OutputWriter
 
     public void Write(List<string> lines)
     {
-        var targets = _state.Outputs.Order(StringComparer.Ordinal).ToList();
+        // Numeric order (param2 before param10): dxc assigns output registers in declaration order, and a pixel
+        // shader links only when each of its inputs sits in the same register as the vertex output.
+        var targets = _state.Outputs.OrderBy(TargetPrefixOf, StringComparer.Ordinal).ThenBy(TargetNumber).ToList();
         lines.Add("struct Exp {");
 
         foreach (var target in targets)
@@ -66,12 +68,33 @@ internal sealed class OutputWriter
             WriteTarget(lines, context, target);
         }
 
+        // The unpacked f16 halves follow every parameter, so the parameters keep the registers of the signature.
+        lines.AddRange(context.HalfLines);
+
         if (targets.Count == 0)
         {
             lines.Add("  float4 dummy : SV_Target0;");
         }
 
         lines.Add("};");
+    }
+
+    /// <summary>The target name without its number (<c>param</c>, <c>pos</c>, <c>mrt</c>, <c>mrtz</c>).</summary>
+    private static string TargetPrefixOf(string target)
+    {
+        return target.TrimEnd("0123456789".ToCharArray());
+    }
+
+    private static int TargetNumber(string target)
+    {
+        var prefix = TargetPrefixOf(target);
+
+        if (prefix.Length == target.Length)
+        {
+            return 0;
+        }
+
+        return Number(target, prefix);
     }
 
     private void WriteTarget(List<string> lines, OutputContext context, string target)
@@ -129,8 +152,8 @@ internal sealed class OutputWriter
 
         if (context.HalfCopies)
         {
-            lines.Add($"  float4 {target}lo : ATTRLO{number};");
-            lines.Add($"  float4 {target}hi : ATTRHI{number};");
+            context.HalfLines.Add($"  float4 {target}lo : ATTRLO{number};");
+            context.HalfLines.Add($"  float4 {target}hi : ATTRHI{number};");
             map.Add($"  o.{target}lo = f16tof32(asuint(x.{target})); o.{target}hi = f16tof32(asuint(x.{target}) >> 16);");
         }
     }
@@ -202,6 +225,9 @@ internal sealed class OutputWriter
         }
 
         public bool HalfCopies { get; }
+
+        /// <summary>Gets the Out members of the unpacked halves, written after all other members.</summary>
+        public List<string> HalfLines { get; } = [];
 
         public List<List<SignatureElement>> Registers { get; }
 
