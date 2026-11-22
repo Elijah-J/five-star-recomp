@@ -5,6 +5,7 @@ using FiveStar.Loader.Calls;
 using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Loading;
 using FiveStar.Loader.Mods;
+using FiveStar.Loader.Shims.Input;
 
 namespace FiveStar.Loader.Host;
 
@@ -67,6 +68,12 @@ internal sealed class LoaderHost
         if (_options.GdkAbiTable is not null)
         {
             _runtime.Gdk.Runtime.LoadAbiTable(_options.GdkAbiTable);
+        }
+
+        if (_options.InputConfig is not null)
+        {
+            _runtime.Input.Configure(InputConfigFile.Load(_options.InputConfig));
+            _log.Info($"  [input] mapping from {_options.InputConfig}");
         }
     }
 

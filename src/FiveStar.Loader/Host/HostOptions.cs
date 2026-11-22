@@ -50,6 +50,8 @@ internal sealed record HostOptions
 
     public uint? DeviceType { get; set; }
 
+    public string? InputConfig { get; set; }
+
     public bool Verbose { get; set; }
 
     public bool ListSafeCalls { get; set; }

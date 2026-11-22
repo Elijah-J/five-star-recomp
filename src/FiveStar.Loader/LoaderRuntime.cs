@@ -8,6 +8,7 @@ using FiveStar.Loader.Loading;
 using FiveStar.Loader.Mods;
 using FiveStar.Loader.Shims;
 using FiveStar.Loader.Shims.Gdk;
+using FiveStar.Loader.Shims.Input;
 
 namespace FiveStar.Loader;
 
@@ -30,7 +31,7 @@ internal sealed class LoaderRuntime : IDisposable
         VirtualModules = new VirtualModules(log);
         Patcher = new ImagePatcher(Shims, log);
 
-        Loader =new ImageLoader(options, Shims, Stubs, Images, CodeHeap, new TlsHostAttacher(options.WorkDirectory, options.ProcessId, log), Patcher, log);
+        Loader = new ImageLoader(options, Shims, Stubs, Images, CodeHeap, new TlsHostAttacher(options.WorkDirectory, options.ProcessId, log), Patcher, log);
         Router = new RuntimeLibraryRouter(Loader, VirtualModules, Shims, Images, log);
         Identity = new ProcessIdentity(log);
         ModuleIdentity = new ModuleIdentity(Loader, Router, Images, VirtualModules, Shims, Stubs, LastError, Counters, log, environment.SystemDirectory);
@@ -40,6 +41,8 @@ internal sealed class LoaderRuntime : IDisposable
         Gdk = CreateGdk(gdk, environment.Time);
         Overlay = new FileOverlay(Gdk.Config, log);
         RecipeAllocator = new RecipeAllocator();
+        Input = new GameInputService(new XInputGamepads(), new DesktopInput(), InputConfigFile.Defaults(), environment.Time, Stubs, CodeHeap, log);
+
         ShimContext.Activate(this);
     }
 
@@ -82,10 +85,14 @@ internal sealed class LoaderRuntime : IDisposable
 
     public GdkServices Gdk { get; }
 
+    /// <summary>GameInputCreate and the gamepad, keyboard and mouse sources behind it.</summary>
+    public GameInputService Input { get; }
+
     public void Dispose()
     {
         Identity.RestorePeb();
         Gdk.Dispose();
+        Input.Dispose();
         LastError.Dispose();
     }
 

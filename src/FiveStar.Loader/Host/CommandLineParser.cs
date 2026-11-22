@@ -77,6 +77,8 @@ internal sealed class CommandLineParser
                 return AddFullPath(_options.Patches);
             case "--mods":
                 return AddFullPath(_options.ModFolders);
+            case "--input":
+                return SetInputConfig();
             case "-v":
                 return SetVerbose();
             case "--list-safe-calls":
@@ -219,6 +221,13 @@ internal sealed class CommandLineParser
     private bool SetDeviceType()
     {
         _options.DeviceType = uint.Parse(Next(), CultureInfo.InvariantCulture);
+
+        return true;
+    }
+
+    private bool SetInputConfig()
+    {
+        _options.InputConfig = Path.GetFullPath(Next());
 
         return true;
     }

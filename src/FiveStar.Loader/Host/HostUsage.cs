@@ -18,6 +18,7 @@ internal static class HostUsage
           --patch-peb            also point PEB.ImageBaseAddress at the main image (off by default)
           --save-dir <dir>       XGameSave / local storage root (default: %LOCALAPPDATA%\FiveStar\GdkData\<TitleId>)
           --gdk-abi <file>       XGameRuntime thunk ABI table: "clsid iid slot FunctionName" per line
+          --input <file>         GameInput keyboard-and-mouse gamepad mapping ("setting value" per line)
           --package-root <dir>   package root for XPackage / MicrosoftGame.config (default: main image directory)
           --device-type <n>      XSystemGetDeviceType result (default 7 = XboxScarlettAnaconda)
           --patches <path>       code patch file, or folder of *.fspatch files (repeatable, applied in order)

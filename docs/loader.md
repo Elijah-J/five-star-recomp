@@ -35,7 +35,7 @@ terminates on the call; `error` fails the load.
 ## Import resolution
 
 1. **Shim.** Matched on (module, symbol), then through a module alias, then on ("*", symbol). A module declared
-   Xbox-only (`xmem.dll`, `d3d12_xs.dll`, `xgameruntime.dll`) never falls through: a function listed as not
+   Xbox-only (`xmem.dll`, `d3d12_xs.dll`, `xgameruntime.dll`, `gameinput.dll`) never falls through: a function listed as not
    implemented binds to a stub that returns its listed value and logs its first call; any other symbol becomes an
    unresolved stub returning the module's value (E_NOTIMPL for `xgameruntime.dll`, 0 otherwise).
 2. **Image mapped by the loader.** An image already mapped, or a manual module found in the search directories (the
@@ -70,6 +70,7 @@ ntdll answers only for OS-loaded modules; mapping it lets the loader bind that i
 | `XStoreCreateContext`, `XStoreQueryGameLicense*` | an active, full, never-expiring license |
 | `XSystem*`, `XThread*`, `XGameGetXboxTitleId`, `XGameEventWrite`, `XError*`, `XPersistentLocalStorage*` | device type 7 (Series X) unless `--device-type`; fixed console and sandbox ids; time sensitivity per thread; title id from the config; events dropped; local storage in `--save-dir\localstorage` |
 | other `xgameruntime.dll` functions of the public headers | not implemented: E_NOTIMPL, or 0 for bool and void functions; first call logged |
+| `gameinput.dll` `GameInputCreate` | an IGameInput over XInput, the keyboard, the mouse and a keyboard-and-mouse virtual gamepad (below); also registered as `xgameruntime.dll!GameInputCreate` for the thunk ABI table |
 
 The GDK shims also answer for any `api-ms-win-*gaming*` or `ext-ms-win-*gaming*` module name, for symbols starting
 with `X`; other functions of those API sets go to System32.
@@ -149,6 +150,68 @@ The repository ships no table; `fivestar platform gdk-abi` builds one from the p
 [platform.md](platform.md)). With an empty table, `HCInitialize` of `libHttpClient.GDK.dll` fails with `0x89240107`
 after its first `QueryApiImpl`.
 
+## GameInput
+
+`gameinput.dll` is declared Xbox-only, so the PC GameInput.dll is never loaded; API-set names matching
+`*-ms-win-*gameinput*` answer for symbols starting with `GameInput`. The layouts follow GameInput.h of the PC GDK
+251005 (API v0) and live in one file, `Shims/Input/GameInputLayout.cs`.
+
+| Interface | Implemented | Behaviour |
+|---|---|---|
+| IGameInput | QueryInterface, AddRef, Release, GetCurrentTimestamp, GetCurrentReading, GetNextReading, GetPreviousReading, RegisterDeviceCallback, StopCallback, UnregisterCallback | timestamps in microseconds; readings filtered by kind (any bit in common, 0 matches all) and device; no match: `GAMEINPUT_E_READING_NOT_FOUND` |
+| IGameInputReading | QueryInterface, AddRef, Release, GetInputKind, GetSequenceNumber, GetTimestamp, GetDevice, GetRawReport (false), GetKeyCount, GetKeyState, GetMouseState, GetGamepadState | the state is copied out of the reading object |
+| IGameInputDevice | QueryInterface, AddRef, Release, GetDeviceInfo, GetDeviceStatus, GetBatteryState (unknown), SetRumbleState (low and high motors) | |
+
+Every other slot logs its first call and returns E_NOTIMPL, or 0 for a method that does not return an HRESULT.
+QueryInterface answers IUnknown and the object's own interface id; any other id gets E_NOINTERFACE, logged once.
+
+| Device | Source | Kind |
+|---|---|---|
+| XInput gamepad 1..4 | `xinput1_4.dll`; sticks -1..1, triggers 0..1, no dead zone; an empty slot is probed once a second | Gamepad, family XboxOne |
+| Keyboard | `GetAsyncKeyState`; up to 16 keys per reading, scan code from `MapVirtualKeyW`, code point 0 | Keyboard |
+| Mouse | `GetCursorPos` deltas accumulated into the position; buttons from `GetAsyncKeyState`; no wheel | Mouse |
+| Keyboard and mouse gamepad | the mapping below | Gamepad, family Virtual |
+
+The sources are polled on the game's own calls, at most once per millisecond and by one thread at a time; a reading
+is added only when a device's state changes. The last 256 readings are kept; a reading the game holds is never
+reused. The keyboard and mouse sources need no window and read the whole desktop whether or not the game has focus;
+mouse motion stops at the screen edges. `RegisterDeviceCallback` reports connected devices on the calling thread
+before it returns (for asynchronous and blocking enumeration alike); later connects and disconnects are reported on
+the thread whose call polled them. Releasing IGameInput or a device to 0 keeps the object for the process.
+
+**Keyboard-and-mouse gamepad.** `--input <file>` replaces settings of the default mapping, one per line, `#` starting
+a comment:
+
+```
+virtual-gamepad    on                # on | off at start
+toggle             ScrollLock        # key that connects and disconnects it; none for no key
+left-stick         W A S D           # up left down right; diagonals on the unit circle
+mouse-sensitivity  1.0               # right-stick deflection per 1000 px/s of mouse motion
+mouse-curve        1.0               # exponent after clamping to the unit circle
+left-trigger       MouseRight
+right-trigger      MouseLeft
+a Space
+b C
+x R
+y F
+left-shoulder Q
+right-shoulder E
+left-thumb LeftShift
+right-thumb V
+menu Escape
+view Tab
+dpad-up Up
+dpad-down Down
+dpad-left Left
+dpad-right Right
+```
+
+These are the defaults. Keys are letters, digits, `F1`..`F24`, `Space`, `Tab`, `Enter`, `Escape`, `Backspace`,
+`CapsLock`, `ScrollLock`, `Insert`, `Delete`, `Home`, `End`, `PageUp`, `PageDown`, the arrows `Up` `Down` `Left`
+`Right`, `LeftShift` `RightShift` `LeftCtrl` `RightCtrl` `LeftAlt` `RightAlt`, `MouseLeft` `MouseRight` `MouseMiddle`
+`Mouse4` `Mouse5`, a virtual-key code as `0x..`, or `none`. The right stick follows mouse speed: deflection =
+sensitivity × speed / 1000 px/s, clamped to 1, then raised to the curve exponent; screen down is stick down.
+
 ## Running it
 
 ```powershell
@@ -169,6 +232,7 @@ fivestar-loader --load $dump\XboxBvhBuilder.dll --load $dump\Bink2Scarlett.dll -
 | `--device-type <n>` | `XSystemGetDeviceType` result |
 | `--patches <file or folder>` | code patches (repeatable) |
 | `--mods <dir>` | mod folder over the package root (repeatable, first has priority) |
+| `--input <file>` | the keyboard-and-mouse gamepad mapping |
 | `--manual <a.dll,b.dll>`, `--system-crt`, `--search <dir>` | which modules the loader maps itself |
 | `--unresolved stub\|trap\|error`, `--no-shim <module!symbol>` | unresolved-import handling; disable one shim |
 | `--no-entry`, `--no-exports`, `--unload`, `--work-dir <dir>` | skip DllMain; skip the export listing; unload at the end; folder of the TLS host DLLs |
@@ -192,3 +256,8 @@ DLLs (825 imports, none unresolved), run the inspected exports and read the pack
 - D3D12.X beyond root signatures, and whether its root-signature versions and flags match the PC ones.
 - Overrides of files inside `.rpf` archives: the archive file table is encrypted, so the overlay works on whole files
   only. Which functions the game executable opens its files with.
+- GameInput on the console: the module or API-set name `GameInputCreate` is imported from, or whether it is reached
+  through `QueryApiImpl`; the API version (v0 IIDs and vtables here; later versions change IIDs, slots and
+  structures); the console's `GameInputDeviceInfo`, `GameInputKind` values and reading semantics (kind filter, the
+  history depth, when readings are added); whether the game calls methods left as E_NOTIMPL (reading callbacks,
+  dispatchers, aggregate devices, controller axis/button state).

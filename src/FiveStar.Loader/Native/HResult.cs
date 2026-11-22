@@ -9,6 +9,7 @@ internal static class HResult
     public const int Ok = 0;
     public const int False = 1;
     public const int NotImplemented = unchecked((int)0x80004001);
+    public const int NoInterface = unchecked((int)0x80004002);
     public const int Pointer = unchecked((int)0x80004003);
     public const int Abort = unchecked((int)0x80004004);
     public const int Fail = unchecked((int)0x80004005);
