@@ -30,5 +30,5 @@ into that layer, thousands per frame.
 | Linux, native | later: a runtime for the Windows parts the game uses and thunks between the Windows and Linux x64 calling conventions |
 | macOS | the Windows build through CrossOver or Apple's Game Porting Toolkit (Rosetta 2 for x86-64, D3D12 on Metal); a native port would need x86-64 to ARM64 recompilation and is out of scope |
 
-GPUs with 32-lane waves (NVIDIA, Apple) need the emulated path for the 1,226 programs that index lanes of a 64-lane
-wave; see [Shader translation](Shader-Translation.md#wave-size).
+GPUs with 32-lane waves (NVIDIA, Apple) run the emulated wave; 561 pixel, vertex and mesh programs and 19 compute
+programs read lanes a 32-lane wave does not have; see [Shader translation](Shader-Translation.md#wave-size).

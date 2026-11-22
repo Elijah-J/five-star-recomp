@@ -43,21 +43,22 @@ internal sealed partial class OperandAccess
         if (operand.Kind == OperandKind.Scalar && key == SpecialRegisters.Exec)
         {
             // EXEC lives in `active`; s_exec is only refreshed by integer writes, so rebuild the bits from the lanes.
-            return $"WaveActiveBallot(active).{Halves[LowDword]}";
+            return SnapOne($"{WaveOps.Ballot}(active).{Halves[LowDword]}");
         }
 
         if (operand.Kind == OperandKind.Scalar && _state.Masks.Contains(operand.At(0)))
         {
-            // A lane mask used as an integer: rebuild it with a ballot (wave-size dependent).
+            // A lane mask used as an integer: rebuild it with a ballot in program lane numbers. Ballots are snapped into
+            // temporaries so they never run under a per-lane condition (HLSL 2021 short-circuits ?:, && and ||).
             var half = component <= HighDword ? Halves[component] : Halves[LowDword];
 
-            return $"WaveActiveBallot({Mask(operand)}).{half}";
+            return SnapOne($"{WaveOps.Ballot}({Mask(operand)}).{half}");
         }
 
         if (operand.Kind == OperandKind.Scalar && IsMaskHighHalf(key))
         {
             // The high dword of a wave64 lane mask named on its own (vcc_hi, exec_hi, s11 after v_cmp_e64 s[10:11]).
-            return $"WaveActiveBallot({Mask(OperandParser.Sgpr(key.Index - 1))}).y";
+            return SnapOne($"{WaveOps.Ballot}({Mask(OperandParser.Sgpr(key.Index - 1))}).y");
         }
 
         if (!_state.Written.Contains(key))
@@ -126,6 +127,7 @@ internal sealed partial class OperandAccess
         _state.Touch(key);
         _state.Masks.Remove(key);
         _state.MaskHighHalves.Remove(key);
+        _state.MaskLanes.Remove(key);
         TrackConstant(key, value);
 
         if (key.Kind == RegisterKey.Scalar && (key.Index == SpecialRegisters.ExecLo || key.Index == SpecialRegisters.ExecHi))
@@ -278,6 +280,15 @@ internal sealed partial class OperandAccess
         return Snap(value)[0];
     }
 
+    /// <summary>Copies a uint2 value (a lane-mask ballot) into a fresh temporary.</summary>
+    public string SnapPair(string value)
+    {
+        var name = "_t" + _state.NextTemporary().ToString(CultureInfo.InvariantCulture);
+        _state.Emit($"  uint2 {name} = {value};");
+
+        return name;
+    }
+
     public void SetScc(string condition)
     {
         _state.Emit($"  scc = {condition};");
@@ -376,6 +387,6 @@ internal sealed partial class OperandAccess
     [GeneratedRegex(@"^0x([0-9a-f]+)u$")]
     private static partial Regex HexLiteralPattern();
 
-    [GeneratedRegex(@"\b(Wave|Quad)\w*\(|quad_perm\(|readfirstlane\(")]
+    [GeneratedRegex(@"\b(Wave|Quad|vw_)\w*\(|quad_perm\(|readfirstlane\(")]
     private static partial Regex WaveIntrinsicPattern();
 }

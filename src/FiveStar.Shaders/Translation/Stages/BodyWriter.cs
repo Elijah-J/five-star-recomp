@@ -78,6 +78,17 @@ internal sealed class BodyWriter
             }
 
             lines.Add("  GroupMemoryBarrierWithGroupSync();");
+
+            if (_state.EmulateWaves)
+            {
+                lines.Add($"  {WaveOps.GroupLane} = in_gi & (VW_WAVE - 1u);");
+            }
+        }
+
+        if (stage == ShaderStage.Compute)
+        {
+            // The wave32 variant of a wave64 program (HlslTranslator.GroupWaveVariant) runs the group as the wave.
+            lines.AddRange(["#if VW_GROUP_WAVE", "  vw_begin(in_gi);", "#endif"]);
         }
 
         if (stage == ShaderStage.Geometry)

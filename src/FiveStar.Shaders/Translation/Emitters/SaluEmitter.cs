@@ -81,7 +81,7 @@ internal sealed partial class SaluEmitter
         var quad = $"(({bit} | QuadReadAcrossX({bit}) | QuadReadAcrossY({bit}) | QuadReadAcrossDiagonal({bit})) != 0)";
         var update = _state.Stage == ShaderStage.Pixel ? quad : source;
         _operands.WriteMask(a[Destination], update);
-        _operands.SetScc($"WaveActiveAnyTrue({_operands.Mask(a[Destination])})");
+        _operands.SetScc($"{WaveOps.AnyTrue}({_operands.Mask(a[Destination])})");
     }
 
     private bool TryCompare(string op, IReadOnlyList<Operand> a)
@@ -158,7 +158,7 @@ internal sealed partial class SaluEmitter
         if (_operands.IsMask(left) && _operands.IsMask(right) && right.IsImmediate && right.Value == 0)
         {
             var negation = equal ? "!" : string.Empty;
-            _operands.SetScc($"{negation}WaveActiveAnyTrue({_operands.Mask(left)})");
+            _operands.SetScc($"{negation}{WaveOps.AnyTrue}({_operands.Mask(left)})");
 
             return;
         }
@@ -198,7 +198,7 @@ internal sealed partial class SaluEmitter
 
         if (_operands.IsMask(source) && !source.IsImmediate)
         {
-            _operands.Write(a[Destination], $"WaveActiveCountBits({_operands.Mask(source)})");
+            _operands.Write(a[Destination], $"{WaveOps.CountBits}({_operands.Mask(source)})");
         }
         else
         {
@@ -301,9 +301,10 @@ internal sealed partial class SaluEmitter
 
         if (_operands.IsMask(source) && !source.IsImmediate)
         {
-            var ballot = $"WaveActiveBallot({_operands.Mask(source)})";
+            var ballot = _operands.SnapPair($"{WaveOps.Ballot}({_operands.Mask(source)})");
             var first = $"({ballot}.x != 0 ? firstbitlow({ballot}.x) : ({ballot}.y != 0 ? 32u + firstbitlow({ballot}.y) : 0xffffffffu))";
             _operands.Write(a[Destination], first);
+            _state.MaskLanes.Add(a[Destination].At(0));
 
             return;
         }
@@ -317,10 +318,11 @@ internal sealed partial class SaluEmitter
     {
         var source = a[Source0];
         string value;
+        var fromMask = _operands.IsMask(source) && !source.IsImmediate;
 
-        if (_operands.IsMask(source) && !source.IsImmediate)
+        if (fromMask)
         {
-            value = $"WaveActiveBallot({_operands.Mask(source)}).x";
+            value = $"{WaveOps.Ballot}({_operands.Mask(source)}).x";
         }
         else
         {
@@ -328,6 +330,11 @@ internal sealed partial class SaluEmitter
         }
 
         _operands.Write(a[Destination], $"firstbitlow({value})");
+
+        if (fromMask)
+        {
+            _state.MaskLanes.Add(a[Destination].At(0));
+        }
     }
 
     /// <summary>SCC = the destination SGPR is non-zero.</summary>

@@ -29,14 +29,143 @@ void BufStore(uint heap_index, uint off, uint v) {
     b.Store(off & ~3u, v);
 }
 
+// ---- program waves. Translated code numbers lanes as the console does: 0 .. VW_WAVE-1 of a VW_WAVE-lane wave. The vw_*
+// operations take and return those numbers. With VW_EMULATE they stay correct on any hardware wave size:
+//   hardware wave = program wave: the native operation;
+//   wider: each aligned VW_WAVE-lane segment of the hardware wave is one program wave;
+//   narrower: the hardware wave holds program lanes [origin, origin + WaveGetLaneCount()); the other lanes are missing
+//   and read as 0 (on pixel and vertex waves that is a partly filled console wave).
+// WaveGetLaneCount() is a constant once the driver compiles the program, so only one path remains.
+// VW_GROUP_LANES (mesh): the program lane comes from SV_GroupIndex (g_vw_lane), set at entry.
+// VW_GROUP_WAVE (compute, VW_GROUP_SIZE <= VW_WAVE threads): the thread group is the console wave. Every operation
+// exchanges through groupshared memory with a barrier, so it is right on any hardware wave, but every thread of the
+// group must reach every operation: the translated control flow is group-uniform because each branch condition is
+// one of these operations, and the translator rejects programs that call one under a per-lane condition.
+#ifndef VW_WAVE
+#define VW_WAVE 64
+#endif
+#ifndef VW_EMULATE
+#define VW_EMULATE 0
+#endif
+#ifndef VW_GROUP_LANES
+#define VW_GROUP_LANES 0
+#endif
+#ifndef VW_GROUP_WAVE
+#define VW_GROUP_WAVE 0
+#endif
+#if VW_GROUP_LANES || VW_GROUP_WAVE
+static uint g_vw_lane;
+#endif
+#if VW_GROUP_WAVE
+// A buffer is used again two operations of its kind later; the barrier of the operation between keeps it safe.
+groupshared uint g_vw_x[2][VW_WAVE];   // values: one buffer per read, alternating
+groupshared uint g_vw_m[3][2];         // masks: one in use, the next being cleared, the last still being read
+static uint g_vw_reads, g_vw_ballots;  // operations so far (equal on every thread)
+void vw_begin(uint gi) {
+    g_vw_lane = gi;
+    g_vw_reads = 0;
+    g_vw_ballots = 0;
+    if (gi == 0) { [unroll] for (uint i = 0; i < 3; i++) { g_vw_m[i][0] = 0; g_vw_m[i][1] = 0; } }
+    GroupMemoryBarrierWithGroupSync();
+}
+uint vw_group_read(uint x, uint lane) {
+    uint b = g_vw_reads & 1u;
+    g_vw_reads++;
+    g_vw_x[b][g_vw_lane] = x;
+    GroupMemoryBarrierWithGroupSync();
+    lane &= VW_WAVE - 1u;
+    return lane < VW_GROUP_SIZE ? g_vw_x[b][lane] : 0u;
+}
+uint2 vw_group_ballot(bool c) {
+    uint b = g_vw_ballots % 3u;
+    g_vw_ballots++;
+    if (g_vw_lane == 0) { g_vw_m[(b + 1u) % 3u][0] = 0; g_vw_m[(b + 1u) % 3u][1] = 0; }
+    if (c) InterlockedOr(g_vw_m[b][g_vw_lane >> 5], 1u << (g_vw_lane & 31u));
+    GroupMemoryBarrierWithGroupSync();
+    return uint2(g_vw_m[b][0], g_vw_m[b][1]);
+}
+#endif
+
+uint vw_lane() {
+#if VW_GROUP_LANES || VW_GROUP_WAVE
+    return g_vw_lane;
+#elif VW_EMULATE
+    return WaveGetLaneIndex() & (VW_WAVE - 1u);
+#else
+    return WaveGetLaneIndex();
+#endif
+}
+// hardware lane of program lane 0 (wraps below 0 when the hardware wave is narrower and starts later in the program wave)
+uint vw_origin() { return WaveGetLaneIndex() - vw_lane(); }
+// lanes a program-lane loop visits
+uint vw_lanes() {
+#if VW_EMULATE || VW_GROUP_WAVE
+    return VW_WAVE;
+#else
+    return WaveGetLaneCount();
+#endif
+}
+uint vw_read(uint x, uint lane) {   // x of program lane `lane` (AMD uses the low log2(wave) bits)
+#if VW_GROUP_WAVE
+    return vw_group_read(x, lane);
+#elif VW_EMULATE
+    lane &= VW_WAVE - 1u;
+    if (!VW_GROUP_LANES && WaveGetLaneCount() == VW_WAVE) return WaveReadLaneAt(x, lane);
+    uint hw = vw_origin() + lane, count = WaveGetLaneCount();
+    uint v = WaveReadLaneAt(x, min(hw, count - 1u));
+    return hw < count ? v : 0u;
+#else
+    return WaveReadLaneAt(x, lane);
+#endif
+}
+uint2 vw_ballot(bool c) {   // lane mask in program lanes (y = lanes 32..63)
+#if VW_GROUP_WAVE
+    return vw_group_ballot(c);
+#endif
+    uint4 b = WaveActiveBallot(c);
+#if VW_EMULATE
+    if (!VW_GROUP_LANES && WaveGetLaneCount() <= VW_WAVE) return b.xy;
+    uint o = vw_origin();
+    uint2 m;
+    if (o < WaveGetLaneCount()) {   // wider: the program wave is the segment from hardware lane o
+        uint w = o >> 5, s = o & 31u;
+        uint3 t = uint3(b[w], b[min(w + 1u, 3u)], b[min(w + 2u, 3u)]);
+        m = s == 0u ? t.xy : uint2((t.x >> s) | (t.y << (32u - s)), (t.y >> s) | (t.z << (32u - s)));
+    } else {   // narrower: the hardware lanes (all in b.x) are program lanes s ..
+        uint s = 0u - o;
+        m = s >= 32u ? uint2(0u, b.x << (s - 32u)) : uint2(b.x << s, b.x >> (32u - s));
+    }
+    if (VW_WAVE < 32) return uint2(m.x & ((1u << (VW_WAVE & 31u)) - 1u), 0u);   // test-sized program waves
+    return VW_WAVE == 32 ? uint2(m.x, 0u) : m;
+#else
+    return b.xy;
+#endif
+}
+bool vw_any(bool c) {
+#if VW_GROUP_WAVE
+    uint2 g = vw_group_ballot(c); return (g.x | g.y) != 0;
+#elif VW_EMULATE
+    if (WaveGetLaneCount() > VW_WAVE) { uint2 m = vw_ballot(c); return (m.x | m.y) != 0; }
+#endif
+    return WaveActiveAnyTrue(c);
+}
+uint vw_count(bool c) {
+#if VW_GROUP_WAVE
+    uint2 g = vw_group_ballot(c); return countbits(g.x) + countbits(g.y);
+#elif VW_EMULATE
+    if (WaveGetLaneCount() > VW_WAVE) { uint2 m = vw_ballot(c); return countbits(m.x) + countbits(m.y); }
+#endif
+    return WaveActiveCountBits(c);
+}
+
 // ---- cross-lane
-uint readfirstlane(uint x, bool active) {   // first lane with EXEC set (not just the first HLSL-active lane)
-    uint4 b = WaveActiveBallot(active);
-    uint l = b.x != 0 ? firstbitlow(b.x) : b.y != 0 ? 32 + firstbitlow(b.y) : b.z != 0 ? 64 + firstbitlow(b.z) : 96 + firstbitlow(b.w);
-    return WaveReadLaneAt(x, l);
+uint readfirstlane(uint x, bool active) {   // first lane with EXEC set (not just the first HLSL-active lane); lane 0 if none
+    uint2 m = vw_ballot(active);
+    uint l = m.x != 0 ? firstbitlow(m.x) : m.y != 0 ? 32 + firstbitlow(m.y) : 0u;
+    return vw_read(x, l);
 }
 bool lane_bit(uint lo, uint hi) {   // this lane's bit of an integer lane mask (wave64 layout)
-    uint l = WaveGetLaneIndex();
+    uint l = vw_lane();
     return ((l < 32 ? (lo >> l) : (hi >> (l - 32))) & 1u) != 0;
 }
 uint quad_perm(uint x, uint p0, uint p1, uint p2, uint p3) {

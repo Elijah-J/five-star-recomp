@@ -141,7 +141,7 @@ strip. The record size `GS_VTX_DW` is derived from the LDS write offsets between
 |---|---|
 | Mesh output over 32 KB (D3D12 PC limit) | rewritten as a compute shader plus a vertex-pulling vertex shader (`MeshComputeFallback`, files `.msfb_cs.hlsl` / `.msfb_vs.hlsl`) |
 | HLSL over 150,000 characters | compiled with `-Od` (dxc's optimizer is very slow on huge dispatch loops) |
-| Wave size | AMD lane numbers are kept; a compute program that reads other lanes by number gets `[WaveSize(32 or 64)]` (`TranslationOptions.PinWaveSize`, on in `fivestar shader translate`), so it fails to load on a GPU without that wave size instead of computing wrong results. Other stages cannot pin a wave size; `fivestar shader waves` lists which programs depend on it |
+| Wave size | AMD lane numbers are kept. Pixel, vertex and mesh programs emulate the console wave on any hardware wave size (see Wave size). A compute program that reads other lanes by number gets `[WaveSize(32 or 64)]` (`TranslationOptions.PinWaveSize`, on in `fivestar shader translate`), so it fails to load on a GPU without that wave size instead of computing wrong results |
 | f32 → f16 | `f32tof16_rne` (round to nearest even, as AMD) |
 | FMA | `mad` (the prelude's exact `fma32` exists but is slow) |
 
@@ -158,6 +158,79 @@ DispatchMesh(x, y, z) becomes: clear `u2` to {0, 1, 0, 0, 0, 0}; Dispatch(x, y, 
 DrawIndexed with arguments `u2` and index buffer `u1` (R32_UINT). A group that does not fit is dropped and its
 counted index range is made degenerate; culled primitives become degenerate triangles.
 
+## Wave size
+
+A console program runs in waves of 32 or 64 lanes (the FSSM header says which) and names lanes by number: readlane,
+writelane, permlane, DPP, ds_swizzle, ds_bpermute, lane masks, mbcnt. A PC GPU runs waves of 4 to 128 lanes, chosen by
+the driver. Compute shaders can ask for a size; pixel, vertex and mesh shaders cannot in shader model 6.7.
+
+Translated code therefore uses console (program) lane numbers through the prelude's `vw_lane`, `vw_read`,
+`vw_ballot`, `vw_any` and `vw_count`; `readfirstlane` and `lane_bit` build on them. With
+`TranslationOptions.EmulateWaveSize` (the default; `--native-waves` turns it off) a pixel, vertex or mesh program
+starts with `#define VW_WAVE <32|64>` and `VW_EMULATE 1`, and each hardware wave of H lanes holds a window of the
+program wave of W lanes:
+
+| Hardware wave | Mapping | Result |
+|---|---|---|
+| H = W | the native operations | console results |
+| H > W | every aligned W-lane segment is one program wave: reads add the segment's first lane, masks are cut out of the ballot, `any`, `count` and branch conditions are per segment | console results |
+| H < W, pixel and vertex | the hardware wave is program lanes 0 .. H-1, a partly filled console wave; a lane at H or above is missing and reads 0 | console results when no read leaves aligned groups of H lanes |
+| H < W, mesh | the hardware wave is program lanes k·H .. k·H+H-1 of the wave (64 consecutive threads, `VW_GROUP_LANES`) | reads inside the window are right; masks, counts, branch conditions and first lanes see only the window, while the console sees all 64 live threads |
+
+The choice between paths depends only on `WaveGetLaneCount()`, which is a constant once the driver compiles the
+program, so a GPU runs one path. The DXIL still holds every path: on a sample of 99 lane-indexed programs it is 14 %
+larger than with `--native-waves`.
+
+Each emulated program's first line names its floor, the narrowest hardware wave with console results:
+
+```
+// program wave 64; console results on hardware waves >= 16 lanes
+```
+
+The floor is the widest aligned lane group a cross-lane read reaches: quads 4, `row_half_mirror` and DPP8 8, DPP rows and
+`v_permlane16` 16, `v_permlanex16` and `BITMASK_PERM` 32, `SWAP`/`REVERSE`/`BROADCAST` their group, `v_readlane` of a
+constant lane c the next power of two above c, of a lane found in a lane mask (`s_ff1`) 1, of any other lane
+(`v_readlane` from an SGPR, `ds_bpermute`, `ds_permute`) the whole wave. A mesh program that reads a lane mask, a first
+lane or branches on any lane has the whole wave as floor.
+
+**Compute programs** keep native wave operations and are pinned. A wave64 program whose group has at most 32 threads
+is pinned to 32 lanes instead, since lanes 32..63 never exist. For a program pinned to 64 lanes, which GPUs with only
+32-lane waves (NVIDIA) reject, `fivestar shader translate` also writes `<name>.w32.hlsl`/`.dxil`
+(`HlslTranslator.GroupWaveVariant`) when the thread group fits in one console wave: the group runs as the wave
+(`VW_GROUP_WAVE`), every wave operation stores to groupshared memory, passes one barrier and reads back (lane masks
+with `InterlockedOr`), so it is right on any hardware wave. A barrier needs every thread of the group, which holds
+because each branch condition is itself such an operation and so is the same on every thread; a program that calls
+one under a per-lane condition (`if (active)`, `&&`, `||`, `?:` before the call) gets no variant. The variant is built
+from the structured form, since WARP's shader compiler crashes on barriers inside the dispatch `switch`. The result's
+reason says `wave32 variant ok` or why there is none. A runtime picks the native DXIL when the adapter's
+`WaveLaneCountMax` is 64 or more and the variant otherwise. Groups of several console waves (more than 64 threads)
+need a GPU with 64-lane waves: their waves branch apart, so a group barrier cannot stand in for a wave.
+
+Corpus (lane-indexed programs, by floor):
+
+| Programs | 4 | 8 | 16 | 32 | 64 |
+|---|---|---|---|---|---|
+| ps wave32 (959) | 31 | 1 | 2 | 925 | |
+| ps wave64 (907) | 368 | 41 | 49 | 4 | 445 |
+| vs wave64 (1) | | | | | 1 |
+| ms wave64 (115) | | | | | 115 |
+
+All 1,982 compile (115 mesh programs, 15 of them through the fallback). Of the 203 compute programs pinned to 64 lanes,
+3 have groups of at most 32 threads and are pinned to 32, 181 get a variant that NVIDIA (RTX 4090) accepts, and 19
+have groups of 128 to 512 threads.
+
+What cannot be emulated:
+
+- Pixel and vertex waves narrower than the program wave cannot read a missing lane: those stages have no groupshared
+  memory and no barrier, so the value exists in no wave that could share it. Example: a wave64 reduction that ends with
+  `v_readlane 32` or `63` on a 32-lane GPU.
+- Mesh waves narrower than the program wave: one console wave spans several hardware waves. Every lane mask, branch
+  condition and cross-lane read would have to go through groupshared memory with a barrier, but a barrier needs the
+  whole thread group at the same point, and the two console waves of a 128-thread group branch independently. It would
+  take either supersteps (run every thread to its next wave operation, barrier, exchange, repeat) or invocations that
+  each run W/H lanes; neither is built.
+- Mesh lane numbers assume `SV_GroupIndex` fills hardware lanes in order. Drivers do this; D3D12 does not promise it.
+
 ## Runtime headers
 
 `rdna_prelude.hlsli` (user SGPRs from root constants `g_user4`, memory and buffer access, formatted loads/stores,
@@ -169,15 +242,17 @@ to the generated HLSL.
 ```
 fivestar shader translate <program.fssm | folder> <out> [--cache <dir>] [--retry results.json]
                           [--stages ps,vs,cs,ms,gs] [--jobs N] [--limit N] [--step K] [--no-compile] [--structured]
-                          [--llvm-disassembler] [--llvm <folder>] [--dxc <path>]
+                          [--native-waves] [--llvm-disassembler] [--llvm <folder>] [--dxc <path>]
 ```
 
 Translates every `*.fssm` (in name order; `--step K` takes every K-th, `--limit N` the first N), writes
 `<out>/<name>.hlsl`, compiles it to `<name>.dxil` and writes `<out>/results.json`. `--cache` keeps translations and
 DXIL between runs (see Cache). `--retry` re-runs only programs whose status in that file is not final and merges the
 results. `--no-compile` skips dxc. `--structured` emits the structured control-flow form (see Control flow).
-`--llvm-disassembler` disassembles with llvm-mc/llvm-objdump instead of `RdnaDecoder` (see Disassembly). Every
-10 seconds the command prints programs done, elapsed time, estimated time left and finish time, and the cache counts.
+`--native-waves` turns wave emulation off (see Wave size). A compute program pinned to 64 lanes also gets
+`<name>.w32.hlsl`/`.dxil` where possible; its reason in results.json says so. `--llvm-disassembler` disassembles with
+llvm-mc/llvm-objdump instead of `RdnaDecoder` (see Disassembly). Every 10 seconds the command prints programs done,
+elapsed time, estimated time left and finish time, and the cache counts.
 
 dxc runs as `dxc.exe -T <stage>_6_7 -E main -HV 2021 -I <out> -Fo <name>.dxil`, one process per compile, with a 180 s
 limit; a timed-out compile is retried with `-Od` for 300 s (900 s with `--retry`); fallback compiles have 600 s.
@@ -226,7 +301,8 @@ fivestar shader waves <out> <fssm-folder>
 
 Classifies every `ok` program of a run by wave size and dependence: wave-size agnostic, lane/EXEC bookkeeping only,
 quad and first-lane operations only, or lane-indexed data movement (readlane, permlane, bpermute, DPP rows), which
-breaks when a wave64 program runs on 32-lane waves or the reverse.
+breaks when a wave64 program runs on 32-lane waves or the reverse. For a run with wave emulation it also counts the
+lane-indexed programs by floor (see Wave size).
 
 ```
 fivestar shader pso <out> [--adapter <index | name part>] [--stages ps,vs,cs,ms,gs] [--limit N] [--step K]
@@ -301,9 +377,12 @@ VoxelizeGeneric GS programs.
 
 Run `dotnet test tests/FiveStar.Shaders.Tests`. `FIVESTAR_LLVM` (LLVM bin folder) and `FIVESTAR_DXC` (dxc path) override
 the default tool locations; the real-GS tests and the decoder comparison on real programs need `FIVESTAR_DUMP` and
-`FIVESTAR_SHADER_DIR` (folder of extracted
-`.fssm`, containers in `../dxbc`). A test skips with the reason when a tool or WARP is missing. WARP runs 4-lane waves,
-so cases that need a full 32/64-lane wave are skipped, and `v_fma_f32` is compared unfused (see FMA above). Test
+`FIVESTAR_SHADER_DIR` (folder of extracted `.fssm`, containers in `../dxbc`). A test skips with the reason when a tool
+or WARP is missing. WARP runs 4-lane waves only (a pipeline with any other `[WaveSize]` fails to create), so cases
+that need a full 32/64-lane wave are skipped, and `v_fma_f32` is compared unfused (see FMA above). The wave emulation
+is checked there with test-sized program waves of 2, 4, 16 and 64 lanes (wider, equal and narrower hardware waves), by
+the mesh program, which reads lanes by console number, and by running every wave64 compute case as its group-wave
+variant with full-wave expectations (including the two full-wave cases WARP otherwise skips). Test
 classes run one at a time (`xunit.runner.json`): WARP crashes the test host when they run in parallel.
 
 ## Unknown

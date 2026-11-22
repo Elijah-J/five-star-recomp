@@ -9,11 +9,12 @@ namespace FiveStar.Shaders.Translation.Emitters;
 
 /// <summary>
 /// Lane-indexed data movement: v_readlane/v_writelane, v_permlane(x)16, v_mbcnt (lane-mask prefix counts) and
-/// ds_swizzle. Lane numbers are AMD lane numbers, so these are wave-size dependent.
+/// ds_swizzle. Lane numbers are AMD (program) lane numbers, read through the vw_* operations; each read records how
+/// far it reaches (<see cref="TranslationState.Reach"/>).
 /// </summary>
 internal sealed partial class CrossLaneEmitter
 {
-    private const string LaneIndex = "WaveGetLaneIndex()";
+    private const string LaneIndex = WaveOps.Lane;
 
     // NGG code computes thread index = wave * 64 + mbcnt(lane): mesh shaders use a virtual wave64 lane.
     private const string MeshLane = "(in_gi & 63u)";
@@ -23,6 +24,14 @@ internal sealed partial class CrossLaneEmitter
 
     // ds_swizzle BITMASK_PERM pattern: five characters for lane bits 4..0.
     private const int BitmaskPermBits = 5;
+
+    // Lane groups the fixed patterns stay inside.
+    private const int QuadLanes = 4;
+    private const int RowLanes = 16;
+    private const int CrossRowLanes = 32;
+
+    // SWAP(n) exchanges the two n-lane halves of each 2n-lane group.
+    private const int SwapGroups = 2;
 
     private readonly TranslationState _state;
     private readonly OperandAccess _operands;
@@ -39,7 +48,7 @@ internal sealed partial class CrossLaneEmitter
         switch (op)
         {
             case "v_readlane_b32":
-                _operands.Write(a[Destination], $"WaveReadLaneAt({U(a, Source0)}, {U(a, Source1)})");
+                ReadLane(a);
                 break;
             case "v_writelane_b32":
                 WriteLane(a);
@@ -61,13 +70,30 @@ internal sealed partial class CrossLaneEmitter
         return true;
     }
 
+    /// <summary>v_readlane: the lane number comes from an inline constant or an SGPR.</summary>
+    private void ReadLane(IReadOnlyList<Operand> a)
+    {
+        var lane = a[Source1];
+
+        if (lane.IsImmediate)
+        {
+            _state.ReachLane(lane.Value);
+        }
+        else
+        {
+            _state.ReachLane(lane.Key);
+        }
+
+        _operands.Write(a[Destination], $"{WaveOps.ReadLane}({U(a, Source0)}, {U(a, Source1)})");
+    }
+
     /// <summary>v_writelane: writes one lane regardless of EXEC.</summary>
     private void WriteLane(IReadOnlyList<Operand> a)
     {
         var key = a[Destination].At(0);
         _state.Touch(key);
         var lane = U(a, Source1);
-        _state.Emit($"  if ({LaneIndex} == ({lane})) {key.Name} = {U(a, Source0)};");
+        _state.Emit($"  if ({LaneIndex} == (({lane}) & {_state.WaveSize - 1}u)) {key.Name} = {U(a, Source0)};");
     }
 
     private void Permute16(string op, IReadOnlyList<Operand> a)
@@ -77,13 +103,16 @@ internal sealed partial class CrossLaneEmitter
         var lane = $"({LaneIndex} & 15u)";
         var nibble = $"((({lane} < 8u) ? ({selectLow} >> ({lane} * 4u)) : ({selectHigh} >> (({lane} - 8u) * 4u))) & 15u)";
         var row = $"({LaneIndex} & ~15u)";
+        var reach = RowLanes;
 
         if (op == "v_permlanex16_b32")
         {
             row = $"(({LaneIndex} & ~31u) | (({LaneIndex} & 16u) ^ 16u))";
+            reach = CrossRowLanes;
         }
 
-        _operands.Write(a[Destination], $"WaveReadLaneAt({x}, {row} | {nibble})");
+        _state.Reach(reach);
+        _operands.Write(a[Destination], $"{WaveOps.ReadLane}({x}, {row} | {nibble})");
     }
 
     /// <summary>v_mbcnt_lo/hi: count of mask bits below this lane in the low/high 32 lanes, plus src1.</summary>
@@ -127,24 +156,33 @@ internal sealed partial class CrossLaneEmitter
         {
             var lanes = arguments.Split(',').Select(part => int.Parse(part, System.Globalization.CultureInfo.InvariantCulture)).ToList();
             _operands.Write(destination, $"quad_perm({x}, {string.Join(", ", lanes)})");
+            _state.Reach(QuadLanes);
 
             return;
         }
 
-        _operands.Write(destination, $"WaveReadLaneAt({x}, {SwizzleSource(mode, arguments)})");
+        _operands.Write(destination, $"{WaveOps.ReadLane}({x}, {SwizzleSource(mode, arguments)})");
     }
 
-    private static string SwizzleSource(string mode, string arguments)
+    private string SwizzleSource(string mode, string arguments)
     {
         switch (mode)
         {
             case "SWAP":
+                _state.Reach(SwapGroups * Number(arguments));
+
                 return $"({LaneIndex} ^ {Number(arguments)}u)";
             case "REVERSE":
+                _state.Reach(Number(arguments));
+
                 return $"({LaneIndex} ^ {Number(arguments) - 1}u)";
             case "BROADCAST":
+                _state.Reach(Number(arguments.Split(',')[0]));
+
                 return Broadcast(arguments);
             case "BITMASK_PERM":
+                _state.Reach(CrossRowLanes);
+
                 return BitmaskPermutation(arguments.Trim('"'));
             default:
                 throw new UnsupportedProgramException($"ds_swizzle {mode}");

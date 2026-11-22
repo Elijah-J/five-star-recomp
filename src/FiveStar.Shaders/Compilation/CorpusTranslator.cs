@@ -8,11 +8,18 @@ namespace FiveStar.Shaders.Compilation;
 
 /// <summary>
 /// Translates many FSSM programs and validates each with dxc: writes <c>&lt;name&gt;.hlsl</c> and <c>.dxil</c> (and the mesh
-/// fallback pair <c>.msfb_cs</c>/<c>.msfb_vs</c> where needed), the runtime headers and results.json.
+/// fallback pair <c>.msfb_cs</c>/<c>.msfb_vs</c> where needed, the wave32 variant <c>.w32</c> of wave64-pinned compute
+/// programs), the runtime headers and results.json.
 /// </summary>
 public sealed partial class CorpusTranslator
 {
     public const string ResultsName = "results.json";
+
+    /// <summary>The file suffix of the wave32 variant of a wave64-pinned compute program.</summary>
+    public const string GroupWaveSuffix = ".w32.hlsl";
+
+    private const string Wave64Pin = "[WaveSize(64)]";
+    private const string GroupWaveNote = "wave32 variant";
 
     private const int ShortReasonLength = 40;
     private const int CrashReasonLength = 80;
@@ -125,7 +132,13 @@ public sealed partial class CorpusTranslator
             return new ProgramResult(translated.Name, stageName, ProgramStatus.Ok, null);
         }
 
-        var (status, reason) = Compile(_compiler, hlslPath, translated);
+        var (status, reason) = Compile(_compiler, hlslPath, translated.Hlsl, translated);
+
+        if (status == ProgramStatus.Ok && translated.GroupWave is not null)
+        {
+            var variantPath = Path.Combine(options.OutputFolder, translated.Name + GroupWaveSuffix);
+            reason = CompileGroupWave(_compiler, variantPath, translated, translated.GroupWave);
+        }
 
         return new ProgramResult(translated.Name, stageName, status, reason);
     }
@@ -182,7 +195,7 @@ public sealed partial class CorpusTranslator
         {
             var hlsl = HlslTranslator.Translate(program, options.Translation).Hlsl;
 
-            return new TranslatedProgram(loaded.Name, loaded.Stage, hlsl, null, null, count);
+            return new TranslatedProgram(loaded.Name, loaded.Stage, hlsl, null, null, count) { GroupWave = GroupWave(program, hlsl, options.Translation) };
         }
         catch (UnsupportedProgramException exception)
         {
@@ -196,9 +209,51 @@ public sealed partial class CorpusTranslator
         }
     }
 
-    private (string Status, string? Reason) Compile(IShaderCompiler compiler, string hlslPath, TranslatedProgram program)
+    /// <summary>
+    /// The variant of a wave64-pinned compute program for GPUs without 64-lane waves
+    /// (<see cref="HlslTranslator.GroupWaveVariant"/>), from the structured form where the graph allows it (WARP's shader
+    /// compiler crashes on barriers inside the dispatch switch); null for every other program.
+    /// </summary>
+    private static GroupWaveVariant? GroupWave(ShaderProgram program, string hlsl, TranslationOptions options)
     {
-        var hlsl = program.Hlsl!;
+        if (program.Stage != ShaderStage.Compute || !hlsl.Contains(Wave64Pin, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        try
+        {
+            var structured = HlslTranslator.Translate(program, options with { StructuredControlFlow = true }).Hlsl;
+
+            return new GroupWaveVariant(HlslTranslator.GroupWaveVariant(structured), null);
+        }
+        catch (UnsupportedProgramException exception)
+        {
+            return new GroupWaveVariant(null, Cut($"{GroupWaveNote}: {exception.Message}", CompileReasonLength));
+        }
+    }
+
+    /// <summary>Writes and compiles <c>name.w32.hlsl</c>; the outcome becomes the reason of the ok result.</summary>
+    private string CompileGroupWave(IShaderCompiler compiler, string path, TranslatedProgram program, GroupWaveVariant variant)
+    {
+        if (variant.Hlsl is null)
+        {
+            return variant.Reason ?? GroupWaveNote;
+        }
+
+        File.WriteAllText(path, variant.Hlsl);
+        var (status, reason) = Compile(compiler, path, variant.Hlsl, program);
+
+        if (status == ProgramStatus.Ok)
+        {
+            return $"{GroupWaveNote} ok";
+        }
+
+        return Cut($"{GroupWaveNote}: {status} {reason}", CompileReasonLength);
+    }
+
+    private (string Status, string? Reason) Compile(IShaderCompiler compiler, string hlslPath, string hlsl, TranslatedProgram program)
+    {
         var profile = ShaderStages.ProfileName(program.Stage!.Value);
         var large = hlsl.Length > compiler.Options.LargeSourceLength;
         var outcome = compiler.Compile(new CompileRequest(hlslPath, hlsl, profile, large), compiler.Options.CompileTimeout);

@@ -22,7 +22,7 @@ public sealed record TranslatedShader(string Name, string Hlsl, byte[] Dxil)
         var paths = names.Select(name => Path.Combine(programFolder, name + ".fssm")).ToList();
         var options = new CorpusOptions(workFolder, null, names.Count, null)
         {
-            Translation = new TranslationOptions(StructuredControlFlow: false, PinWaveSize: true),
+            Translation = new TranslationOptions(StructuredControlFlow: false, PinWaveSize: true, EmulateWaveSize: true),
         };
         var results = new CorpusTranslator(loader, compiler, null, null, null).Run(paths, options);
         var failed = results.FirstOrDefault(result => result.Status != ProgramStatus.Ok);

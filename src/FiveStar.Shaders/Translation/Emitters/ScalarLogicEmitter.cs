@@ -137,7 +137,7 @@ internal sealed partial class ScalarLogicEmitter
         var key = a[Destination].At(0);
         _operands.MarkMask(key);
         _state.Emit($"    {key.MaskName} = _old; }}");
-        _operands.SetScc("WaveActiveAnyTrue(active)");
+        _operands.SetScc($"{WaveOps.AnyTrue}(active)");
     }
 
     /// <summary>s_andn2/orn2_wrexec: EXEC = SRC op ~EXEC; SDST = EXEC.</summary>
@@ -147,7 +147,7 @@ internal sealed partial class ScalarLogicEmitter
         var update = kind == "andn2" ? $"{p} && !active" : $"{p} || !active";
         _operands.WriteMask(OperandParser.Parse("exec"), update);
         _operands.WriteMask(a[Destination], "active");
-        _operands.SetScc("WaveActiveAnyTrue(active)");
+        _operands.SetScc($"{WaveOps.AnyTrue}(active)");
     }
 
     private void Logic(string kind, bool wide, IReadOnlyList<Operand> a)
@@ -158,7 +158,7 @@ internal sealed partial class ScalarLogicEmitter
         {
             var update = MaskLogic(kind, _operands.Mask(a[Source0]), _operands.Mask(a[Source1]));
             _operands.WriteMask(a[Destination], update);
-            _operands.SetScc($"WaveActiveAnyTrue({_operands.Mask(a[Destination])})");
+            _operands.SetScc($"{WaveOps.AnyTrue}({_operands.Mask(a[Destination])})");
 
             return;
         }

@@ -17,7 +17,8 @@ namespace FiveStar.Shaders.Tests.Cases;
 /// vertices), s_barrier, exp pos0 / param0 from lanes below the vertex count, exp prim (three 10-bit indices, bit 31
 /// culls) from lanes below the primitive count: 8 horizontal strips of 2 triangles, primitive 5 culled. Drawn natively
 /// (DispatchMesh) or through the mesh-to-compute fallback; the image must match a rasterizer model (flat attributes
-/// from the provoking vertex) either way.
+/// from the provoking vertex) either way. The thread id makes a round trip through ds_bpermute (read from lane id ^ 1,
+/// then ^ 1 again), which needs console lane numbers on WARP's 4-lane waves.
 /// </summary>
 public sealed partial class MeshStageRunner
 {
@@ -41,6 +42,11 @@ public sealed partial class MeshStageRunner
         s_bfe_u32 s20, s3, 0x40018
         s_lshl_b32 s20, s20, 6
         v_add_nc_u32_e32 v1, s20, v1
+        v_xor_b32_e32 v30, 1, v1
+        v_lshlrev_b32_e32 v30, 2, v30
+        ds_bpermute_b32 v31, v30, v1
+        s_waitcnt lgkmcnt(0)
+        v_xor_b32_e32 v1, 1, v31
         s_barrier
         s_and_b32 s21, s8, 0xfff
         s_mov_b64 s[24:25], exec
@@ -161,7 +167,7 @@ public sealed partial class MeshStageRunner
     private string Translate(string variant)
     {
         var assembled = _fixture.Workbench.Assemble(variant, Program, 64);
-        var config = new ShaderConfig { Stage = HardwareStage.Ngg, WaveSize = 64, UserSgprs = 4, Ngg = new NggConfig(8, 0, 0) };
+        var config = new ShaderConfig { Stage = HardwareStage.Ngg, WaveSize = 64, UserSgprs = 4, Ngg = new NggConfig(8, 0, 0), LdsBytes = 4 };
         var pipeline = new PipelineStateInfo { Stage = "ms", NumThreads = new ThreadGroupSize(64, 1, 1), MaxVertices = MaxOutputs, MaxPrimitives = MaxOutputs };
         var program = new ShaderProgram(ShaderStage.Mesh, assembled.Instructions, assembled.Code, ShaderSignatures.None, config, pipeline);
 

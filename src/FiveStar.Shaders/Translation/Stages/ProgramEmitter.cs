@@ -59,7 +59,15 @@ internal sealed partial class ProgramEmitter
 
     private List<string> Header()
     {
-        var lines = new List<string> { "#include \"rdna_prelude.hlsli\"" };
+        const string Include = "#include \"rdna_prelude.hlsli\"";
+
+        var lines = new List<string> { Include };
+
+        if (_state.EmulateWaves)
+        {
+            // One entry, so line positions after the include stay as they are.
+            lines[0] = string.Join("\n", WaveDefines()) + "\n" + Include;
+        }
 
         if (_state.UsesBvh)
         {
@@ -73,6 +81,29 @@ internal sealed partial class ProgramEmitter
         }
 
         lines.Add(string.Empty);
+
+        return lines;
+    }
+
+    /// <summary>The prelude switches for wave emulation and the program's wave floor (see WaveOps.FloorLine).</summary>
+    private List<string> WaveDefines()
+    {
+        var wave = _state.WaveSize;
+        var floor = Math.Max(_state.LaneReach, WaveOps.NarrowestHardwareWave);
+        var lines = new List<string> { $"#define VW_WAVE {wave}", "#define VW_EMULATE 1" };
+
+        if (_state.Stage == ShaderStage.Mesh)
+        {
+            lines.Add("#define VW_GROUP_LANES 1");
+
+            // The other lanes of a mesh wave are live threads: a narrower hardware wave sees only part of a lane mask.
+            if (_state.Blocks.Any(block => block.Lines.Any(line => WholeWavePattern().IsMatch(line))))
+            {
+                floor = wave;
+            }
+        }
+
+        lines.Insert(0, WaveOps.FloorLine(wave, floor));
 
         return lines;
     }
@@ -142,7 +173,7 @@ internal sealed partial class ProgramEmitter
             (x, y, z) = (threads.Value.X, threads.Value.Y, threads.Value.Z);
         }
 
-        return $"[numthreads({x}, {y}, {z})]\nvoid main(uint3 in_gid : SV_GroupID, uint3 in_gtid : SV_GroupThreadID)";
+        return $"[numthreads({x}, {y}, {z})]\nvoid main(uint3 in_gid : SV_GroupID, uint3 in_gtid : SV_GroupThreadID, uint in_gi : SV_GroupIndex)";
     }
 
     private string PixelEntry()
@@ -220,6 +251,9 @@ internal sealed partial class ProgramEmitter
 
         return text.Replace("\nOut main(", "\n[WaveOpsIncludeHelperLanes]\nOut main(", StringComparison.Ordinal);
     }
+
+    [GeneratedRegex(@"\b(vw_ballot|vw_any|vw_count|readfirstlane)\(")]
+    private static partial Regex WholeWavePattern();
 
     [GeneratedRegex(@"\bf32tof16\(")]
     private static partial Regex F32ToF16Pattern();

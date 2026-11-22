@@ -57,6 +57,21 @@ internal sealed class TranslationState
 
     public bool IsWave64 => Config.WaveSize == Wave64;
 
+    /// <summary>The console wave size the program was compiled for.</summary>
+    public int WaveSize => Config.WaveSize ?? Wave64;
+
+    /// <summary>Wave operations keep console lane numbers on any hardware wave size (see TranslationOptions).</summary>
+    public bool EmulateWaves { get; init; }
+
+    /// <summary>
+    /// The widest aligned group of program lanes one cross-lane read may reach: a hardware wave at least this wide gives
+    /// console results under wave emulation (<see cref="WaveOps.FloorLine"/>).
+    /// </summary>
+    public int LaneReach { get; private set; } = 1;
+
+    /// <summary>SGPRs holding the number of a lane taken from a lane mask (s_ff1): that lane is always present.</summary>
+    public HashSet<RegisterKey> MaskLanes { get; } = [];
+
     /// <summary>Hardware-preloaded inputs, assigned before the first block.</summary>
     public List<string> Prologue { get; } = [];
 
@@ -148,6 +163,43 @@ internal sealed class TranslationState
     {
         Written.Add(key);
         Variables.Add(key);
+    }
+
+    /// <summary>Records a cross-lane read that stays inside aligned groups of <paramref name="lanes"/> program lanes.</summary>
+    public void Reach(int lanes)
+    {
+        LaneReach = Math.Max(LaneReach, Math.Min(lanes, WaveSize));
+    }
+
+    /// <summary>Records a read of a lane that may be anywhere in the program wave.</summary>
+    public void ReachWholeWave()
+    {
+        Reach(WaveSize);
+    }
+
+    /// <summary>Records a read of the fixed program lane <paramref name="lane"/>.</summary>
+    public void ReachLane(long lane)
+    {
+        if (Stage == ShaderStage.Mesh)
+        {
+            // A narrower mesh hardware wave holds a window that starts anywhere in the program wave.
+            ReachWholeWave();
+
+            return;
+        }
+
+        Reach((int)System.Numerics.BitOperations.RoundUpToPowerOf2((uint)(lane & (WaveSize - 1)) + 1));
+    }
+
+    /// <summary>Records a read of the lane number held in <paramref name="lane"/> (an SGPR, or any expression).</summary>
+    public void ReachLane(RegisterKey? lane)
+    {
+        if (lane is not null && MaskLanes.Contains(lane.Value) && Stage != ShaderStage.Mesh)
+        {
+            return;
+        }
+
+        ReachWholeWave();
     }
 
     /// <summary>Records how a pixel-shader attribute is read.</summary>

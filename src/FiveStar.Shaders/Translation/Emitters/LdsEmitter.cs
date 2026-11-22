@@ -250,11 +250,13 @@ internal sealed partial class LdsEmitter
         var a = access.Operands;
         var laneMask = (_state.Config.WaveSize ?? DefaultWave) - 1;
         var lane = $"((({_operands.Read(a[Source0])} + {access.Offset}u) >> 2) & {laneMask}u)";
+        var read = WaveOps.ReadLane;
+        _state.ReachWholeWave();
 
         if (access.Kind == "bpermute_b32")
         {
             // EXEC applies to the source lane: reading a disabled lane yields 0.
-            _operands.Write(a[Destination], $"WaveReadLaneAt(active ? {_operands.Read(a[Source1])} : 0u, {lane})");
+            _operands.Write(a[Destination], $"{read}(active ? {_operands.Read(a[Source1])} : 0u, {lane})");
 
             return true;
         }
@@ -262,9 +264,9 @@ internal sealed partial class LdsEmitter
         // Forward permute: lane L receives the data of the highest active lane whose address selects L (else 0).
         var values = _operands.Snap(lane, _operands.Read(a[Source1]));
         var name = $"_pm{_state.NextTemporary()}";
-        _state.Emit($"  uint {name} = 0; for (uint _i = 0; _i < WaveGetLaneCount(); _i++) {{ "
-            + $"uint _d = WaveReadLaneAt({values[0]}, _i); uint _x = WaveReadLaneAt({values[1]}, _i); "
-            + $"bool _a = WaveReadLaneAt(active ? 1u : 0u, _i) != 0; if (_a && _d == WaveGetLaneIndex()) {name} = _x; }}");
+        _state.Emit($"  uint {name} = 0; for (uint _i = 0; _i < {WaveOps.Lanes}; _i++) {{ "
+            + $"uint _d = {read}({values[0]}, _i); uint _x = {read}({values[1]}, _i); "
+            + $"bool _a = {read}(active ? 1u : 0u, _i) != 0; if (_a && _d == {WaveOps.Lane}) {name} = _x; }}");
         _operands.Write(a[Destination], name);
 
         return true;

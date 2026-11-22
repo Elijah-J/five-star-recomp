@@ -29,17 +29,38 @@ public sealed class ComputeCaseRunner
 
     public IReadOnlyList<string> Run(ComputeCase testCase)
     {
-        var shader = Build(testCase);
+        return Run(testCase, groupWave: false);
+    }
+
+    /// <summary>
+    /// Runs a wave64 case through its group-wave variant (HlslTranslator.GroupWaveVariant): the 64-thread group is the
+    /// console wave, so every thread is compared with full-wave expectations.
+    /// </summary>
+    public IReadOnlyList<string> RunGroupWave(ComputeCase testCase)
+    {
+        return Run(testCase, groupWave: true);
+    }
+
+    private List<string> Run(ComputeCase testCase, bool groupWave)
+    {
+        var shader = Build(testCase, groupWave);
         uint[] user = [.. ComputeCase.Descriptor(ComputeCase.OutputHeap), .. testCase.SecondDescriptor, .. testCase.User, .. new uint[ComputeCase.UserSgprCount]];
         var output = new BufferResource(ComputeCase.OutputHeap, [.. Enumerable.Repeat(testCase.Fill, testCase.TotalThreads * testCase.Outputs)], Writable: true);
         var bindings = new Bindings { UserSgprs = user[..ComputeCase.UserSgprCount], Buffers = [output, .. testCase.Buffers] };
         var (x, y, z) = testCase.Groups;
         var result = _fixture.Runner.Compute(new ComputeJob(shader, x, y, z, bindings));
 
-        return Compare(testCase, result.Buffers);
+        var wave = Math.Min(_fixture.ComputeWaveSize, testCase.Wave);
+
+        if (groupWave)
+        {
+            wave = testCase.Wave;
+        }
+
+        return Compare(testCase, result.Buffers, wave);
     }
 
-    private byte[] Build(ComputeCase testCase)
+    private byte[] Build(ComputeCase testCase, bool groupWave)
     {
         var assembled = _fixture.Workbench.Assemble(testCase.Name, Source(testCase), testCase.Wave);
         var groupIds = testCase.GroupAxes.Select((axis, index) => new GroupIdSgpr(axis, ComputeCase.UserSgprCount + index)).ToList();
@@ -64,6 +85,14 @@ public sealed class ComputeCaseRunner
         };
         var program = new ShaderProgram(ShaderStage.Compute, assembled.Instructions, assembled.Code, ShaderSignatures.None, config, null);
 
+        if (groupWave)
+        {
+            // As the corpus builds it: structured (WARP's shader compiler crashes on barriers in the dispatch switch).
+            var structured = HlslTranslator.Translate(program, new TranslationOptions(StructuredControlFlow: true, PinWaveSize: true, EmulateWaveSize: true));
+
+            return _fixture.Workbench.Compile(testCase.Name + "_w32", HlslTranslator.GroupWaveVariant(structured.Hlsl), "cs");
+        }
+
         return _fixture.Workbench.Compile(testCase.Name, ShaderWorkbench.Translate(program), "cs");
     }
 
@@ -83,11 +112,10 @@ public sealed class ComputeCaseRunner
         return $"{prologue}\n{testCase.Program}\n{store}\ns_endpgm";
     }
 
-    private List<string> Compare(ComputeCase testCase, IReadOnlyDictionary<int, uint[]> buffers)
+    private static List<string> Compare(ComputeCase testCase, IReadOnlyDictionary<int, uint[]> buffers, int wave)
     {
         var mismatches = new List<string>();
         var output = buffers[ComputeCase.OutputHeap];
-        var wave = Math.Min(_fixture.ComputeWaveSize, testCase.Wave);
 
         for (var id = 0; testCase.Expect is not null && id < testCase.TotalThreads; id++)
         {

@@ -13,7 +13,9 @@ internal static class ProgramTranslator
     public static string Translate(
         ShaderProgram program, IReadOnlyList<Instruction> instructions, ShaderStage stage, bool copyShader, TranslationOptions options)
     {
-        var state = new TranslationState(program, instructions, stage, copyShader);
+        // Compute programs pin their wave size instead; geometry programs run one lane per HLSL invocation.
+        var emulate = options.EmulateWaveSize && !copyShader && stage is ShaderStage.Pixel or ShaderStage.Vertex or ShaderStage.Mesh;
+        var state = new TranslationState(program, instructions, stage, copyShader) { EmulateWaves = emulate };
         var operands = new OperandAccess(state, new ImplicitInputs(state));
         var translator = new InstructionTranslator(state, operands, InstructionEmitters.Create(state, operands));
         new ControlFlowTranslator(state, operands, translator).Run();

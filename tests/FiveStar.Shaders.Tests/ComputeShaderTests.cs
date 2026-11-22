@@ -26,6 +26,18 @@ public sealed class ComputeShaderTests : IClassFixture<WarpFixture>
 
     public static TheoryData<string> FullWaveCases => [.. ComputeCases.FullWave().Select(testCase => testCase.Name)];
 
+    public static TheoryData<string> Wave64Cases =>
+        [.. ComputeWaveCases.All().Concat(ComputeWaveCases.FullWave()).Where(testCase => testCase.Wave == 64).Select(testCase => testCase.Name)];
+
+    [WarpTheory]
+    [MemberData(nameof(Wave64Cases))]
+    public void A_wave64_program_runs_as_its_thread_group_on_narrower_waves(string name)
+    {
+        var mismatches = new ComputeCaseRunner(_fixture).RunGroupWave(ComputeCases.Find(name));
+
+        Assert.True(mismatches.Count == 0, $"{mismatches.Count} mismatches:\n{string.Join("\n", mismatches.Take(16))}");
+    }
+
     [WarpTheory]
     [MemberData(nameof(Cases))]
     [MemberData(nameof(FullWaveCases), Skip = FullWaveReason)]

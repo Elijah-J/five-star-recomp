@@ -10,8 +10,9 @@ namespace FiveStar.Shaders.Analysis;
 /// <summary>
 /// Classifies translated programs by wave-size dependence (wave64 programs on wave32-only GPUs): programs without wave
 /// or quad intrinsics are agnostic; lane-index and EXEC bookkeeping can be fixed mechanically; quad operations and
-/// first-lane reads stay correct; lane-indexed data movement (readlane, permlane, bpermute, DPP rows) needs wave64
-/// emulation or a fixed wave size.
+/// first-lane reads stay correct; lane-indexed data movement (readlane, permlane, bpermute, DPP rows) needs wave
+/// emulation or a fixed wave size. Programs translated with wave emulation also carry their floor (the narrowest
+/// hardware wave with console results) in their first line.
 /// </summary>
 public static partial class WaveUsageAnalyzer
 {
@@ -52,8 +53,15 @@ public static partial class WaveUsageAnalyzer
     public static WaveUsageEntry Classify(ProgramResult result, int waveSize, string hlsl)
     {
         var data = DataOperations(hlsl);
+        var floor = FloorPattern().Match(hlsl);
+        int? lanes = null;
 
-        return new WaveUsageEntry(result.Name, result.Stage, waveSize, Dependence(hlsl), data.ToHashSet());
+        if (floor.Success)
+        {
+            lanes = int.Parse(floor.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        return new WaveUsageEntry(result.Name, result.Stage, waveSize, Dependence(hlsl), data.ToHashSet(), lanes);
     }
 
     /// <summary>How the code after the entry point depends on the wave size.</summary>
@@ -128,12 +136,16 @@ public static partial class WaveUsageAnalyzer
     {
         string[] wavePrefixes = ["WaveMultiPrefix", "WavePrefix", "WaveActive"];
 
-        return operation is "WaveReadLaneAt" or "WaveMatch" || wavePrefixes.Any(prefix => operation.StartsWith(prefix, StringComparison.Ordinal));
+        return operation is "WaveReadLaneAt" or "vw_read" or "WaveMatch" || wavePrefixes.Any(prefix => operation.StartsWith(prefix, StringComparison.Ordinal));
     }
 
-    [GeneratedRegex(@"\b(WaveReadLaneAt|WaveReadLaneFirst|WaveActive(?:Sum|Product|Min|Max|BitAnd|BitOr|BitXor|AllEqual)|WavePrefix\w+|WaveMultiPrefix\w+|WaveMatch|QuadRead\w+|quad_perm|readfirstlane)\s*\(")]
+    [GeneratedRegex(@"\b(WaveReadLaneAt|vw_read|WaveReadLaneFirst|WaveActive(?:Sum|Product|Min|Max|BitAnd|BitOr|BitXor|AllEqual)|WavePrefix\w+|WaveMultiPrefix\w+|WaveMatch|QuadRead\w+|quad_perm|readfirstlane)\s*\(")]
     private static partial Regex DataPattern();
 
-    [GeneratedRegex(@"\b(WaveActiveBallot|WaveActiveCountBits|WaveActiveAnyTrue|WaveActiveAllTrue|WaveGetLaneIndex|lane_bit|WaveIsFirstLane)\s*\(")]
+    [GeneratedRegex(@"\b(WaveActiveBallot|WaveActiveCountBits|WaveActiveAnyTrue|WaveActiveAllTrue|WaveGetLaneIndex|lane_bit|WaveIsFirstLane|vw_ballot|vw_count|vw_any|vw_lane)\s*\(")]
     private static partial Regex BookkeepingPattern();
+
+    // The line WaveOps.FloorLine writes.
+    [GeneratedRegex(@"^// program wave \d+; console results on hardware waves >= (\d+) lanes", RegexOptions.Multiline)]
+    private static partial Regex FloorPattern();
 }

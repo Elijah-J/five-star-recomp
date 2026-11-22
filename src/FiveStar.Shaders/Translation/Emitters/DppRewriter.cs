@@ -13,8 +13,13 @@ namespace FiveStar.Shaders.Translation.Emitters;
 /// </summary>
 internal sealed class DppRewriter
 {
-    private const string LaneIndex = "WaveGetLaneIndex()";
+    private const string LaneIndex = WaveOps.Lane;
     private const string InvalidLane = "0xffffffffu";
+
+    // Lane groups the patterns stay inside: quads, half rows, 16-lane rows.
+    private const int QuadLanes = 4;
+    private const int HalfRowLanes = 8;
+    private const int RowLanes = 16;
 
     // dpp8: one 3-bit lane select per lane of an 8-lane group.
     private const int Dpp8Lanes = 8;
@@ -41,7 +46,8 @@ internal sealed class DppRewriter
             // dpp8 has no row or bank masks.
             var lanes = ArgumentList.Bits(modifiers.Value("dpp8"));
             var lane = _operands.SnapOne($"(({LaneIndex} & ~7u) | {Dpp8Select(lanes)})");
-            var read = _operands.SnapOne($"WaveReadLaneAt({x}, {lane})");
+            var read = _operands.SnapOne($"{WaveOps.ReadLane}({x}, {lane})");
+            _state.Reach(Dpp8Lanes);
 
             return Replace(a, read);
         }
@@ -52,6 +58,7 @@ internal sealed class DppRewriter
         {
             var lanes = ArgumentList.Bits(modifiers.Value("quad_perm"));
             value = $"quad_perm({x}, {string.Join(", ", lanes)})";
+            _state.Reach(QuadLanes);
         }
         else
         {
@@ -114,7 +121,15 @@ internal sealed class DppRewriter
         }
 
         var source = _operands.SnapOne(RowSource(control, amount));
-        var read = _operands.SnapOne($"WaveReadLaneAt({x}, {source} == {InvalidLane} ? 0u : {source})");
+        var read = _operands.SnapOne($"{WaveOps.ReadLane}({x}, {source} == {InvalidLane} ? 0u : {source})");
+        var reach = RowLanes;
+
+        if (control == "row_half_mirror")
+        {
+            reach = HalfRowLanes;
+        }
+
+        _state.Reach(reach);
 
         if (!modifiers.Has("bound_ctrl") && control is "row_shr" or "row_shl")
         {

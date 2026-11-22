@@ -17,8 +17,10 @@ internal sealed class ShaderTranslateStep : ISetupStep
 {
     public const string StepName = "shader-translate";
 
-    /// <summary>The translator options setup uses: the dispatch form with pinned wave sizes, as the translate command.</summary>
-    public static readonly TranslationOptions Translation = new(StructuredControlFlow: false, PinWaveSize: true);
+    /// <summary>
+    /// The translator options setup uses: the dispatch form with pinned and emulated wave sizes, as the translate command.
+    /// </summary>
+    public static readonly TranslationOptions Translation = new(StructuredControlFlow: false, PinWaveSize: true, EmulateWaveSize: true);
 
     // Measured: HLSL, DXIL and cache entries come to about 610 KiB per program.
     private const long BytesPerProgram = 640 * 1024;

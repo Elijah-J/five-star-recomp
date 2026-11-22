@@ -19,6 +19,8 @@ public sealed class TranslationCache
     private const string TextKind = "hlsl";
     private const string EntryExtension = ".json";
     private const string TextExtension = ".hlsl";
+    private const string VariantProperty = "w32";
+    private const string VariantReasonProperty = "w32Reason";
 
     private readonly CacheFolder _folder;
     private readonly byte[] _identity;
@@ -86,23 +88,32 @@ public sealed class TranslationCache
 
     public void Store(string key, TranslatedProgram program)
     {
-        string? textKey = null;
+        var textKey = StoreText(program.Hlsl);
+        var variantKey = StoreText(program.GroupWave?.Hlsl);
 
-        if (program.Hlsl is not null)
-        {
-            var text = Encoding.UTF8.GetBytes(program.Hlsl);
-            textKey = ContentHash.Of(text);
-
-            if (!_folder.Contains(TextKind, textKey, TextExtension))
-            {
-                _folder.Write(TextKind, textKey, TextExtension, text);
-            }
-        }
-
-        _folder.Write(EntryKind, key, EntryExtension, Serialize(program, textKey));
+        _folder.Write(EntryKind, key, EntryExtension, Serialize(program, textKey, variantKey));
     }
 
-    private static byte[] Serialize(TranslatedProgram program, string? textKey)
+    /// <summary>Stores an HLSL text once per distinct content and returns its key; null for no text.</summary>
+    private string? StoreText(string? hlsl)
+    {
+        if (hlsl is null)
+        {
+            return null;
+        }
+
+        var text = Encoding.UTF8.GetBytes(hlsl);
+        var textKey = ContentHash.Of(text);
+
+        if (!_folder.Contains(TextKind, textKey, TextExtension))
+        {
+            _folder.Write(TextKind, textKey, TextExtension, text);
+        }
+
+        return textKey;
+    }
+
+    private static byte[] Serialize(TranslatedProgram program, string? textKey, string? variantKey)
     {
         using var memory = new MemoryStream();
         using var writer = new Utf8JsonWriter(memory);
@@ -120,37 +131,67 @@ public sealed class TranslationCache
         writer.WriteNumber("instructions", program.Instructions);
         writer.WriteString("hlsl", textKey);
 
+        if (program.GroupWave is not null)
+        {
+            writer.WriteString(VariantProperty, variantKey);
+            writer.WriteString(VariantReasonProperty, program.GroupWave.Reason);
+        }
+
         writer.WriteEndObject();
         writer.Flush();
 
         return memory.ToArray();
     }
 
-    /// <summary>The entry as a program; null when its HLSL is missing from the cache.</summary>
+    /// <summary>The entry as a program; null when one of its HLSL texts is missing from the cache.</summary>
     private TranslatedProgram? Parse(byte[] entry, string name)
     {
         using var document = JsonDocument.Parse(entry);
         var root = document.RootElement;
         var stageName = root.GetProperty("stage").GetString();
-        var textKey = root.GetProperty("hlsl").GetString();
-        string? hlsl = null;
 
-        if (textKey is not null)
+        if (!TryReadText(root.GetProperty("hlsl").GetString(), out var hlsl))
         {
-            var text = _folder.Read(TextKind, textKey, TextExtension);
-
-            if (text is null)
-            {
-                return null;
-            }
-
-            hlsl = Encoding.UTF8.GetString(text);
+            return null;
         }
 
         ShaderStage? stage = stageName is null ? null : ShaderStages.FromProfileName(stageName);
         var status = root.GetProperty("status").GetString();
         var reason = root.GetProperty("reason").GetString();
+        var program = new TranslatedProgram(name, stage, hlsl, status, reason, root.GetProperty("instructions").GetInt32());
 
-        return new TranslatedProgram(name, stage, hlsl, status, reason, root.GetProperty("instructions").GetInt32());
+        if (!root.TryGetProperty(VariantReasonProperty, out var variantReason))
+        {
+            return program;
+        }
+
+        if (!TryReadText(root.GetProperty(VariantProperty).GetString(), out var variant))
+        {
+            return null;
+        }
+
+        return program with { GroupWave = new GroupWaveVariant(variant, variantReason.GetString()) };
+    }
+
+    /// <summary>The text under a key (null for no key); false when the key names a text the cache no longer has.</summary>
+    private bool TryReadText(string? textKey, out string? hlsl)
+    {
+        hlsl = null;
+
+        if (textKey is null)
+        {
+            return true;
+        }
+
+        var text = _folder.Read(TextKind, textKey, TextExtension);
+
+        if (text is null)
+        {
+            return false;
+        }
+
+        hlsl = Encoding.UTF8.GetString(text);
+
+        return true;
     }
 }

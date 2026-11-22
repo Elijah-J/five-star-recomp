@@ -42,7 +42,27 @@ internal static class WaveReport
         var operations = wave64.SelectMany(entry => entry.DataOperations).GroupBy(operation => operation)
             .OrderByDescending(group => group.Count()).Select(group => $"{group.Key} {group.Count()}");
         Console.WriteLine("cross-lane operations in wave64 programs (programs): " + string.Join(", ", operations));
+        ReportFloors(entries);
 
         return Success;
+    }
+
+    /// <summary>For programs translated with wave emulation: how many give console results on each hardware wave size.</summary>
+    private static void ReportFloors(IReadOnlyList<WaveUsageEntry> entries)
+    {
+        var emulated = entries.Where(entry => entry.Floor is not null && entry.Dependence == WaveDependence.LaneIndexed).ToList();
+
+        if (emulated.Count == 0)
+        {
+            return;
+        }
+
+        Console.WriteLine("lane-indexed programs with wave emulation, by the narrowest hardware wave with console results:");
+
+        foreach (var group in emulated.GroupBy(entry => (Stage: entry.Stage ?? "?", entry.WaveSize)).OrderBy(group => group.Key.Stage, StringComparer.Ordinal).ThenBy(group => group.Key.WaveSize))
+        {
+            var floors = group.GroupBy(entry => entry.Floor!.Value).OrderBy(floor => floor.Key).Select(floor => $">={floor.Key}: {floor.Count()}");
+            Console.WriteLine($"{group.Key.Stage.PadRight(StageWidth)} wave{group.Key.WaveSize}  {string.Join(", ", floors)}");
+        }
     }
 }

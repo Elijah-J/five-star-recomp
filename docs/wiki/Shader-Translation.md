@@ -43,7 +43,25 @@ first-lane reads stay correct. What breaks is reading another lane by index:
 | wave64, index other lanes (break on 32-lane GPUs) | 1,226 |
 | wave32, index other lanes (break if a driver runs them as wave64) | 1,877 |
 
-Compute and mesh shaders can request a wave size; pixel shaders cannot, so they need an emulated path.
+Compute programs request their wave size. For the 203 that need 64 lanes, which NVIDIA does not offer, 181 also get
+a variant that runs their thread group as the wave and loads on NVIDIA; 3 more only need 32 lanes; 19 have several
+waves per group and need a GPU with 64-lane waves.
+
+Pixel, vertex and mesh shaders cannot request a wave size, so the translation emulates the console wave on whatever
+wave the GPU runs:
+
+| GPU wave | Result |
+|---|---|
+| same as the console's | console results |
+| wider (AMD running a wave32 program in wave64) | console results: each part of the wave acts as one console wave |
+| narrower, pixel and vertex | console results unless the program reads a lane the narrower wave does not have |
+| narrower, mesh | only reads within the narrower wave are right |
+
+Each translated program states the narrowest GPU wave on which it gives console results. Of the 1,982 lane-indexed
+pixel, vertex and mesh programs, all compile; on 32-lane GPUs 462 of the 907 wave64 pixel programs give console
+results, while 445 pixel, 1 vertex and 115 mesh programs read lanes such a GPU does not have. The [developer
+documentation](https://github.com/ThatMapleDev/five-star-recomp/blob/main/docs/shader-translation.md#wave-size) has the
+details and the limits.
 
 ## Limits
 

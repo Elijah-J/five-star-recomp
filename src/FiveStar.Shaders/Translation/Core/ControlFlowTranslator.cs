@@ -377,9 +377,9 @@ internal sealed class ControlFlowTranslator
             case "s_cbranch_scc1":
                 return "scc";
             case "s_cbranch_execz":
-                return "!WaveActiveAnyTrue(active)";
+                return $"!{WaveOps.AnyTrue}(active)";
             case "s_cbranch_execnz":
-                return "WaveActiveAnyTrue(active)";
+                return $"{WaveOps.AnyTrue}(active)";
             case "s_cbranch_vccz":
                 return "!" + VccAny();
             default:
@@ -393,7 +393,7 @@ internal sealed class ControlFlowTranslator
 
         if (_state.Masks.Contains(SpecialRegisters.Vcc))
         {
-            return $"WaveActiveAnyTrue({_operands.Mask(vcc)})";
+            return $"{WaveOps.AnyTrue}({_operands.Mask(vcc)})";
         }
 
         return $"({_operands.Read(vcc, 0)} != 0)";

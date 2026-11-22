@@ -12,5 +12,5 @@ namespace FiveStar.Shaders.Compilation;
 public sealed record CorpusOptions(string OutputFolder, IReadOnlySet<ShaderStage>? Stages, int Parallelism, string? RetryResults)
 {
     /// <summary>The translator choices (the dispatch form with pinned wave sizes unless set).</summary>
-    public TranslationOptions Translation { get; init; } = new(StructuredControlFlow: false, PinWaveSize: true);
+    public TranslationOptions Translation { get; init; } = new(StructuredControlFlow: false, PinWaveSize: true, EmulateWaveSize: true);
 }
