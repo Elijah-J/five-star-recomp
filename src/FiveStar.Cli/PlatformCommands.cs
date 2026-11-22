@@ -41,6 +41,11 @@ internal static class PlatformCommands
             return UsageError;
         }
 
+        if (args[0] == "gdk-abi")
+        {
+            return GdkAbiCommand.Run(arguments);
+        }
+
         return Dispatch(args[0], reports, arguments.Positionals);
     }
 
@@ -78,5 +83,9 @@ internal static class PlatformCommands
         output.WriteLine("  pe      <module> ...   headers, sections, imports, exports, version, PDB path and resources");
         output.WriteLine("  xvd     <file.xvd>     the plain XVD volume header");
         output.WriteLine("  regf    <hive>         every key and value of a registry hive (microsoft_gameconfig.bin)");
+
+        output.WriteLine("  gdk-abi <xgameruntime.lib> [module ...] [--out file]");
+        output.WriteLine("                         the loader's --gdk-abi table from the PC GDK library; per module, how many");
+        output.WriteLine("                         of its GDK calls the table names");
     }
 }

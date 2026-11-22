@@ -61,6 +61,21 @@ At file offset 0x200, field layout of the public xvdtool `XvdHeader`:
 | `lf`, `lh` | u16 count at +2, 8-byte entries from +4 |
 | `li`, `ri` | u16 count at +2, 4-byte entries from +4 (`ri` entries are lists) |
 
+## GDK thunk ABI
+
+Every GDK call compiles to a thunk from `xgameruntime.lib`: `QueryApiImpl(&clsid, &iid, &object)`, then a call through
+vtable slot n of the object, then `Release` (slot 2). The console and PC libraries use the same ids and slots for the
+same functions, so the public PC GDK names the console thunks.
+
+| Source | How the thunks are found |
+|---|---|
+| `xgameruntime.lib` (PC GDK, `windows\lib\x64`) | each COFF function with a REL32 relocation to `QueryApiImpl`; the GUIDs from the `_GUID_xxxxxxxx_xxxx_...` symbols its `lea rcx/rdx, [rip+...]` refer to (`mov rdx, rcx` when both are equal); the slot from the first `mov rax, [rax+disp]` after the query with disp / 8 ≥ 3 |
+| a console module | the same instruction pattern around a `call`, accepted only for class ids that the library uses |
+
+The October 2025 PC GDK (2510) has 418 named thunks. `libHttpClient.GDK.dll` (built with the October 2025 GRDK) has 408
+distinct thunks; 365 match by (clsid, iid, slot). The other 43 are console-only, most of them XUser through interface
+id `26f3c674-a2fe-44fa-b6c4-a323bc94ff53`.
+
 ## Commands
 
 ```
@@ -68,7 +83,12 @@ fivestar platform imports <dir>         which functions of which DLLs the module
 fivestar platform pe      <module> ...  header, sections with entropy, imports, exports, version, PDB, resources
 fivestar platform xvd     <file.xvd>
 fivestar platform regf    <hive>        every key and value
+fivestar platform gdk-abi <xgameruntime.lib> [module ...] [--out file]
 ```
+
+`gdk-abi` writes the table for `fivestar-loader --gdk-abi` (one `clsid iid slot function` line per library thunk) and,
+for each module, its thunks without a name as comments. The GDK is a free download from Microsoft
+(github.com/microsoft/GDK, releases); the repository contains no table.
 
 ## Unknown
 

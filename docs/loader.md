@@ -96,9 +96,9 @@ The table is loaded with `--gdk-abi <file>`, one entry per line, `#` starting a 
 11111111-2222-3333-4444-555555555555   66666666-7777-8888-9999-aaaaaaaaaaaa   3     XTaskQueueCreate
 ```
 
-The loader ships no table. It needs, for each interface the game requests, the clsid and iid and the function behind
-each vtable slot (slot 3 onwards). With an empty table, `HCInitialize` of `libHttpClient.GDK.dll` fails with
-`0x89240107` after its first `QueryApiImpl`.
+The repository ships no table; `fivestar platform gdk-abi` builds one from the public PC GDK (see
+[platform.md](platform.md)). With an empty table, `HCInitialize` of `libHttpClient.GDK.dll` fails with `0x89240107`
+after its first `QueryApiImpl`.
 
 ## Running it
 
@@ -129,8 +129,8 @@ DLLs (825 imports, none unresolved), run the inspected exports and read the pack
 
 ## Unknown
 
-- The `(clsid, iid, slot) -> function` table of the thunk ABI, and the API-set names the game imports GDK functions
-  from (the alias is a pattern).
+- The names of console-only thunks the PC GDK lacks (43 in `libHttpClient.GDK.dll`, most of them XUser through a
+  console-only interface id), and the API-set names the game imports GDK functions from (the alias is a pattern).
 - Signatures inferred from call sites: `InitializeApiImpl*`, `QueryApiImpl`, `XErrorReport`, `XMemVirtualQuery`,
   `XMemGetWorkingSetStatistics`; the meaning of the `XMemVirtualQuery` tail (+0x30); the XALLOC attribute layout.
 - XUser and XGameSave error HRESULT values; the members of `XPackageDetails` after `installing`; the
