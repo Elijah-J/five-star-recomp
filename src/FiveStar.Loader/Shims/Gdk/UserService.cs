@@ -25,6 +25,10 @@ internal sealed unsafe class UserService
 
     public const string FindControllerApi = "XUserFindControllerForUserWithUiAsync";
 
+    public const string TokenApi = "XUserGetTokenAndSignatureAsync";
+
+    public const string ResolvePrivilegeApi = "XUserResolvePrivilegeWithUiAsync";
+
     /// <summary>sizeof(APP_LOCAL_DEVICE_ID).</summary>
     public const int DeviceIdSize = 32;
 

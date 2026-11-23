@@ -8,7 +8,7 @@ namespace FiveStar.Loader.Shims.Gdk;
 
 /// <summary>
 /// XNetworking.h entry points with offline answers (<see cref="NetworkingService"/>). Change notifications register
-/// and never fire. URL security queries and certificate checks stay in the not-implemented catalog.
+/// and never fire. URL security queries and certificate checks fail with HRESULT_FROM_WIN32(ERROR_NETWORK_UNREACHABLE).
 /// </summary>
 internal static unsafe class XNetworkingShim
 {
@@ -84,5 +84,63 @@ internal static unsafe class XNetworkingShim
     private static int XNetworkingRegisterPreferredLocalUdpMultiplayerPortChanged(nint queue, nint context, nint callback, ulong* token)
     {
         return ShimContext.Runtime.Gdk.Registrations.Register("XNetworkingRegisterPreferredLocalUdpMultiplayerPortChanged", callback, token);
+    }
+
+    /// <summary>HRESULT XNetworkingQuerySecurityInformationForUrlAsync(const char* url, XAsyncBlock*): the URL's server cannot be reached.</summary>
+    [Shim(GdkModule.Name, NetworkingService.SecurityInformationApi)]
+    [UnmanagedCallersOnly]
+    private static int XNetworkingQuerySecurityInformationForUrlAsync(byte* url, nint async)
+    {
+        if (url == null)
+        {
+            return HResult.InvalidArgument;
+        }
+
+        return AsyncCalls.Begin(async, NetworkingService.SecurityInformationApi, new OfflineOperation(HResult.NetworkUnreachable));
+    }
+
+    /// <summary>HRESULT XNetworkingQuerySecurityInformationForUrlAsyncResultSize(XAsyncBlock*, size_t* securityInformationBufferByteCount).</summary>
+    [Shim(GdkModule.Name, "XNetworkingQuerySecurityInformationForUrlAsyncResultSize")]
+    [UnmanagedCallersOnly]
+    private static int XNetworkingQuerySecurityInformationForUrlAsyncResultSize(nint async, nuint* size)
+    {
+        return AsyncCalls.EmptyCount(async, size);
+    }
+
+    /// <summary>
+    /// HRESULT XNetworkingQuerySecurityInformationForUrlAsyncResult(XAsyncBlock*, size_t bufferByteCount, size_t*
+    /// bufferByteCountUsed, uint8_t* buffer, XNetworkingSecurityInformation** securityInformation).
+    /// </summary>
+    [Shim(GdkModule.Name, "XNetworkingQuerySecurityInformationForUrlAsyncResult")]
+    [UnmanagedCallersOnly]
+    private static int XNetworkingQuerySecurityInformationForUrlAsyncResult(nint async, nuint size, nuint* used, nint buffer, nint* information)
+    {
+        if (used != null)
+        {
+            *used = 0;
+        }
+
+        if (information != null)
+        {
+            *information = 0;
+        }
+
+        return AsyncCalls.Result(async, NetworkingService.SecurityInformationApi, size, buffer);
+    }
+
+    /// <summary>
+    /// HRESULT XNetworkingVerifyServerCertificate(void* requestHandle, const XNetworkingSecurityInformation*): the
+    /// game's HTTP stack hands its own request handle, and no request can be live offline, so the check fails closed.
+    /// </summary>
+    [Shim(GdkModule.Name, "XNetworkingVerifyServerCertificate")]
+    [UnmanagedCallersOnly]
+    private static int XNetworkingVerifyServerCertificate(nint request, nint securityInformation)
+    {
+        if (request == 0 || securityInformation == 0)
+        {
+            return HResult.InvalidArgument;
+        }
+
+        return HResult.NetworkUnreachable;
     }
 }

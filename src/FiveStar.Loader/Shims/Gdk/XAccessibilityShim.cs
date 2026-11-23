@@ -6,8 +6,9 @@ using System.Runtime.InteropServices;
 namespace FiveStar.Loader.Shims.Gdk;
 
 /// <summary>
-/// XAccessibility.h and XSpeechSynthesizer.h entry points; the work is in <see cref="AccessibilityService"/>. Speech
-/// synthesis and speech-to-text stay in the not-implemented catalog.
+/// XAccessibility.h entry points and the voice list of XSpeechSynthesizer.h; the work is in
+/// <see cref="AccessibilityService"/>. Synthesis is in <see cref="XSpeechSynthesizerShim"/>; speech-to-text stays in
+/// the not-implemented catalog.
 /// </summary>
 internal static unsafe class XAccessibilityShim
 {

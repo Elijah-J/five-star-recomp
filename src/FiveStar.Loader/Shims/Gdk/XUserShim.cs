@@ -7,8 +7,8 @@ using FiveStar.Loader.Native;
 namespace FiveStar.Loader.Shims.Gdk;
 
 /// <summary>
-/// XUser.h entry points; the work is in <see cref="UserService"/>. Token, picture and UI functions are in the
-/// not-implemented catalog.
+/// XUser.h entry points; the work is in <see cref="UserService"/>. A token request fails (no Xbox services offline);
+/// picture and the other UI functions are in the not-implemented catalog.
 /// </summary>
 internal static unsafe class XUserShim
 {
@@ -284,5 +284,70 @@ internal static unsafe class XUserShim
     [UnmanagedCallersOnly]
     private static void XUserCloseSignOutDeferralHandle(nint deferral)
     {
+    }
+
+    /// <summary>
+    /// HRESULT XUserGetTokenAndSignatureAsync(XUserHandle, options, const char* method, const char* url, size_t
+    /// headerCount, headers, size_t bodySize, body, XAsyncBlock*): the offline user has no Xbox services token.
+    /// </summary>
+    [Shim(GdkModule.Name, UserService.TokenApi)]
+    [UnmanagedCallersOnly]
+    private static int XUserGetTokenAndSignatureAsync(nint user, uint options, byte* method, byte* url, nuint headerCount, nint headers, nuint bodySize, nint body, nint async)
+    {
+        return BeginUserCall(user, async, UserService.TokenApi, new OfflineOperation(HResult.NetworkUnreachable));
+    }
+
+    /// <summary>HRESULT XUserGetTokenAndSignatureResultSize(XAsyncBlock*, size_t* bufferSize).</summary>
+    [Shim(GdkModule.Name, "XUserGetTokenAndSignatureResultSize")]
+    [UnmanagedCallersOnly]
+    private static int XUserGetTokenAndSignatureResultSize(nint async, nuint* size)
+    {
+        return AsyncCalls.EmptyCount(async, size);
+    }
+
+    /// <summary>HRESULT XUserGetTokenAndSignatureResult(XAsyncBlock*, size_t bufferSize, void* buffer, XUserGetTokenAndSignatureData** ptrToBuffer, size_t* bufferUsed).</summary>
+    [Shim(GdkModule.Name, "XUserGetTokenAndSignatureResult")]
+    [UnmanagedCallersOnly]
+    private static int XUserGetTokenAndSignatureResult(nint async, nuint size, nint buffer, nint* data, nuint* used)
+    {
+        if (data != null)
+        {
+            *data = 0;
+        }
+
+        if (used != null)
+        {
+            *used = 0;
+        }
+
+        return AsyncCalls.Result(async, UserService.TokenApi, size, buffer);
+    }
+
+    /// <summary>
+    /// HRESULT XUserResolvePrivilegeWithUiAsync(XUserHandle, XUserPrivilegeOptions, XUserPrivilege, XAsyncBlock*):
+    /// XUserCheckPrivilege grants every privilege, so there is nothing to resolve and no UI; S_OK.
+    /// </summary>
+    [Shim(GdkModule.Name, UserService.ResolvePrivilegeApi)]
+    [UnmanagedCallersOnly]
+    private static int XUserResolvePrivilegeWithUiAsync(nint user, uint options, uint privilege, nint async)
+    {
+        return BeginUserCall(user, async, UserService.ResolvePrivilegeApi, new OfflineOperation(HResult.Ok));
+    }
+
+    [Shim(GdkModule.Name, "XUserResolvePrivilegeWithUiResult")]
+    [UnmanagedCallersOnly]
+    private static int XUserResolvePrivilegeWithUiResult(nint async)
+    {
+        return AsyncCalls.Result(async, UserService.ResolvePrivilegeApi, 0, 0);
+    }
+
+    private static int BeginUserCall(nint user, nint async, string api, ManagedAsyncOperation operation)
+    {
+        if (!ShimContext.Runtime.Gdk.Users.IsUser(user))
+        {
+            return HResult.InvalidArgument;
+        }
+
+        return AsyncCalls.Begin(async, api, operation);
     }
 }
