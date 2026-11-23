@@ -289,6 +289,16 @@ The executable uses the v0 layout: `GameInputCreate(IGameInput**)` through one c
 device slot 3, from whose info it copies the id at +0x20. It asks only for the Gamepad (0x40000) and Keyboard (0x10)
 kinds, never Mouse, so the mouse reaches it through the keyboard-and-mouse gamepad.
 
+**Gamepad to user.** The game pairs pads and users itself; it calls no XUser device-association API. Its user manager
+(0x149ab3020) registers the Gamepad callback (0x142211cc0) and keeps four user slots (+0x28, 0xA0 each) with their
+committed copies (+0x2A8). A gamepad that connects while a slot has a user and no pad goes to that slot; otherwise it
+waits in an unassigned list (+0x560). The manager's per-frame update (vtable +0x18, from the platform task
+0x1405389e0) polls the unassigned pads (GetCurrentReading, then GetPreviousReading) and pairs the first one whose
+buttons change to none (a press and release), then copies changed slots to the committed set and notifies listeners.
+The profile listener then binds the pad (0x143db1140) and the per-pad update (0x140e79510) posts the sign-in message
+(type 2) that fills the active-player record (0x1498489c8). With no user yet at boot, the callback parks the pad, so
+pairing needs that per-frame update and a press.
+
 QueryInterface answers IUnknown and the object's own interface id; any other id gets E_NOINTERFACE, logged once.
 
 | Device | Source | Kind |
