@@ -15,9 +15,6 @@ internal static unsafe class XboxQueueMethods
     /// <summary>X slot 12: desktop ExecuteCommandLists two slots later, like the queue's other desktop methods.</summary>
     public const int ExecuteCommandListsSlot = 12;
 
-    /// <summary>X slot 32, read as PresentX: (plane count, planes, parameters).</summary>
-    public const int PresentSlot = 32;
-
     /// <summary>ID3D12CommandQueue::ExecuteCommandLists in the desktop vtable (d3d12.h).</summary>
     private const int DesktopExecuteSlot = 10;
 

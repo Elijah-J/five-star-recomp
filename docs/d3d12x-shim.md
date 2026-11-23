@@ -90,9 +90,10 @@ should create. From slot 44 on the order is not desktop's.
 | 71 | 0x238 | 2 | X | |
 | 73 | 0x248 | 3 | X: create command list | (16-byte desc, allocator, PSO, IID, out) |
 | 74 | 0x250 | 1 | X: register a mapped range (*inferred*) | (address, 0x185c0 pages, 8-byte out) after mapping the streaming range (0x141e6c2bb) |
-| 78, 81 | | 1 each | X | |
-| 79 | 0x278 | 3 | X | |
-| 80 | 0x280 | 3 | X: WaitFrameEventX (*inferred*) | (type, timeout, null, flags, UINT64* in/out) |
+| 78 | 0x270 | 1 | X: SetFrameIntervalX (*inferred*) | (null, interval µs, period, 0) ([Present](#present)) |
+| 79 | 0x278 | 3 | X: ScheduleFrameEventX (*inferred*) | (type, offset µs, null, 0) |
+| 80 | 0x280 | 3 | X: WaitFrameEventX (*inferred*) | (type, timeout, null, flags, UINT64* token in/out) |
+| 81 | | 1 | X | |
 | 101 | 0x328 | 1 | X: create state object | state-object IID |
 | 108 | 0x360 | 1 | X: GetResourceAllocationInfo1 (*inferred*) | struct return, mask, count, descs, per-desc infos |
 | 119, 132 | | 1-2 each | X | |
@@ -111,13 +112,12 @@ also pageable, has GetCPUDescriptorHandleForHeapStart at desktop slot 9 (call at
 | 18 | 0x090 | 1 | GetTimestampFrequency (*inferred*) |
 | 23 | 0x0B8 | 1 | X: suspend, argument 0 (*inferred*: process-lifetime suspend) |
 | 24 | 0x0C0 | 1 | X: resume (*inferred*) |
-| 31 | 0x0F8 | 1 | X |
-| 32 | 0x100 | 2 | X: present (*inferred*): (plane count, plane array, parameters); called with 0, 0, 0 at shutdown |
+| 31 | 0x0F8 | 1 | X: page mappings (*inferred*), not presenting: (count, range array, object, dword, 0) on another queue (global 0x1471bfce8), after the game maps 64 KiB pages itself (0x140f2cc7f) |
+| 32 | 0x100 | 2 | X: PresentX (*inferred*), [Present](#present) |
 | 35 | 0x118 | 2 | X: execute command lists (*inferred*): (count, lists, object from a global, flags 0 or 3) |
 
 The per-frame submit is 0x142481e90: slot 35 (up to 256 lists), then slot 32, with device slot 80 called between
-frames. Device slot 80 creates no object: it takes (type 0 or 2, timeout 0xFFFFFFFF, null, flags 0 or 2, UINT64*
-in/out), read as WaitFrameEventX (*inferred*); the game breaks into the debugger when it fails (0x142482452).
+frames ([Present](#present)).
 
 ### Command list
 
@@ -212,11 +212,10 @@ slot. Slots taking GPU addresses (41 to 48) stay stubs until console addresses a
 | Device | 61, 70 | a trilinear wrapping sampler, and a null SRV of the view's dimension (no desktop resource at console addresses yet); each logged once |
 | Device | 74 | logged, output zeroed, S_OK |
 | Device | 127 | committed resource (below) |
-| Device | 78, 79 | SetFrameIntervalX, ScheduleFrameEventX (*inferred*): logged, S_OK |
-| Device | 80 | logged stub returning S_OK |
+| Device | 78 to 80 | frame interval, frame events and their wait on a timer ([Present](#present)) |
 | Device | 133 | buffer at a game address (below) |
 | Command queue | 12, 35 | unwrap up to 256 lists per call and run desktop ExecuteCommandLists; 35 ignores its frame object and flags |
-| Command queue | 32 | logged stub returning S_OK (no swap chain yet) |
+| Command queue | 32 | present on a swap chain ([Present](#present)) |
 | Resource | 2 | Release that also frees a slot-127 resource's title memory |
 | Resource | 11 | the console address for a slot-133 resource, else the desktop GPU address |
 | Fence | 2, 12 | 12 returns a cell holding the completed value, which the game polls (0x144fb0ad0); a mirror thread keeps every such cell current (SetEventOnCompletion(value + 1) on a shared event) |
@@ -269,6 +268,68 @@ id 128, object type 4); slot 9 returns it and `Handles` maps it onto the desktop
 to 24 translate. The GPU start stays the desktop one, so the GPU handles the game derives are desktop handles. A
 heap above 1,000,000 descriptors (the tier-2 limit) is created at the limit, with a warning.
 
+### Present
+
+**Frame pacing (device 78 to 80).** At device creation (0x142478dc2) and whenever a present record carries another
+frame-rate setting (0x142482780), 0x14247ab10 picks a refresh divider (refresh rate / target rate, 1 to 4) and
+calls slot 78 with the interval from a table at 0x1461ece60 (16667, 16667, 33333, 50000, 66667 µs at 60 Hz;
+8333, 8333, 16667, 25000, 33333 at 120 Hz) and period 3 (2 in one mode), then slot 79 (type 0, offset). Device
+creation also schedules type 2 at offset 0 (0x142478de4). Boot logs interval 33333 µs, period 3: 30 frames per
+second at 60 Hz. Slot 80 is called three ways:
+
+| Site | Arguments | Use (*inferred*) |
+|---|---|---|
+| 0x142484637 | (0, INFINITE, null, 0, &token = 0) | the main loop waits for the next frame origin and gets its token; only in the vsync-locked mode, else the token is 0 |
+| 0x142482448 | (0, 0, null, 2, &global 0x1475e0e88) | the render thread takes the current token without waiting, when its record has none |
+| 0x142482405 | (2, INFINITE, null, 0, &token of that frame) | before a present, wait for event 2 of the frame's token (from a 16-entry table at 0x1475de4b0) |
+
+The token (global 0x1475e0e88) is the frame object queue slot 35 gets as its third argument and every plane's
+first field.
+
+**PresentX (queue 32).** (plane count, planes, parameters) from the render thread's record (type byte 2; the game
+breaks on a failing HRESULT, 0x144e9b660). A record holds up to two plane entries of 0x18 bytes (resource, dword,
+width, height) and builds one 0x48-byte plane each:
+
+| Offset | Value | Meaning (*inferred*) |
+|---|---|---|
+| 0x00 | frame token | the slot-80 token |
+| 0x08 | 1 | resource count |
+| 0x10 | pointer to the entry's resource | ID3D12Resource* const* |
+| 0x18 | RECT {0, 0, width, height} | source rect |
+| 0x20 | float[4] {0, 0, 1, 1} (0x146159cd0) | normalized destination rect |
+| 0x28 | the entry's dword | color space; 0 at boot |
+| 0x2C to 0x47 | 0 | |
+
+The parameter block is 0x20 bytes, zero except the dword at +0x18 = (record byte +0x3E == 0); all zero at boot.
+Count 0 (0x14248b68a at shutdown, 0x14248d847 before the game releases and recreates its render targets) shows
+nothing. Boot presents one plane: the 3840x2160 render target from slot 127 (R8G8B8A8 family), color-space dword 0.
+
+**Shim.** `Shims/D3D12X/Present`:
+
+- Slot 32 (`Presenter`) creates at the first present a flip-model swap chain (FLIP_DISCARD, 3 buffers, frame-latency
+  waitable object, latency 2, SCALING_STRETCH, Alt+Enter off) on the presenting desktop queue and the game's window:
+  the largest visible top-level window of the process that is not the console (the game's own, titled by the game).
+  The buffers take the plane's source-rect size and the flip-model format of its typeless family (R8G8B8A8,
+  B8G8R8A8, R10G10B10A2, R16G16B16A16); DXGI stretches them to the window, so window resizes need nothing, and a new
+  plane size or format resizes the buffers after the GPU is idle. A minimized window skips the present.
+- Each present waits for the latency object, copies the source rect of plane 0 into the back buffer
+  (CopyTextureRegion, the plane RENDER_TARGET to COPY_SOURCE and back, which is the state the debug layer tracks
+  for it at present; the back buffer PRESENT to COPY_DEST and back), runs the list on the presenting queue and
+  presents with sync interval 1. One allocator per back buffer, retired by a fence; nothing is allocated per frame.
+  A second plane is not composed.
+- Color space: FP16 gets scRGB, R10G10B10A2 with dword 12 (HDR10 as a DXGI_COLOR_SPACE_TYPE) gets HDR10, otherwise
+  sRGB; set with SetColorSpace1 when the display path supports it.
+- `--present-test` draws eight color bars and a block that moves one step per present instead of the plane (also
+  used for a plane format no flip-model format shares, or MSAA).
+- Device 78 to 80 (`FramePacer`): origins every interval from the last interval change, token k at origin k; event
+  type t at origin + its slot-79 offset. A type-0 wait with flag 2 or timeout 0 returns the current token at once, a
+  blocking type-0 wait sleeps (high-resolution waitable timer) until the next origin and returns its token, a wait
+  for another type with a token returns once that frame's event passed. A finite timeout that ends first returns
+  HRESULT_FROM_WIN32(WAIT_TIMEOUT).
+
+The log gets the first plane and parameter block, the swap chain, the first eight presents and the mean interval
+every 600 presents and at exit.
+
 ### Debug layer
 
 `--d3d12-debug` turns on the D3D12 debug layer before the device is created (`--d3d12-gpu-validation` adds
@@ -288,7 +349,8 @@ bytes). With the pool in one buffer, boot passed, in order: GetResourceAllocatio
 (0x140344196), the render-target budget (slot 127, 0x14247af2d), root-signature flags in XboxBvhBuilder.dll, its
 console compute pipelines, command-signature argument type 0x69, slot 74 (0x141e6c2c5), slot 108 (0x140abfe1b),
 slot-133 textures, list slot 139 (0x142474ce1), resource GetDesc register order, the first ExecuteCommandLists,
-WaitFrameEventX (device 80) and the first present (queue 32, a stub), then texture formats refused as UAVs, fence
+WaitFrameEventX (device 80) and the first present (queue 32: the game's window shows the plane, black so far, or
+the test pattern), then texture formats refused as UAVs, fence
 slot 12 (0x144fb0b03) and unaligned CBVs. The frame loop then records graphics work: with the pipeline slots
 stubbed (no `--shader-dir`), descriptor heaps never bound on lists (list slots 26 to 28 unknown) and descriptor
 handles the game derives itself, the driver faults in SetGraphicsRootDescriptorTable (list slot 36, call at
@@ -304,7 +366,9 @@ handles the game derives itself, the driver faults in SetGraphicsRootDescriptorT
   (barriers, texture copies) and GPU addresses.
 - Device slots 44 to 133 apart from those named above; the meaning of the desc dwords of slots 48 and 73.
 - The slot maps marked *inferred*: allocator, resource and fence have no X call site in the census.
-- What queue slot 35's third argument is and how frame pacing (device 78 to 80, queue 32) should map to a swap chain.
+- Present: what the plane dword at +0x28 and the parameter dword at +0x18 mean, how a second plane is placed and
+  blended, which flags slot 80's flag 2 and slot 78's period stand for, and the layout the console expects the plane
+  in; queue slot 31's arguments.
 - Descriptors the game writes into title memory itself instead of through slots 17 to 24, and descriptors past the
   first 1,000,000 of the main heap.
 - Parameter-block fields at 0x20, 0x24, 0x28 and 0x3C.

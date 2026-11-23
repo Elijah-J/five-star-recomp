@@ -17,12 +17,6 @@ internal static class D3D12XLayout
     /// <summary>X-only device slot that creates command lists: (desc, allocator, PSO, REFIID, void**).</summary>
     public const int CreateCommandListSlot = 73;
 
-    /// <summary>X-only device slot read as SetFrameIntervalX (*inferred*).</summary>
-    public const int SetFrameIntervalSlot = 78;
-
-    /// <summary>X-only device slot read as ScheduleFrameEventX (*inferred*).</summary>
-    public const int ScheduleFrameEventSlot = 79;
-
     /// <summary>Offset of the desktop object pointer in <see cref="XboxObject"/>.</summary>
     public const byte InnerOffset = 8;
 

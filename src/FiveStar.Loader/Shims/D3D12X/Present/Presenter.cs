@@ -1,0 +1,335 @@
+// Copyright (c) 2026 Five Star Recomp contributors.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+using System.Diagnostics;
+using System.Globalization;
+using System.Text;
+using FiveStar.Loader.Diagnostics;
+using FiveStar.Loader.Native;
+using FiveStar.Loader.Shims.D3D12X.Pipelines;
+
+namespace FiveStar.Loader.Shims.D3D12X.Present;
+
+/// <summary>
+/// Queue slot 32 (PresentX, *inferred*) on a flip-model swap chain on the game's window. The first plane is copied
+/// into the back buffer (same typeless family; otherwise, and with <see cref="ShowTestPattern"/> on, the test pattern is
+/// drawn instead) on the presenting queue, then shown with vsync. Created lazily at the first present. The plane is
+/// taken to be a render target at present time: the state the debug layer tracks for the game's plane then.
+/// </summary>
+internal sealed unsafe class Presenter : IDisposable
+{
+    /// <summary>Presents between two interval lines in the log.</summary>
+    private const long ReportEvery = 600;
+
+    /// <summary>The first presents are logged one by one, with their time since the first.</summary>
+    private const long EarlyPresents = 8;
+
+    /// <summary>Presents between two searches for the game's window while there is none.</summary>
+    private const long WindowRetry = 60;
+
+    private const double MillisecondsPerSecond = 1000.0;
+
+    /// <summary>The parameter block is 0x20 bytes (cleared at 0x142482364; only the dword at +0x18 is set).</summary>
+    private const int ParameterDwords = 8;
+
+    /// <summary>Vertical sync on: DXGI presents at most once per refresh.</summary>
+    private const uint SyncInterval = 1;
+
+    private readonly XboxObjects _objects;
+    private readonly OnceLog _warnings;
+    private readonly LoaderLog _log;
+    private nint _window;
+    private nint _queue;
+    private DxgiSwapChain? _swapChain;
+    private PresentRecorder? _recorder;
+    private long _presents;
+    private long _skipped;
+    private long _nextAttempt;
+    private long _first;
+    private long _reportStart;
+    private bool _described;
+
+    public Presenter(XboxObjects objects, OnceLog warnings, LoaderLog log)
+    {
+        _objects = objects;
+        _warnings = warnings;
+        _log = log;
+    }
+
+    /// <summary>Draw the test pattern instead of the game's plane (<c>--present-test</c>).</summary>
+    public bool ShowTestPattern { get; set; }
+
+    /// <summary>Frames shown so far.</summary>
+    public long Presents => Volatile.Read(ref _presents);
+
+    /// <summary>The window presents go to; found among this process's windows unless set first.</summary>
+    public nint Window
+    {
+        get => _window;
+        set => _window = value;
+    }
+
+    /// <summary>(plane count, planes, parameters); count 0 (shutdown, and before the game rebuilds its targets) shows nothing.</summary>
+    [HotPath]
+    public int Present(nint queue, uint count, PresentPlane* planes, uint* parameters)
+    {
+        if (count == 0 || planes == null)
+        {
+            return HResult.Ok;
+        }
+
+        if (!_described)
+        {
+            Describe(count, planes, parameters);
+        }
+
+        var source = PlaneReader.Read(_objects, planes, ShowTestPattern);
+
+        if (!EnsureOutput(queue, source))
+        {
+            return HResult.Ok;
+        }
+
+        if (PresentNative.IsIconic(_window) != 0)
+        {
+            _skipped++;
+
+            return HResult.Ok;
+        }
+
+        Show(source);
+
+        return HResult.Ok;
+    }
+
+    public void Dispose()
+    {
+        if (_recorder is not null && _queue != 0)
+        {
+            _recorder.WaitIdle(_queue);
+        }
+
+        if (_presents > 0)
+        {
+            _log.Info($"  [present] {_presents} presents, {_skipped} skipped while minimized, {MeanInterval(_first, _presents):F2} ms mean interval");
+        }
+
+        _swapChain?.Dispose();
+        _recorder?.Dispose();
+    }
+
+    [HotPath]
+    private void Show(PlaneSource source)
+    {
+        var swapChain = _swapChain!;
+        var recorder = _recorder!;
+
+        if (source.Width != swapChain.Width || source.Height != swapChain.Height || source.Format != swapChain.Format)
+        {
+            Resize(source);
+        }
+
+        if (source.ColorSpace != swapChain.ColorSpace)
+        {
+            ChangeColorSpace(source.ColorSpace);
+        }
+
+        swapChain.WaitForFrame();
+        uint index = swapChain.CurrentIndex();
+        nint back = swapChain.Buffers[(int)index];
+        recorder.Begin(index);
+
+        if (source.Copyable)
+        {
+            var box = source.Box;
+            recorder.Transition(back, TransitionBarrier.PresentState, TransitionBarrier.CopyDestState);
+            recorder.Transition(source.Resource, TransitionBarrier.RenderTargetState, TransitionBarrier.CopySourceState);
+            recorder.Copy(back, source.Resource, &box);
+            recorder.Transition(source.Resource, TransitionBarrier.CopySourceState, TransitionBarrier.RenderTargetState);
+            recorder.Transition(back, TransitionBarrier.CopyDestState, TransitionBarrier.PresentState);
+        }
+        else
+        {
+            recorder.Transition(back, TransitionBarrier.PresentState, TransitionBarrier.RenderTargetState);
+            TestPattern.Record(recorder.List, recorder.View((int)index), swapChain.Width, swapChain.Height, _presents);
+            recorder.Transition(back, TransitionBarrier.RenderTargetState, TransitionBarrier.PresentState);
+        }
+
+        recorder.Submit(_queue, index);
+        Count(swapChain.Present(SyncInterval));
+    }
+
+    [HotPath]
+    private void Count(int hr)
+    {
+        if (HResult.Failed(hr))
+        {
+            Failed(hr);
+
+            return;
+        }
+
+        long now = Stopwatch.GetTimestamp();
+
+        if (_presents == 0)
+        {
+            _first = now;
+            _reportStart = now;
+        }
+
+        Volatile.Write(ref _presents, _presents + 1);
+
+        if (_presents <= EarlyPresents)
+        {
+            ReportEarly(now);
+        }
+
+        if (_presents % ReportEvery == 0)
+        {
+            Report(now);
+        }
+    }
+
+    /// <summary>The swap chain and recorder at the first present that finds a window; false until then.</summary>
+    [HotPath]
+    private bool EnsureOutput(nint queue, PlaneSource source)
+    {
+        if (_swapChain is not null)
+        {
+            if (queue != _queue)
+            {
+                _warnings.Warn("present-queue", "[present] a present came on another queue than the first; copies stay on the first");
+            }
+
+            return true;
+        }
+
+        if (_skipped + _presents < _nextAttempt)
+        {
+            _skipped++;
+
+            return false;
+        }
+
+        return Start(queue, source);
+    }
+
+    private bool Start(nint queue, PlaneSource source)
+    {
+        _nextAttempt = _skipped + _presents + WindowRetry;
+
+        if (_window == 0)
+        {
+            _window = GameWindowFinder.Find();
+        }
+
+        if (_window == 0)
+        {
+            _warnings.Warn("present-window", "[present] no window of this process to present to yet; frames are dropped until one shows");
+
+            return false;
+        }
+
+        var recorder = new PresentRecorder(_objects.DesktopDevice);
+        int hr = recorder.Create();
+
+        if (!HResult.Failed(hr))
+        {
+            hr = DxgiSwapChain.Create(queue, _window, source.Width, source.Height, source.Format, out _swapChain);
+        }
+
+        if (HResult.Failed(hr) || _swapChain is null)
+        {
+            recorder.Dispose();
+            _warnings.Warn("present-create", $"[present] swap chain on window 0x{_window:x} failed: {HResult.Format(hr)}");
+
+            return false;
+        }
+
+        _queue = queue;
+        _recorder = recorder;
+        recorder.SetTargets(_swapChain.Buffers);
+        string content = ShowTestPattern ? "test pattern" : "game plane";
+        _log.Info($"  [present] flip-model swap chain on window 0x{_window:x}: {source.Width}x{source.Height}, format {source.Format}, {DxgiSwapChain.BufferCount} buffers, {content}");
+
+        return true;
+    }
+
+    private void Resize(PlaneSource source)
+    {
+        _recorder!.WaitIdle(_queue);
+        int hr = _swapChain!.Resize(source.Width, source.Height, source.Format);
+
+        if (HResult.Failed(hr))
+        {
+            _warnings.Warn("present-resize", $"[present] ResizeBuffers({source.Width}x{source.Height}, format {source.Format}) failed: {HResult.Format(hr)}");
+
+            return;
+        }
+
+        _recorder.SetTargets(_swapChain.Buffers);
+        _log.Info($"  [present] back buffers now {source.Width}x{source.Height}, format {source.Format}");
+    }
+
+    private void ChangeColorSpace(uint colorSpace)
+    {
+        if (_swapChain!.SetColorSpace(colorSpace))
+        {
+            _log.Info($"  [present] swap-chain color space {colorSpace}");
+
+            return;
+        }
+
+        _warnings.Warn($"present-colorspace-{colorSpace}", $"[present] the display path does not take color space {colorSpace}; it stays {_swapChain.ColorSpace}");
+    }
+
+    private void Describe(uint count, PresentPlane* planes, uint* parameters)
+    {
+        _described = true;
+
+        for (uint i = 0; i < count; i++)
+        {
+            var plane = planes + i;
+            var rect = plane->SourceRect;
+            string source = rect == null ? "none" : $"({rect->Left},{rect->Top})-({rect->Right},{rect->Bottom})";
+            nint resource = plane->Resources == null ? 0 : plane->Resources[0];
+            _log.Info($"  [present] plane {i}: token {plane->Token}, {plane->ResourceCount} resource(s) 0x{resource:x}, source {source}, dword@0x28 {plane->ColorSpace}");
+        }
+
+        if (parameters == null)
+        {
+            return;
+        }
+
+        var text = new StringBuilder("  [present] parameters:");
+
+        for (int i = 0; i < ParameterDwords; i++)
+        {
+            text.Append(CultureInfo.InvariantCulture, $" {parameters[i]:x8}");
+        }
+
+        _log.Info(text.ToString());
+    }
+
+    private void Report(long now)
+    {
+        _log.Info($"  [present] {_presents} presents, {MeanInterval(_reportStart, ReportEvery):F2} ms mean interval over the last {ReportEvery}");
+        _reportStart = now;
+    }
+
+    private void ReportEarly(long now)
+    {
+        double since = (now - _first) * MillisecondsPerSecond / Stopwatch.Frequency;
+        _log.Info($"  [present] present {_presents} at {since:F1} ms");
+    }
+
+    private void Failed(int hr)
+    {
+        _warnings.Warn($"present-{hr:x8}", $"[present] IDXGISwapChain::Present failed: {HResult.Format(hr)}");
+    }
+
+    private static double MeanInterval(long start, long frames)
+    {
+        return (Stopwatch.GetTimestamp() - start) * MillisecondsPerSecond / Stopwatch.Frequency / frames;
+    }
+}
