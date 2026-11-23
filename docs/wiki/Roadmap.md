@@ -10,7 +10,7 @@ The executable is in hand; `fivestar exe analyze` reports its imports and GDK ca
 |---|---|
 | GPU memory | next blocker. On the console a GPU address is the CPU address; the game places buffers in its own xmem pages. Plan: open the page sections as D3D12 heaps, place resources in them, and translate game addresses wherever they reach descriptors or commands ([d3d12x-shim.md](https://github.com/ThatRecompDev/five-star-recomp/blob/main/docs/d3d12x-shim.md)) |
 | D3D12.X objects | queues, command lists, allocators, resources and heaps wrapped like the device, so console-only methods are reached and logged; the command-list methods are mapped from a run-time trace |
-| Pipeline creation | the game's five pipeline-creation methods build desktop pipelines from the translated shaders and the console pipeline cache |
+| Pipeline creation | the game's five pipeline-creation methods (from its pipeline cache, from a state stream, compute, and derived variants) are recovered and build desktop pipelines from the translated shaders on WARP; wiring them into the device, picking per-GPU program variants and slot 101 (ray-tracing state objects) are open ([d3d12x-pipelines.md](https://github.com/ThatRecompDev/five-star-recomp/blob/main/docs/d3d12x-pipelines.md)) |
 | Pipeline state | whole root signatures (the cache lists only the bindings each shader uses, with their user SGPRs) and the shader constants layout; blend, depth, raster state, render-target and depth formats and vertex formats already come from the driver's pipeline cache |
 | Present | the queue's present and frame-event methods, on a swap chain for the game's own window |
 | Audio | the console's audio hardware reports itself unavailable; what the game falls back to is not known yet |
