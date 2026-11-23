@@ -47,11 +47,12 @@ internal sealed unsafe class AddressShaderViews
 
         var texture = Resolve(device, resource, view);
         var desktop = *view;
+        int viewFormat = DepthFormats.ShaderView(view->Format);
         nint target = 0;
 
         if (texture is not null)
         {
-            desktop.Format = ViewFormats.ForView(texture.DesktopFormat, view->Format);
+            desktop.Format = ViewFormats.ForView(texture.DesktopFormat, viewFormat);
             target = texture.Desktop;
         }
 
@@ -59,7 +60,7 @@ internal sealed unsafe class AddressShaderViews
         {
             counters.Add(GpuResourceEvent.ViewNull);
             _warnings.Warn("slot70-null", $"[d3d12_xs] ID3D12Device.X::Slot70: no readable texture at 0x{view->Address:x} (format {view->Format}): null descriptor");
-            desktop.Format = view->Format;
+            desktop.Format = viewFormat;
             target = 0;
         }
 

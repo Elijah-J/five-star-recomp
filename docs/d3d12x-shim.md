@@ -137,7 +137,8 @@ method follows from the arguments and from the inline packet written instead:
 | 12, 13 | 12, 13 | DrawInstanced, DrawIndexedInstanced | 4 and 5 counts; limit +0x28 |
 | 20 to 24 | 20 to 24 | IASetPrimitiveTopology ([Boot](#boot)), RSSetViewports, RSSetScissorRects, OMSetBlendFactor, OMSetStencilRef | (1, rects), float*, one dword |
 | 25 | 25 | SetPipelineState | PSO; caches PSO state at +0x544 |
-| 29, 30 | | X | (pointer, dword, dword) at 0x142482b99; 30 has 7 arguments (0x1424843b0); not reached in boot |
+| 26 | 26 | ResourceBarrier (*inferred*: desktop order of 0 to 25) | not called in boot |
+| 28, 29, 30 | 52 to 54 | BeginQuery, EndQuery, ResolveQueryData (*inferred*) | (heap, type, index) from a record's +0x58 and +0x68 and an index allocator (0x142474f50, 0x142475010, 0x142482b99); 30 has 7 arguments (0x1424843b0) |
 | 32 | 28 | SetDescriptorHeaps | (2, {main view heap, sampler heap}) at 0x144e4cac2, when a context takes a new list |
 | 33, 34 | 29, 30 | SetCompute/GraphicsRootSignature | root signature from the PSO (+0x80) |
 | 35, 36 | 31, 32 | SetCompute/GraphicsRootDescriptorTable | (index, GPU handle); inline dword + low dword |
@@ -151,10 +152,14 @@ method follows from the arguments and from the inline packet written instead:
 | 61 | 59 | ExecuteIndirect | (signature, 1, argument buffer, offset, null, 0); 8 sites |
 | 62 | | X | (pointer, pointer, dword, 0) |
 | 70 | 62 | OMSetDepthBounds | floats in xmm1, xmm2 |
-| 72, 75, 126 to 128, 142 | | X | one site each |
+| 71 | | X: PIX marker (*inferred*) | (pointer, dword, 0, 0) (0x144ed46a3) |
+| 72, 74 | | X | (pointer into a record array, 0, 0, 1) (0x142482b31); (pointer, 7, pointer, 1) (0x142484b0c) |
+| 75, 126, 142, 146 | | X: state writes (*inferred*) | one byte (0x14003281a); (byte, packed dword pair) (0x140032638); one qword (0x1400329e3); (dword, pointer) (0x14003210d) |
 
-Slots 32 to 52 are the desktop slot + 4, so ResourceBarrier and ExecuteBundle are among slots 26 to 31 with X slots
-(*inferred*; none of 26 to 31 is called in boot); between 52 and 61 two desktop methods are missing. The inline form
+Slots 32 to 52 are the desktop slot + 4: the queries moved up to 28 to 30 (*inferred*); between 52 and 61 two desktop
+methods are missing. None of the list slots called in boot (9 to 52, 61, 70 to 75, 126, 131, 132, 142, 146) takes a
+barrier, and the exe writes no barrier packet inline: no ACQUIRE_MEM, RELEASE_MEM or EVENT_WRITE header is an
+immediate (the inline packets are 0xB6 and 0xB8 register writes). The inline form
 of a descriptor table is (dword from the root signature's register table at list +0x144 + index * 4, low dword of the
 GPU handle): the table reaches the program as a 32-bit address in one user SGPR. The game derives a GPU handle as its
 CPU handle + (GPU start - CPU start) (0x1400321d8; heap record at 0x1475e7378: +0x18 heap, +0x20 CPU start, +0x30
@@ -243,6 +248,7 @@ slot. Reset (10, 139), draws and dispatches (12 to 14, 61) and slots 32 to 46 ar
 | Device | 16 | CreateRootSignature; the parameter layout is kept ([Binding](#binding)) |
 | Command list | 10, 12 to 14, 32 to 46, 61, 139 | [Binding](#binding) |
 | Command list | 20 | IASetPrimitiveTopology with console topologies made desktop ones ([Boot](#boot)) |
+| Command list | 9, 26 | Close and ResourceBarrier with resource states ([gpu-resources.md](gpu-resources.md#barriers)) |
 
 ### Game memory on the GPU
 
@@ -449,9 +455,9 @@ other value the desktop does not define, warned once. With the GDK ABI table loa
 presents about 25,000 frames (4.2 ms apart, the display's refresh with sync interval 1, not the 33 ms the game
 asks device 78 for); the window stays black.
 
-Barriers stay no-ops: the fix needs none. The debug layer still reports ClearRenderTargetView on the slot-127
-render targets, which are created in UNORDERED_ACCESS (the initial layout the game passes); no list slot 26 to 31
-is called in boot, so the game's barriers are not found yet.
+The game clears and draws to render targets it created in UNORDERED_ACCESS or SHADER_RESOURCE without a barrier;
+with home states ([gpu-resources.md](gpu-resources.md#barriers)) the debug layer reports no resource-state error in
+boot.
 
 The debug layer also reports error #553 about once per 500 presents: the list the present path submits from the
 table at 0x1475e7300 (0x142482660; recorded once at device creation) runs again while its previous submission is still
@@ -465,8 +471,8 @@ not done yet.
 - Device slot 71; what slot 74's output is; whether list slot 139's third argument is flags. The open points of
   slots 61, 70 and 133 are in [gpu-resources.md](gpu-resources.md).
 - CBVs at addresses the desktop cannot express (16-byte aligned); the allocator's slot 9 (callback, context).
-- List slots 26 to 31, 53 to 60, 62 and above 70; the list slots that take wrapped resources inside structures
-  (barriers, texture copies) and GPU addresses.
+- List slots 27, 31, 53 to 60, 62 and above 70 apart from those named; the list slots that take wrapped resources
+  inside structures (texture copies) and GPU addresses; whether the game has an enhanced-barrier slot.
 - Whether root constants take one SGPR per value (they are always the last parameter, so the metadata cannot tell),
   and what graphics s0 to s7 and compute s0 to s3 hold.
 - Device slots 44 to 133 apart from those named above; the meaning of the desc dwords of slots 48 and 73.

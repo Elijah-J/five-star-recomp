@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using FiveStar.Loader.Native;
+using FiveStar.Loader.Shims.D3D12X.Pipelines;
 
 namespace FiveStar.Loader.Shims.D3D12X;
 
 /// <summary>
-/// Resource descs as the desktop takes them: <see cref="ResourceDescription.ToDesktop"/>, and ALLOW_UNORDERED_ACCESS
+/// Resource descs as the desktop takes them: <see cref="ResourceDescription.ToDesktop"/>, console depth formats in their
+/// desktop family (<see cref="DepthFormats.Resource"/>), and ALLOW_UNORDERED_ACCESS
 /// dropped from a texture whose format has no typed UAV on this GPU (the console sets it on formats such as
 /// B5G5R5A1_UNORM, which the desktop then rejects). Format support is asked once per format; a format the runtime
 /// refuses anyway is recorded through <see cref="RefuseUav"/>.
@@ -40,6 +42,7 @@ internal sealed unsafe class DesktopResourceDescriptions
     public ResourceDescription ToDesktop(nint device, ResourceDescription* description)
     {
         var desktop = description->ToDesktop();
+        desktop.Format = DepthFormats.Resource(desktop.Format);
 
         if (desktop.Dimension != ResourceDescription.BufferDimension && (desktop.Flags & AllowUnorderedAccess) != 0 && !HasTypedUav(device, desktop.Format))
         {
