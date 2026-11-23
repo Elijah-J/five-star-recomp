@@ -37,7 +37,7 @@ flowchart LR
 - **Registry** (`GpuTextureRegistry`): textures sorted by console address over the span of their XG layout; lookups
   take no lock. A texture registered over an overlapping range retires the old one, which keeps its reference until
   shutdown, since descriptors written earlier may still name it.
-- **Slot 133** (`GpuTextures.CreatePlaced`): a committed desktop texture in the state of the initial barrier layout.
+- **Slot 133** (`GpuTextures.CreatePlaced`): a committed desktop texture in its home state ([Barriers](#barriers)).
   With ALLOW_RENDER_TARGET, ALLOW_DEPTH_STENCIL or ALLOW_UNORDERED_ACCESS it is GPU-written and never filled from
   memory; otherwise it is filled at creation.
 - **Slot 70** (`AddressShaderViews`): the registered texture at the view's address with the same extent and format
@@ -65,7 +65,7 @@ flowchart LR
   make neighbours retire each other.
 - Buffer SRVs at console addresses (slot 70 with a buffer desc) are null descriptors: the desktop SRV needs the
   buffer resource behind the address, which the address table does not keep.
-- Depth-stencil (two-plane) textures are not uploaded; a slot-70 view of a depth-format texture is null.
+- Depth-stencil (two-plane) textures are not uploaded; a slot-70 view of a desktop depth-format texture is null.
 - GPU-written textures are not copied back to game memory; CPU reads of render targets see stale bytes, and
   resource Map on a slot-133 texture fails (default heap).
 
@@ -93,18 +93,47 @@ The flags are the word at +0xA of the game's state.
 
 ## Barriers
 
-The game uses enhanced barriers: slots 127 and 133 take a D3D12_BARRIER_LAYOUT (3 UNORDERED_ACCESS and 6
-SHADER_RESOURCE in the boot), mapped to legacy states at creation (`BarrierLayouts`). No barrier slot is reached
-during boot: no list slot 26 to 31 logs a stub call. List slot 32 is SetDescriptorHeaps (call at 0x144E4CAC2 with two
-heaps from 0x1475E7390 and 0x1475E73D8), so ResourceBarrier is among slots 26 to 31. Barriers are therefore
-no-ops for now. That is safe for device stability: buffers on the opened heaps are in COMMON and promote and decay
-implicitly, uploads transition their texture themselves, and validation reports a texture used in the wrong state
-(a render target created in UNORDERED_ACCESS and cleared) rather than removing the device; results may be wrong
-where a real barrier would flush or decompress.
+Slots 127 and 133 take a D3D12_BARRIER_LAYOUT (3 UNORDERED_ACCESS and 6 SHADER_RESOURCE in the boot). The game
+issues no barrier in boot: no list slot that takes one is called, and it writes no barrier packet inline
+([d3d12x-shim.md](d3d12x-shim.md#command-list)). It clears render targets it created in UNORDERED_ACCESS and draws to
+one created in SHADER_RESOURCE. Code: `src/FiveStar.Loader/Shims/D3D12X/States`.
+
+- **Home state.** Every desktop resource is created in, and rests between command lists in, a legacy state recorded on
+  its wrapper (`ResourceStates`): textures with ALLOW_DEPTH_STENCIL in DEPTH_WRITE, with ALLOW_RENDER_TARGET in
+  RENDER_TARGET, with ALLOW_UNORDERED_ACCESS in UNORDERED_ACCESS; other textures in the state the game asks for
+  (layouts through `BarrierLayouts`), COMMON when that is a write state without its flag; buffers as asked (COMMON
+  on game memory, promoting and decaying implicitly).
+- **List slot 26** (ResourceBarrier, desktop D3D12_RESOURCE_BARRIER array, *inferred*). A transition of a texture the
+  shim created goes from the state the texture is in on this list (home, or where an earlier barrier moved it) to the
+  game's after-state; the game's before-state is ignored. Buffer transitions become UAV barriers. Resources the shim
+  did not create keep the game's states. Aliasing and UAV barriers pass with resources unwrapped. Split barriers:
+  the end half transitions.
+- **Close (list slot 9)** moves every texture the list moved back home, so lists execute in any order.
+- **Present** copies the plane from its home state to COPY_SOURCE and back.
+- Barriers are legacy ResourceBarrier calls. Enhanced barriers (ID3D12GraphicsCommandList7::Barrier) would need
+  resources created with layouts: the debug layer refuses them on a texture created with a legacy state unless it is
+  in COMMON at the list boundary (error #1350).
+
+Without the debug layer's GPU-based validation a texture written as a UAV while resting in RENDER_TARGET (a render
+target the game also writes from compute) is not reported; the GPU may then see stale compression.
+
+## Depth formats
+
+The console's D16_UNORM_S8_UINT (118) and its plane views R16_UNORM_X8_TYPELESS (119) and X16_TYPELESS_G8_UINT
+(120) have no desktop form (`DepthFormats`, `DepthViewDescriptions`):
+
+| Console | Resource | DSV, clear value, pipeline DSVFormat | SRV |
+|---|---|---|---|
+| 118 | R32G8X24_TYPELESS (19) | D32_FLOAT_S8X24_UINT (20) | R32_FLOAT_X8X24_TYPELESS (21) |
+| 119 | 19 | unchanged | 21 |
+| 120 | 19 | unchanged | X32_TYPELESS_G8X24_UINT (22) |
+
+A null-desc DSV or SRV of a resource in format 19 gets the whole-resource 2D (array) view in 20 or 21; slot-70 views
+take the SRV column.
 
 ## Unknown
 
-- Which list slot is the barrier, its argument layout, and whether the game also writes barriers inline.
+- Whether list slot 26 is ResourceBarrier, and which slot takes enhanced barriers, if any.
 - Whether every GPU-only reservation aliases the CPU reservation before it; only the streaming pair is confirmed.
 - The slot-70 view desc's +0x3C (3 or -4 from a texture flag) and the sampler desc's +0x10 and +0x14.
 - Whether DirectStorage completion or the game's copy calls should refresh textures without a new view.

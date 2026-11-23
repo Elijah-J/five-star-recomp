@@ -184,6 +184,18 @@ internal sealed unsafe class XboxObjects
         return ((XboxObject*)pointer)->Inner;
     }
 
+    /// <summary>The resource wrapper <paramref name="pointer"/> is, or null for any other pointer.</summary>
+    [HotPath]
+    public XboxResourceObject* AsResource(nint pointer)
+    {
+        if (pointer == 0 || *(nint*)pointer != (nint)VtableOf(XboxInterfaceKind.Resource))
+        {
+            return null;
+        }
+
+        return (XboxResourceObject*)pointer;
+    }
+
     /// <summary>The device wrapper when <paramref name="desktop"/> is the desktop device behind it, else <paramref name="desktop"/>.</summary>
     [HotPath]
     public nint DeviceFor(nint desktop)

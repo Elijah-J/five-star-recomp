@@ -143,9 +143,9 @@ internal sealed unsafe class Presenter : IDisposable
         {
             var box = source.Box;
             recorder.Transition(back, TransitionBarrier.PresentState, TransitionBarrier.CopyDestState);
-            recorder.Transition(source.Resource, TransitionBarrier.RenderTargetState, TransitionBarrier.CopySourceState);
+            recorder.Transition(source.Resource, source.State, TransitionBarrier.CopySourceState);
             recorder.Copy(back, source.Resource, &box);
-            recorder.Transition(source.Resource, TransitionBarrier.CopySourceState, TransitionBarrier.RenderTargetState);
+            recorder.Transition(source.Resource, TransitionBarrier.CopySourceState, source.State);
             recorder.Transition(back, TransitionBarrier.CopyDestState, TransitionBarrier.PresentState);
         }
         else

@@ -11,6 +11,7 @@ using FiveStar.Loader.Shims.D3D12X.DebugLayer;
 using FiveStar.Loader.Shims.D3D12X.Pipelines;
 using FiveStar.Loader.Shims.D3D12X.Present;
 using FiveStar.Loader.Shims.D3D12X.Resources;
+using FiveStar.Loader.Shims.D3D12X.States;
 using FiveStar.Shaders.Cache;
 using FiveStar.Shaders.Compilation;
 
@@ -53,6 +54,7 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         Warnings = new OnceLog(log);
         Objects = new XboxObjects(stubs, heap, Debugging, log);
         CommandLists = new XboxCommandLists(Objects);
+        ListStates = new CommandListStates();
 
         Textures = new GpuTextures(new GameMemorySource(memory), Descriptions, log);
         AddressViews = new AddressShaderViews(Textures, Warnings, log);
@@ -88,6 +90,9 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
 
     /// <summary>The command-list wrappers device slots 12 and 73 hand out.</summary>
     public XboxCommandLists CommandLists { get; }
+
+    /// <summary>The textures each command list moved out of their home state (list slots 9 and 26).</summary>
+    public CommandListStates ListStates { get; }
 
     /// <summary>The pipeline slots (55, 57, 62, 67, 86) once a device exists and the shader folders are known.</summary>
     public PipelineSlots? Pipelines { get; private set; }
@@ -341,6 +346,7 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         Objects.SetHandler(XboxInterfaceKind.CommandList, PrimitiveTopologies.SetPrimitiveTopologySlot, (nint)topology);
         RectangleListSlots.Register(Objects);
         PresentSlots.Bind(Objects);
+        ResourceBarrierSlots.Bind(Objects);
     }
 
     private void BindDevice(int slot, nint handler)
