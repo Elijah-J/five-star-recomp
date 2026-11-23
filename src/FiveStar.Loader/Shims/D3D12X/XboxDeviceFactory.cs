@@ -8,6 +8,7 @@ using FiveStar.Loader.Loading;
 using FiveStar.Loader.Native;
 using FiveStar.Loader.Shims.D3D12X.DebugLayer;
 using FiveStar.Loader.Shims.D3D12X.Pipelines;
+using FiveStar.Loader.Shims.D3D12X.Present;
 using FiveStar.Shaders.Cache;
 
 namespace FiveStar.Loader.Shims.D3D12X;
@@ -19,9 +20,6 @@ namespace FiveStar.Loader.Shims.D3D12X;
 /// </summary>
 internal sealed unsafe class XboxDeviceFactory : IDisposable
 {
-    /// <summary>Device slot 80, read as WaitFrameEventX (*inferred*: type, timeout, null, flags, UINT64* token).</summary>
-    private const int WaitFrameEventSlot = 80;
-
     /// <summary>Device slot 127, a committed resource with the CreateCommittedResource3 arguments (*inferred*).</summary>
     private const int CreateCommittedResourceSlot = 127;
 
@@ -58,6 +56,7 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         var hooks = new TitleMemoryHooks(images);
         DescriptorHeaps = new XboxDescriptorHeaps(Objects, hooks, log);
         CommittedResources = new XboxCommittedResources(Objects, Descriptions, hooks, log);
+        Presenter = new Presenter(Objects, Warnings, log);
 
         BindDeviceSlots();
         BindObjectSlots();
@@ -95,6 +94,12 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
 
     /// <summary>Device slot 133 and the console-to-desktop GPU address table.</summary>
     public XboxPlacedResources PlacedResources { get; }
+
+    /// <summary>Queue slot 32 on a swap chain on the game's window.</summary>
+    public Presenter Presenter { get; }
+
+    /// <summary>Device slots 78 to 80, the frame events on a timer.</summary>
+    public FramePacer Pacer { get; } = new();
 
     /// <summary>HRESULT D3D12XboxCreateDevice(IGraphicsUnknown* adapter, const PARAMETERS*, REFIID, void** device).</summary>
     public int CreateDevice(nint adapter, byte* parameters, Guid* iid, nint* device)
@@ -179,6 +184,7 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
 
     public void Dispose()
     {
+        Presenter.Dispose();
         Fences.Dispose();
         Debugging.Dispose();
     }
@@ -260,22 +266,15 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
     {
         delegate* unmanaged<XboxObject*, CommandQueueDescription*, Guid*, nint*, int> createQueue = &XboxDeviceMethods.CreateCommandQueue;
         delegate* unmanaged<XboxObject*, CommandListDescription*, nint, nint, Guid*, nint*, int> createList = &XboxDeviceMethods.CreateCommandList;
-        delegate* unmanaged<XboxObject*, nint, uint, uint, uint, int> frameInterval = &XboxDeviceMethods.SetFrameInterval;
-        delegate* unmanaged<XboxObject*, uint, uint, nint, uint, int> frameEvent = &XboxDeviceMethods.ScheduleFrameEvent;
         delegate* unmanaged<XboxObject*, ulong, ResourceDescription*, uint, void*, Guid*, nint*, int> placed = &XboxDeviceMethods.CreatePlacedResource;
 
         BindDevice(D3D12XLayout.CreateCommandQueueSlot, (nint)createQueue);
         BindDevice(D3D12XLayout.CreateCommandListSlot, (nint)createList);
-        BindDevice(D3D12XLayout.SetFrameIntervalSlot, (nint)frameInterval);
-        BindDevice(D3D12XLayout.ScheduleFrameEventSlot, (nint)frameEvent);
         BindDevice(CreatePlacedResourceSlot, (nint)placed);
 
         delegate* unmanaged<XboxObject*, void*, int, ResourceDescription*, int, void*, nint, uint, void*, Guid*, nint*, int> committed = &XboxDeviceMethods.CreateCommittedResource;
         BindDevice(CreateCommittedResourceSlot, (nint)committed);
         BindAddressSlots();
-
-        // The game breaks into the debugger when slot 80 fails (0x142482450); there is no frame event to wait for.
-        BindDevice(WaitFrameEventSlot, _stubs.Create(D3D12XLayout.Module, $"ID3D12Device.X::Slot{WaitFrameEventSlot} (S_OK)", HResult.Ok, true, true));
     }
 
     /// <summary>Slots 61, 70 and 74, which describe memory by address (<see cref="XboxAddressDescriptors"/>).</summary>
@@ -312,9 +311,7 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         Objects.SetHandler(XboxInterfaceKind.DescriptorHeap, HeapCpuStartSlot, (nint)cpuStart);
         Objects.SetHandler(XboxInterfaceKind.DescriptorHeap, HeapGpuStartSlot, (nint)gpuStart);
 
-        // Present has no swap chain behind it yet: logged once, S_OK so the frame loop goes on.
-        string present = $"ID3D12CommandQueue.X::Slot{XboxQueueMethods.PresentSlot} (S_OK)";
-        Objects.SetHandler(XboxInterfaceKind.CommandQueue, XboxQueueMethods.PresentSlot, _stubs.Create(D3D12XLayout.Module, present, HResult.Ok, true, true));
+        PresentSlots.Bind(Objects);
     }
 
     private void BindDevice(int slot, nint handler)

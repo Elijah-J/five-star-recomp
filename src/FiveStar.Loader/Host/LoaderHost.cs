@@ -89,6 +89,8 @@ internal sealed class LoaderHost
             _runtime.D3D12X.Debugging.Enable(_options.D3D12GpuValidation);
         }
 
+        _runtime.D3D12X.Presenter.ShowTestPattern = _options.PresentTest;
+
         if (_options.FidelityFxLibrary is not null)
         {
             _runtime.FidelityFx.Load(_options.FidelityFxLibrary);

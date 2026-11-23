@@ -39,27 +39,6 @@ internal static unsafe class XboxDeviceMethods
         return ShimContext.Runtime.D3D12X.Objects.WrapResult(hr, XboxInterfaceKind.CommandQueue, queue);
     }
 
-    /// <summary>
-    /// Slot 78, read as SetFrameIntervalX (*inferred*: null output, interval length, period 2 or 3, flags 0). Frame
-    /// pacing on the PC comes from the swap chain, so the interval is only logged.
-    /// </summary>
-    [UnmanagedCallersOnly]
-    public static int SetFrameInterval(XboxObject* self, nint output, uint length, uint period, uint flags)
-    {
-        ShimContext.Runtime.Log.Detail($"  [d3d12_xs] ID3D12Device.X::Slot78 SetFrameInterval(output 0x{output:x}, length {length}, period {period}, flags 0x{flags:x}) -> S_OK (no-op)");
-
-        return HResult.Ok;
-    }
-
-    /// <summary>Slot 79, read as ScheduleFrameEventX (*inferred*: event type, delta, null output, flags 0); logged only.</summary>
-    [UnmanagedCallersOnly]
-    public static int ScheduleFrameEvent(XboxObject* self, uint type, uint delta, nint output, uint flags)
-    {
-        ShimContext.Runtime.Log.Detail($"  [d3d12_xs] ID3D12Device.X::Slot79 ScheduleFrameEvent(type {type}, delta {delta}, output 0x{output:x}, flags 0x{flags:x}) -> S_OK (no-op)");
-
-        return HResult.Ok;
-    }
-
     /// <summary>Slot 73: (desc, allocator, PSO, REFIID, void**). The list is wrapped whatever IID the game asks for.</summary>
     [UnmanagedCallersOnly]
     public static int CreateCommandList(XboxObject* self, CommandListDescription* description, nint allocator, nint pipelineState, Guid* iid, nint* list)
