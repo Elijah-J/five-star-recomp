@@ -24,7 +24,7 @@ the Windows system DLL.
 |---|---|
 | `Bink2Scarlett.dll` | runs as shipped: it decodes on the CPU, and the game plays its sound through its own audio engine |
 | `amd_fidelityfx_loader_xbox.dll` | replaced by a shim. The console FSR upscaler is built for the console GPU only, and the game picks it only on a Series S, so on PC it is not used; a PC FidelityFX DLL can be named with `--ffx` |
-| `XboxBvhBuilder.dll` | loads; ray tracing waits for the D3D12.X work |
+| `XboxBvhBuilder.dll` | loads; with `--raytracing` its size function and its CPU rehydration path run for the game's precomputed structures, while its GPU paths (console compute shaders) are replaced |
 
 Details: [middleware.md](https://github.com/ThatRecompDev/five-star-recomp/blob/main/docs/middleware.md).
 

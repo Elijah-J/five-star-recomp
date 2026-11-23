@@ -32,6 +32,17 @@ internal static class RootSignatureParser
     private const int PayloadField = 8;
     private const int ConstantCountField = 8;
     private const int DescriptorSgprs = 2;
+
+    /// <summary>Table payload: range count, range offset. Ranges: D3D12_DESCRIPTOR_RANGE (version 1.0, 20 bytes) or _RANGE1 (1.1, 24 bytes, flags before the offset).</summary>
+    private const int RangeOffsetField = 4;
+    private const int RangeCountField = 4;
+    private const uint Version10 = 1;
+    private const int Range10Bytes = 20;
+    private const int Range11Bytes = 24;
+
+    /// <summary>D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND and an unbounded range's NumDescriptors (UINT_MAX).</summary>
+    private const uint Append = uint.MaxValue;
+    private const uint Unbounded = uint.MaxValue;
     private const int MaxSgprs = byte.MaxValue;
 
     public static bool TryParse(ReadOnlySpan<byte> blob, out RootLayout layout)
@@ -52,7 +63,7 @@ internal static class RootSignatureParser
             return false;
         }
 
-        return ReadParameters(part, parameters, count, ref layout);
+        return ReadParameters(part, parameters, count, ref layout) && ReadExtents(part, parameters, ref layout);
     }
 
     private static unsafe bool ReadParameters(ReadOnlySpan<byte> part, int parameters, int count, ref RootLayout layout)
@@ -79,6 +90,62 @@ internal static class RootSignatureParser
         layout.Count = count;
 
         return true;
+    }
+
+    /// <summary>The descriptors each table parameter spans; false when a range lies outside the part.</summary>
+    private static unsafe bool ReadExtents(ReadOnlySpan<byte> part, int parameters, ref RootLayout layout)
+    {
+        int rangeBytes = U32(part, 0) == Version10 ? Range10Bytes : Range11Bytes;
+
+        for (int index = 0; index < layout.Count; index++)
+        {
+            if (layout.Kinds[index] != (byte)RootParameterKind.Table)
+            {
+                continue;
+            }
+
+            int payload = (int)U32(part[(parameters + (index * ParameterHeader))..], PayloadField);
+            uint extent = TableExtent(part, payload, rangeBytes);
+
+            if (extent == 0)
+            {
+                return false;
+            }
+
+            layout.Extents[index] = (ushort)extent;
+        }
+
+        return true;
+    }
+
+    /// <summary>The end of a table's last range, capped at <see cref="DescriptorWindow.MaxTableRecords"/> (also for unbounded ranges); 0 when the table lies outside the part.</summary>
+    private static uint TableExtent(ReadOnlySpan<byte> part, int payload, int rangeBytes)
+    {
+        if (payload < 0 || payload + RangeOffsetField + sizeof(uint) > part.Length)
+        {
+            return 0;
+        }
+
+        uint ranges = U32(part, payload);
+        long first = U32(part, payload + RangeOffsetField);
+
+        if (first + ((long)ranges * rangeBytes) > part.Length)
+        {
+            return 0;
+        }
+
+        ulong end = 0;
+
+        for (int range = 0; range < ranges; range++)
+        {
+            var entry = part[(int)(first + ((long)range * rangeBytes))..];
+            uint count = U32(entry, RangeCountField);
+            uint offset = U32(entry, rangeBytes - sizeof(uint));
+            ulong start = offset == Append ? end : offset;
+            end = count == Unbounded ? DescriptorWindow.MaxTableRecords : Math.Max(end, start + count);
+        }
+
+        return (uint)Math.Clamp(end, 1, DescriptorWindow.MaxTableRecords);
     }
 
     /// <summary>The SGPRs a parameter takes; -1 for an unknown kind or a payload outside the part.</summary>

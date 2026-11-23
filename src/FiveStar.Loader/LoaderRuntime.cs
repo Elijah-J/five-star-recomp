@@ -58,7 +58,7 @@ internal sealed class LoaderRuntime : IDisposable
         D3D12 = new D3D12Forwarder(log);
         D3D12X = new XboxDeviceFactory(D3D12, Stubs, CodeHeap, XMemPhysical, Images, pipelines, log);
         FidelityFx = new FidelityFxBridge(new XboxObjectResolver(D3D12X.Objects), log);
-        BvhBuilder = new BvhBuilderService(D3D12X.Objects, log);
+        BvhBuilder = new BvhBuilderService(D3D12X.Objects, Loader, XMemPhysical, log);
 
         Gdk = CreateGdk(gdk, environment.Time);
         Overlay = new FileOverlay(Gdk.Config, log);
@@ -142,7 +142,7 @@ internal sealed class LoaderRuntime : IDisposable
     /// <summary>The console FidelityFX loader's entry points, forwarded to a PC FidelityFX DLL when one is given.</summary>
     public FidelityFxBridge FidelityFx { get; }
 
-    /// <summary>XboxBvhBuilder.dll's exports: sizes from the desktop device, no builds yet.</summary>
+    /// <summary>XboxBvhBuilder.dll's exports: desktop sizes by default; console sizes and CPU rehydration with --raytracing.</summary>
     public BvhBuilderService BvhBuilder { get; }
 
     public GdkServices Gdk { get; }

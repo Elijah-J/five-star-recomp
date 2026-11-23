@@ -36,6 +36,12 @@ public sealed unsafe class D3D12XBindingTests
     private const int GenericRead = 0xAC3;
     private const int WriteBack = 3;
 
+    /// <summary>The game's main view heap (0x141cf3280), a heap that fits the desktop, and a page far from both ends.</summary>
+    private const uint GameViews = 1245184;
+    private const uint SmallHeap = 16;
+    private const uint FarPage = 500000;
+    private const uint TableSize = 2;
+
     /// <summary>Reads table entry 0 (an SRV) and 1 (a UAV) through the window and stores the SRV's first dword + 1.</summary>
     private const string Program = """
         cbuffer UserData : register(b0) { uint4 g_user4[32]; };
@@ -65,42 +71,106 @@ public sealed unsafe class D3D12XBindingTests
         Assert.Equal(new byte[] { 1, 3, 2, 1 }, new[] { layout.Sizes[0], layout.Sizes[1], layout.Sizes[2], layout.Sizes[3] });
     }
 
+    [Fact]
+    public void The_remap_gives_touched_pages_desktop_pages_in_order_and_keeps_each_contiguous()
+    {
+        var remap = new DescriptorRemap(DescriptorWindow.ReservedViews, DescriptorWindow.MaxViews, GameViews);
+        uint high = GameViews - 1;
+
+        Assert.Equal(DescriptorWindow.ReservedViews + (high % DescriptorRemap.PageSize), remap.Map(high));
+        Assert.Equal(remap.Map(high) - 1, remap.Map(high - 1));
+        Assert.Equal(DescriptorWindow.ReservedViews + DescriptorRemap.PageSize, remap.Map(0));
+
+        for (uint page = 1; page < remap.Capacity - 1; page++)
+        {
+            Assert.NotEqual(DescriptorRemap.Unmapped, remap.Map(page * DescriptorRemap.PageSize));
+        }
+
+        Assert.Equal(remap.Capacity, remap.MappedPages);
+        Assert.Equal(DescriptorRemap.Unmapped, remap.Map(high - DescriptorRemap.PageSize));
+    }
+
     [DxcFact]
     public void A_descriptor_table_set_through_the_game_slots_reaches_the_program()
     {
         using var test = TestRuntime.Create();
         var device = new XboxDevice(test);
-        nint desktop = test.Runtime.D3D12X.Objects.DesktopDevice;
-        var (heap, cpu, gpu, increment) = ViewHeap(device);
-        nint rootSignature = GameRootSignature(device);
+        var heap = ViewHeap(device, SmallHeap);
 
+        Assert.Equal(Marker + 1, Dispatch(test, device, heap, 0, 1, heap.Gpu));
+    }
+
+    [DxcFact]
+    public void A_table_past_the_desktop_limit_reaches_the_program_across_remap_pages()
+    {
+        using var test = TestRuntime.Create();
+        var device = new XboxDevice(test);
+        var heap = ViewHeap(device, GameViews);
+        uint source = GameViews - DescriptorRemap.PageSize - 1;
+
+        // The table's two descriptors lie on two pages that other writes keep apart on the desktop.
+        Assert.Equal(Marker + 1, Dispatch(test, device, heap, source, source + 1, heap.Gpu + ((ulong)source * heap.Increment), FarPage));
+    }
+
+    [DxcFact]
+    public void A_table_the_game_copies_into_title_memory_itself_reaches_the_program()
+    {
+        using var test = TestRuntime.Create();
+        var device = new XboxDevice(test);
+        var heap = ViewHeap(device, GameViews);
+        uint copy = GameViews - 1 - FarPage;
+        nint table = heap.Cpu + (nint)((ulong)copy * heap.Increment);
+
+        // Views at 0 and 1 through the slots, then the game's own per-draw table: their bytes copied, no slot called.
+        Assert.Equal(Marker + 1, Dispatch(test, device, heap, 0, 1, heap.Gpu, copy: table));
+    }
+
+    /// <summary>
+    /// Creates an SRV of a marker buffer at game index <paramref name="read"/> and a UAV at <paramref name="write"/>
+    /// through the slots, binds the table at <paramref name="table"/> and runs the program; returns what it stored.
+    /// </summary>
+    private static uint Dispatch(TestRuntime test, XboxDevice device, (nint Heap, nint Cpu, ulong Gpu, uint Increment) heap, uint read, uint write, ulong table, uint between = 0, nint copy = 0)
+    {
+        nint desktop = test.Runtime.D3D12X.Objects.DesktopDevice;
+        nint rootSignature = GameRootSignature(device);
         nint source = Buffer(desktop, new HeapProperties { Type = HeapProperties.Upload }, 0, GenericRead);
         nint destination = Buffer(desktop, new HeapProperties { Type = HeapProperties.Custom, CpuPageProperty = WriteBack, MemoryPool = HeapProperties.SystemPool }, DesktopCalls.UnorderedAccessFlag, 0);
         *(uint*)DesktopCalls.Map(source) = Marker;
 
-        var read = BufferViewDescription.RawShaderResource(1);
-        var write = BufferViewDescription.RawUnorderedAccess(1);
-        ((delegate* unmanaged<nint, nint, BufferViewDescription*, nint, void>)XboxDevice.Vtable(device.Device)[CreateShaderResourceViewSlot])(device.Device, source, &read, cpu);
-        ((delegate* unmanaged<nint, nint, nint, BufferViewDescription*, nint, void>)XboxDevice.Vtable(device.Device)[CreateUnorderedAccessViewSlot])(device.Device, destination, 0, &write, cpu + (nint)increment);
+        var view = BufferViewDescription.RawShaderResource(1);
+        var store = BufferViewDescription.RawUnorderedAccess(1);
+        var createRead = (delegate* unmanaged<nint, nint, BufferViewDescription*, nint, void>)XboxDevice.Vtable(device.Device)[CreateShaderResourceViewSlot];
+        createRead(device.Device, source, &view, heap.Cpu + (nint)((ulong)read * heap.Increment));
 
-        nint pipeline = Pipeline(desktop, test.Runtime.D3D12X.Bindings.Root);
+        if (between != 0)
+        {
+            createRead(device.Device, source, &view, heap.Cpu + (nint)((ulong)between * heap.Increment));
+        }
+
+        ((delegate* unmanaged<nint, nint, nint, BufferViewDescription*, nint, void>)XboxDevice.Vtable(device.Device)[CreateUnorderedAccessViewSlot])(device.Device, destination, 0, &store, heap.Cpu + (nint)((ulong)write * heap.Increment));
+
+        if (copy != 0)
+        {
+            System.Buffer.MemoryCopy((void*)(heap.Cpu + (nint)((ulong)read * heap.Increment)), (void*)copy, heap.Increment * TableSize, heap.Increment * TableSize);
+            table = (ulong)copy;
+        }
+
         nint list = device.DirectList();
-        nint* heaps = stackalloc nint[] { heap };
+        nint* heaps = stackalloc nint[] { heap.Heap };
         ((delegate* unmanaged<nint, uint, nint*, void>)XboxDevice.Vtable(list)[ListSetHeapsSlot])(list, 1, heaps);
 
-        ((delegate* unmanaged<nint, nint, void>)XboxDevice.Vtable(list)[ListSetPipelineSlot])(list, pipeline);
+        ((delegate* unmanaged<nint, nint, void>)XboxDevice.Vtable(list)[ListSetPipelineSlot])(list, Pipeline(desktop, test.Runtime.D3D12X.Bindings.Root));
         ((delegate* unmanaged<nint, nint, void>)XboxDevice.Vtable(list)[ListSetComputeRootSlot])(list, rootSignature);
-        ((delegate* unmanaged<nint, uint, ulong, void>)XboxDevice.Vtable(list)[ListSetComputeTableSlot])(list, 0, gpu);
+        ((delegate* unmanaged<nint, uint, ulong, void>)XboxDevice.Vtable(list)[ListSetComputeTableSlot])(list, 0, table);
         ((delegate* unmanaged<nint, uint, uint, uint, void>)XboxDevice.Vtable(list)[ListDispatchSlot])(list, 1, 1, 1);
-
         Run(device, list);
 
-        Assert.Equal(Marker + 1, *(uint*)DesktopCalls.Map(destination));
+        return *(uint*)DesktopCalls.Map(destination);
     }
 
-    private static (nint Heap, nint Cpu, ulong Gpu, uint Increment) ViewHeap(XboxDevice device)
+    private static (nint Heap, nint Cpu, ulong Gpu, uint Increment) ViewHeap(XboxDevice device, uint count)
     {
-        int* description = stackalloc int[] { 0, 16, 1, 0 };
+        int* description = stackalloc int[] { 0, (int)count, 1, 0 };
         Guid iid = new("8efb471d-616c-4f49-90f7-127bb763fa51");
         nint heap = 0;
         Assert.Equal(0, ((delegate* unmanaged<nint, int*, Guid*, nint*, int>)XboxDevice.Vtable(device.Device)[CreateDescriptorHeapSlot])(device.Device, description, &iid, &heap));

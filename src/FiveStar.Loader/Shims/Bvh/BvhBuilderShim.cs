@@ -9,7 +9,8 @@ namespace FiveStar.Loader.Shims.Bvh;
 /// XboxBvhBuilder.dll, the console's ray-tracing acceleration-structure builder: a C++ class whose constructor makes
 /// compute pipelines from console shader code on the D3D12.X device, which the desktop cannot run (its first pipeline,
 /// device slot 62, fails and the constructor throws). The exports bind to <see cref="BvhBuilderService"/> instead.
-/// Member functions take the object in rcx; the constructor returns it.
+/// Member functions take the object in rcx; the constructor returns it. The rehydration's last argument is an
+/// optional array of CPU addresses of the serialized sources (the game passes it; the descs hold GPU addresses).
 /// </summary>
 internal static unsafe class BvhBuilderShim
 {
@@ -48,16 +49,14 @@ internal static unsafe class BvhBuilderShim
     [UnmanagedCallersOnly]
     private static void PrebuildInfo(nint self, void* inputs, void* stream, ulong* info)
     {
-        ShimContext.Runtime.BvhBuilder.PrebuildInfo(inputs, info);
+        ShimContext.Runtime.BvhBuilder.PrebuildInfo(inputs, stream, info);
     }
 
     [Shim(Module, "?RehydrateRaytracingAccelerationStructureBatched2X@XboxBvhBuilder@@QEAAJPEAUID3D12GraphicsCommandList8@@IPEBUD3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC@@PEB_K@Z")]
     [UnmanagedCallersOnly]
-    private static int Rehydrate(nint self, nint list, uint count, void* descs, ulong* sizes)
+    private static int Rehydrate(nint self, nint list, uint count, void* descs, ulong* sources)
     {
-        ShimContext.Runtime.BvhBuilder.Note("RehydrateRaytracingAccelerationStructureBatched2X (no build)");
-
-        return 0;
+        return ShimContext.Runtime.BvhBuilder.Rehydrate(count, descs, sources);
     }
 
     [Shim(Module, "?Set64BitMortonCodes@XboxBvhBuilder@@QEAAX_N@Z")]

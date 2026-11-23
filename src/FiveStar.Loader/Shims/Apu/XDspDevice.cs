@@ -10,10 +10,11 @@ namespace FiveStar.Loader.Shims.Apu;
 
 /// <summary>
 /// chad.dll (XDsp) on the CPU: the audio DSP the game runs its convolution effects on. A stream is activated with an
-/// effect config and gets a status record; each submitted command processes one block from an input buffer into an
-/// output buffer and completes by advancing the status record's completed count, which the game polls. Here a command
-/// completes when it is submitted, and no effect runs: the output buffer is left as the game zeroed it, so the effect
-/// returns silence, as the game's own fallback does while a result is late.
+/// effect config and gets a status record; each submitted command processes one block from an input page into an
+/// output page and completes by advancing the status record's completed count, which the game polls. Here a command
+/// runs and completes when it is submitted (<see cref="XDspStream"/>). The convolution runs only when
+/// <see cref="Convolve"/> is set, because the impulse response format is inferred; otherwise every effect writes
+/// silence, as the game's own fallback does while a result is late.
 /// </summary>
 internal sealed unsafe class XDspDevice : IDisposable
 {
@@ -24,7 +25,7 @@ internal sealed unsafe class XDspDevice : IDisposable
     public const nint StreamHandleBase = 0x58440000;
 
     private readonly object _gate = new();
-    private readonly bool[] _active = new bool[XDspLayout.MaxStreams];
+    private readonly XDspStream?[] _streams = new XDspStream?[XDspLayout.MaxStreams];
     private readonly uint[] _completed = new uint[XDspLayout.MaxStreams];
     private readonly LoaderLog _log;
     private byte* _status;
@@ -40,9 +41,12 @@ internal sealed unsafe class XDspDevice : IDisposable
     /// <summary>Commands completed since start.</summary>
     public long Submitted => Interlocked.Read(ref _submitted);
 
+    /// <summary>Whether convolution streams convolve (<c>--xdsp-convolution</c>); read when a stream is activated.</summary>
+    public bool Convolve { get; set; }
+
     /// <summary>
     /// HRESULT XDspConnectWithMaximumStreamLimit(void* memory, UINT32 bytes, UINT32 maxStreams, UINT32 (0x80),
-    /// UINT32 (1), XDSP_HANDLE* handle). The memory is the game's own buffer pool, which the DSP would read and write.
+    /// UINT32 (1), XDSP_HANDLE* handle). The memory is the game's own page pool, which the DSP reads and writes.
     /// </summary>
     public int Connect(nint memory, uint bytes, uint maxStreams, nint* handle)
     {
@@ -62,7 +66,8 @@ internal sealed unsafe class XDspDevice : IDisposable
         }
 
         *handle = ConnectionHandle;
-        _log.Info($"  [xdsp] XDspConnect: memory 0x{memory:x} (0x{bytes:x} bytes), {maxStreams} streams; effects pass silence");
+        string effects = Convolve ? "convolution on the CPU" : "effects pass silence";
+        _log.Info($"  [xdsp] XDspConnect: memory 0x{memory:x} (0x{bytes:x} bytes), {maxStreams} streams; {effects}");
 
         return HResult.Ok;
     }
@@ -75,7 +80,8 @@ internal sealed unsafe class XDspDevice : IDisposable
             return HResult.InvalidArgument;
         }
 
-        int index = Claim();
+        var effect = XDspStream.Create(new ReadOnlySpan<byte>(config, XDspLayout.ConfigSize), Convolve);
+        int index = Claim(effect);
 
         if (index < 0)
         {
@@ -84,25 +90,33 @@ internal sealed unsafe class XDspDevice : IDisposable
 
         *status = (nint)Status(index);
         *stream = StreamHandleBase + index;
-        LogActivation(index, new ReadOnlySpan<byte>(config, XDspLayout.ConfigResponseAddressOffset + sizeof(long)));
+        LogActivation(index, effect, new ReadOnlySpan<byte>(config, XDspLayout.ConfigSize));
 
         return HResult.Ok;
     }
 
     /// <summary>
-    /// HRESULT XDspSubmitCommand(XDSP_STREAM, const command*, UINT32* id): completes the command at once and returns
-    /// its id, the value the stream's completed count now holds.
+    /// HRESULT XDspSubmitCommand(XDSP_STREAM, const command*, UINT32* id): runs the command, completes it at once and
+    /// returns its id, the value the stream's completed count now holds.
     /// </summary>
     [HotPath]
     public int Submit(nint stream, byte* command, uint* id)
     {
         int index = Index(stream);
 
-        if (index < 0 || command == null || !Volatile.Read(ref _active[index]))
+        if (index < 0 || command == null)
         {
             return HResult.InvalidArgument;
         }
 
+        var effect = Volatile.Read(ref _streams[index]);
+
+        if (effect is null)
+        {
+            return HResult.InvalidArgument;
+        }
+
+        effect.Process(command);
         uint completed = Interlocked.Increment(ref _completed[index]);
         byte* status = Status(index);
         *(uint*)(status + XDspLayout.StatusErrorOffset) = 0;
@@ -114,11 +128,7 @@ internal sealed unsafe class XDspDevice : IDisposable
         }
 
         Interlocked.Increment(ref _submitted);
-
-        if (_firstSubmitLogged == 0 && Interlocked.Exchange(ref _firstSubmitLogged, 1) == 0)
-        {
-            LogFirstSubmit(index, command);
-        }
+        LogFirstSubmit(index, command);
 
         return HResult.Ok;
     }
@@ -135,7 +145,7 @@ internal sealed unsafe class XDspDevice : IDisposable
 
         lock (_gate)
         {
-            Volatile.Write(ref _active[index], false);
+            Volatile.Write(ref _streams[index], null);
         }
     }
 
@@ -144,7 +154,7 @@ internal sealed unsafe class XDspDevice : IDisposable
     {
         lock (_gate)
         {
-            Array.Clear(_active);
+            Array.Clear(_streams);
         }
 
         _log.Info($"  [xdsp] XDspDisconnect after {Submitted} commands");
@@ -156,17 +166,17 @@ internal sealed unsafe class XDspDevice : IDisposable
         _status = null;
     }
 
-    private int Claim()
+    private int Claim(XDspStream effect)
     {
         lock (_gate)
         {
             for (int index = 0; index < _streamLimit; index++)
             {
-                if (!_active[index])
+                if (_streams[index] is null)
                 {
-                    _active[index] = true;
                     _completed[index] = 0;
                     new Span<byte>(Status(index), XDspLayout.StatusSize).Clear();
+                    Volatile.Write(ref _streams[index], effect);
 
                     return index;
                 }
@@ -193,16 +203,27 @@ internal sealed unsafe class XDspDevice : IDisposable
         return _status + (index * XDspLayout.StatusSize);
     }
 
-    private void LogActivation(int index, ReadOnlySpan<byte> config)
+    private void LogActivation(int index, XDspStream effect, ReadOnlySpan<byte> config)
     {
-        var kind = (XDspEffectKind)BinaryPrimitives.ReadUInt32LittleEndian(config[XDspLayout.ConfigKindOffset..]);
         uint frames = BinaryPrimitives.ReadUInt32LittleEndian(config[XDspLayout.ConfigFramesOffset..]);
         uint channels = BinaryPrimitives.ReadUInt32LittleEndian(config[XDspLayout.ConfigChannelsOffset..]);
         uint response = BinaryPrimitives.ReadUInt32LittleEndian(config[XDspLayout.ConfigResponseLengthOffset..]);
-        _log.Info($"  [xdsp] XDspActivate stream {index}: {kind}, {frames} frames, value {channels}, response {response} floats");
+        string work = effect.Channels > 0 ? $"convolving {effect.Channels} x {effect.BlockFrames} frames, {effect.Partitions} partitions" : "silent";
+        _log.Info($"  [xdsp] XDspActivate stream {index}: {effect.Kind}, {frames} frames, {channels} channels, response {response} floats; {work}");
     }
 
+    [HotPath]
     private void LogFirstSubmit(int index, byte* command)
+    {
+        if (_firstSubmitLogged != 0 || Interlocked.Exchange(ref _firstSubmitLogged, 1) != 0)
+        {
+            return;
+        }
+
+        LogCommand(index, command);
+    }
+
+    private void LogCommand(int index, byte* command)
     {
         var record = new ReadOnlySpan<byte>(command, XDspLayout.CommandSize);
         long input = BinaryPrimitives.ReadInt64LittleEndian(record[XDspLayout.CommandInputOffset..]);

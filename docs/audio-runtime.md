@@ -59,7 +59,7 @@ mixed by the game's engine.
 | XApu (`xapu.dll`) | Opus decode: 99.9% of the game's sounds | the Opus voice (format codec 0x0B, 48 kHz, 960-sample frames, 0x144ee99e0) sends one command per packet |
 | SHAPE XMA (`acphal.dll`) | XMA2 decode | 350 XMA contexts; the CPU copies 16-bit PCM out of each context's 0x1700-byte output buffer (0x140078120) and acknowledges it with an IAcpHal message |
 | SHAPE SRC, EQ, filter, DMA | not used | their context counts stay 0 |
-| XDsp (`chad.dll`) | convolution effects on 1024-frame blocks (the executable names `Convolution_` and `Spatial_Reverb`) | activation configs and the command loop, below |
+| XDsp (`chad.dll`) | convolution effects on submix buses, in 1024-frame (mono) or 256-frame (stereo) blocks, and a second kind on 1024-frame mono blocks | activation configs and the command loop, below |
 | Mixing, rate conversion, effects | CPU | the decoded PCM goes into the voice's ring buffer (0x144e64f00); output is WASAPI |
 
 ### XApu protocol
@@ -141,8 +141,9 @@ The game polls nothing else: ready output is write offset minus read offset (in 
 they meet and the output valid bit is clear. It takes 16-bit PCM, channels interleaved (it divides bytes by 2 and
 the channel count to count samples). It never reads the input fields back: it ends a non-looping voice when it has
 counted the sound's sample count out of the context: the packets' frame counts times 512 (0x1455cbd70), or the
-voice's own end if that is earlier. When a voice chains two contexts, the game copies
-the 0x200-byte work buffer of the finished context into the next one before enabling it.
+voice's own end if that is earlier. A voice keeps two context slots; when it chains, the game copies the 0x200-byte
+work buffer of the finished context into the next one and disables the finished one (0x1400781b6) before enabling
+the next.
 
 ### XDsp protocol
 
@@ -161,21 +162,35 @@ and every effect asks 0x144e5b020 for the object only while it is set.
 
 Activation configs, as the two activation sites fill them:
 
-| Offset | Size | Convolution (0x14003b97e) | Other kind (0x1443b3966) |
+| Offset | Size | Convolution (0x14003b97e) | Kind 2 (0x1443b3966) |
 |---|---|---|---|
 | 0x00 | 4 | 1 | 2 |
-| 0x04 | 4 | 0, 2, 8 or 10 (from the effect's settings) | 0 |
+| 0x04 | 4 | flags: 2 for a two-channel effect, plus 8 for a two-channel response; so 0 or 10 | 0 |
 | 0x08 | 4 | 1024 (frames per block) | 1024 |
-| 0x0C | 4 | 1 or 2 (channels, inferred) | 1 |
-| 0x10 | 4 | impulse response length in floats | 0 |
+| 0x0C | 4 | channels, 1 or 2: the effect's channel byte, which the game only pairs with a response of as many channels (0x14007cff1) | 1 |
+| 0x10 | 4 | impulse response size in bytes / 4 | 0 |
 | 0x14 | 8 | impulse response address | 0 |
 
-A command is 0x20 bytes: two floats of 1.0 at +0x00 and +0x04, the input pages' address at +0x08, the output pages'
-address at +0x10, 0 at +0x18. The game copies a block into the input page, submits, and stores the returned id. It
-never waits: every audio frame it reads the status record the activation returned, and takes the output only when
-the u32 at +0x04 (the completed count) equals the last id and the u32 at +0x0C is 0; the completed count minus the
-blocks already taken is how many output blocks are ready (0x1443b3cc0). The convolution's state machine
-(0x1443b2a40) zeroes its output whenever a result is not ready, so a late DSP result is silence, not a stall.
+The impulse response is an object the game holds (and keeps a reference to while the effect lives): +0x18 its
+channels, +0x20 its state (5: ready), +0x50 the data, +0x5C the data's bytes. Nothing on the CPU reads the data: the
+activation passes the pointer as it is (the only reader of +0x5C is 0x14003b92c), so the DSP gets the asset unchanged.
+
+A command is 0x20 bytes: two floats of 1.0 at +0x00 and +0x04, the input page's address at +0x08, the output page's
+address at +0x10, 0 at +0x18. Pages are 0x1000 bytes (1024 floats), an input page followed by its output page. The
+game never waits: every audio frame it reads the status record the activation returned, and takes the output only
+when the u32 at +0x04 (the completed count) equals the last id and the u32 at +0x0C is 0; otherwise it zeroes the
+block (0x1443b2a40), so a late DSP result is silence, not a stall.
+
+The convolution is an effect on a submix bus, which the mixer runs in 256-frame blocks (0x144e5a5be). With one
+active channel (0x144e5acc0) the game gathers four blocks and submits 1024 frames; with two (0x1443b2a40) it
+submits every block, channel 0's 256 floats then channel 1's 256 in the input page, and reads the output page the same
+way. Either way it takes a result one submit later and copies it over the bus channel: the DSP output replaces the
+signal. The dry signal is the game's own: before the effect it saves each channel and scales the bus by the wet gain
+(effect +0x28), and afterwards it adds the saved channel back at the dry gain (+0x2C) (0x144e5a5ee).
+
+Kind 2 (vtable 0x146682400) submits one to four 1024-float mono pages per call and copies each output page into a
+ring of its own (0x1443b3980, 0x1443b3cc0). What it computes is not known.
+
 ## On the PC
 
 | Call | Loader |
@@ -186,12 +201,13 @@ blocks already taken is how many output blocks are ready (0x1443b3cc0). The conv
 | IAcpHal messages 5, 7, 0x12 | XMA decoding on the CPU, on the caller's thread: message 5 resets the context's decoder and 0x12 moves the read offset and sets output valid; both then decode (XmaStreamDecoder.DecodeFrameAt) from the input read offset into the ring, block by block, until it is full or the input is used up. Each frame gives all 512 samples per channel, as 16-bit little-endian PCM; the start skip, the loop (end subframe, jump, start skip, count) and the input buffer switch follow the fields above. Message 7 stops the context |
 | `AcpHalReleaseShapeContexts` | frees the contexts |
 | `XApuConnect` and the queue | a CPU queue: a command runs when enqueued and its result waits for the poll. Opus decodes with Concentus at 48 kHz, one decoder per stream kept across packets; the channel count comes from the output capacity |
-| `XDsp*` | streams on the CPU: a command completes when it is submitted (id = completed count, written to the stream's status record); no effect runs and the output pages stay as the game zeroed them, so XDsp effects return silence |
+| Chained XMA contexts | on enable a context writes a tag (context index and enable count) into its work buffer; a context whose work buffer holds another context's current tag, copied there by the game, takes over that decoder's overlap, so the chain plays as one continuous decode |
+| `XDsp*` | streams on the CPU: a command runs and completes when it is submitted (id = completed count, written to the stream's status record). By default every effect writes a silent output page. With `--xdsp-convolution` a convolution stream convolves each channel of the input page with the response (uniformly partitioned FFT convolution, one block per partition, no added latency) and writes the output page, times the two command floats; kind 2 stays silent |
 
-What a complete replacement still needs: the XDsp convolution (the impulse response format and whether the output is
-a wet send or an in-place insert are not confirmed), and a check that WASAPI on the PC accepts the format the game
-asks for. The XMA contexts do not carry decoder state through the work buffer, so a voice that chains two contexts
-starts the second one's overlap from silence.
+The convolution reads the response as 32-bit floats, a two-channel one as its channels one after the other; that is
+inferred (the size is counted in 4-byte units and the DSP pages hold channels one after the other), not confirmed,
+which is why it is off by default. Still needed: the response format, and a check that WASAPI on the PC accepts the
+format the game asks for.
 
 ## Unknown
 
@@ -206,8 +222,12 @@ starts the second one's overlap from silence.
   rounding of its PCM, and what it keeps in the 0x200-byte work buffer (perhaps the overlap). The game seeks a start
   or loop sample 128 samples early (it takes the frame of sample - 128 when the sample is 128 or more), which may be
   the hardware's output delay. Message 2 and slots 3 and 4 are unknown.
-- Who sets the XDsp byte at +0x3DD78; the XDsp connect arguments 0x80 and 1; config +0x04; which effect kind 2
-  selects (perhaps `Spatial_Reverb`); the two 1.0 command floats (perhaps input and output gain); the status record
-  fields other than +0x04 and +0x0C.
+- Who sets the XDsp byte at +0x3DD78; the XDsp connect arguments 0x80 and 1; what kind 2 computes; the two 1.0
+  command floats (read as gains); the status record fields other than +0x04 and +0x0C.
+- The impulse response data: whether it is time-domain 32-bit float PCM or already transformed for the DSP, and how a
+  two-channel response is laid out. The asset that produces the response object was not found, and chad.dll is not in
+  the package. How the DSP itself splits a two-channel page (the config says 1024 frames, the game fills 2 x 256).
+- A frame that runs across the boundary of two chained XMA contexts: the CPU decoder drops it (the XMA sound the
+  tests use starts every packet with a new frame, so a chain split at a packet splits between frames).
 - How the game behaves when an XMA context never produces output; whether its XMA data is in APU memory at all (a
   context whose data is not gets no input pointer).

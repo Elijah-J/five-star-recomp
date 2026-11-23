@@ -16,6 +16,7 @@ internal static class ExportCallCatalog
         new(BinkRecipes.Module, "RADTimerRead", "RADTimerRead", "once-init (QueryPerformanceFrequency) then QPC delta in ms", BinkRecipes.TimerRead, true),
         new(BinkRecipes.Module, "BinkUtilMalloc", "BinkUtilMalloc", "BinkUtilMalloc(size) -> XMemAlloc(size+0x40, 0x05E50000); BinkUtilFree -> XMemFree", BinkRecipes.MallocFree, true),
         new(BvhRecipes.Module, BvhRecipes.Set64BitMortonCodes, "Set64BitMortonCodes", "member fn, ignores this: mov [rip+global],dl; ret", BvhRecipes.ToggleMortonCodes, true),
+        new(BvhRecipes.Module, BvhRecipes.PrebuildInfo, "GetRaytracingAccelerationStructurePrebuildInfo", "member fn, object passed nowhere: copies the inputs, CPU size arithmetic, result rounded to 1 KiB", BvhRecipes.ConsoleSizes, true),
         new(BvhRecipes.Module, BvhRecipes.ValidateRehydrate, "ValidateRehydrateAccelerationStructureBuildDesc", "CPU-only validation: XMemVirtualQuery on dest/source, CRC32 of NumDescs vs header+8 -> S_OK / E_INVALIDARG", BvhRecipes.ValidateRehydrateDesc, true),
         new(HttpClientRecipes.Module, "HCGetLibVersion", "HCGetLibVersion", "HCGetLibVersion(const char** out): *out = static string, return S_OK", HttpClientRecipes.LibVersion, true),
         new(HttpClientRecipes.Module, "HCInitialize", "HCInitialize-oom-terminates", "HCMemSetFunctions(fail, nop); HCInitialize(NULL): bad_alloc escapes a noexcept frame -> std::terminate (process exits 0xC0000409)", HttpClientRecipes.InitializeOutOfMemory, false),
