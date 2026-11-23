@@ -15,7 +15,7 @@ the Windows system DLL.
 | `xapu.dll` | the console's Opus decoder queue, run on the CPU |
 | `acphal.dll` | the APU heap on ordinary memory and the SHAPE XMA decoder contexts (no XMA decoding yet) |
 | `chad.dll` | the audio DSP (XDsp): streams connect and commands complete where the game polls, so audio start-up succeeds; its effects (a convolution reverb and one more) return silence for now |
-| `GameInput.dll` | keyboard, mouse and gamepads |
+| `GameInput.dll` | GameInput v0, as the game uses it: gamepads and the keyboard, with the mouse on a virtual gamepad's right stick (the game never reads the mouse itself); every method the game calls is implemented |
 | `xgameruntime.dll` | offline GDK runtime (below); the game loads it at run time and gets the loader's implementation |
 
 ## Middleware in the package
@@ -53,7 +53,8 @@ stats are Xbox web services, not part of the runtime, so they fail like any offl
 The game does not import GDK functions by name. A static library inside each module loads `xgameruntime.dll`, calls
 `QueryApiImpl(clsid, iid, &object)` and then calls methods on the returned COM-style object by vtable slot. The
 loader answers `QueryApiImpl` with objects whose slots call its shims. The table that maps each (clsid, iid, slot) to
-a function is built from the user's own copy of the PC GDK (`fivestar platform gdk-abi`). With the October 2026 GDK it
+a function is built from the user's own copy of the PC GDK: the loader reads the newest installed GDK's
+`xgameruntime.lib` by itself, or the table `fivestar platform gdk-abi` writes. With the October 2026 GDK it
 names all 161 GDK functions the game calls and 335 of the 404 thunks in the shipped `libHttpClient.GDK.dll`. A call through this path costs about 60 ns.
 
 ## Process identity
