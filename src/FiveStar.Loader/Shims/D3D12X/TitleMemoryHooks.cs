@@ -38,6 +38,20 @@ internal sealed unsafe class TitleMemoryHooks
         return allocate(size, attributes);
     }
 
+    /// <summary>The title's XMemFree(address, attributes), the routine after XMemAlloc in the hooks.</summary>
+    public void Free(nint address, ulong attributes)
+    {
+        nint hooks = Hooks();
+
+        if (hooks == 0 || address == 0)
+        {
+            return;
+        }
+
+        var free = (delegate* unmanaged<nint, ulong, void>)((nint*)hooks)[1];
+        free(address, attributes);
+    }
+
     private nint Hooks()
     {
         if (_hooks != 0)

@@ -3,6 +3,7 @@
 
 using System.Runtime.InteropServices;
 using FiveStar.Loader.Diagnostics;
+using FiveStar.Loader.Native;
 
 namespace FiveStar.Loader.Shims;
 
@@ -13,6 +14,14 @@ namespace FiveStar.Loader.Shims;
 internal sealed unsafe class D3D12Forwarder
 {
     private const string PcLibrary = "d3d12.dll";
+
+    /// <summary>
+    /// D3D12_VERSIONED_ROOT_SIGNATURE_DESC: the version, then a 1.0, 1.1 or 1.2 desc whose Flags sit at the same place
+    /// in all three; the desktop flags end at SAMPLER_HEAP_DIRECTLY_INDEXED (0x800) (d3d12.h).
+    /// </summary>
+    private const int VersionedDescSize = 0x30;
+    private const int FlagsOffset = 0x28;
+    private const uint DesktopRootFlags = 0xFFF;
 
     private readonly object _gate = new();
     private readonly LoaderLog _log;
@@ -34,10 +43,55 @@ internal sealed unsafe class D3D12Forwarder
         }
 
         var target = (delegate* unmanaged<nint, nint*, nint*, int>)Export("D3D12SerializeVersionedRootSignature");
-        int hr = target(desc, blob, error);
-        _log.Detail($"  [d3d12_xs] D3D12SerializeVersionedRootSignature(version=0x{version:x}) -> 0x{hr:x8} (forwarded to d3d12.dll)");
+        nint ownError = 0;
+        byte* desktop = stackalloc byte[VersionedDescSize];
+        nint desktopDesc = 0;
+        uint flags = 0;
+
+        if (desc != 0)
+        {
+            // The D3D12.X flags above the desktop ones (0x3000000 from XboxBvhBuilder.dll) are dropped.
+            Buffer.MemoryCopy((void*)desc, desktop, VersionedDescSize, VersionedDescSize);
+            flags = *(uint*)(desktop + FlagsOffset);
+            *(uint*)(desktop + FlagsOffset) = flags & DesktopRootFlags;
+            desktopDesc = (nint)desktop;
+        }
+
+        nint* errorOut = error;
+
+        if (errorOut == null)
+        {
+            errorOut = &ownError;
+        }
+
+        int hr = target(desktopDesc, blob, errorOut);
+        _log.Detail($"  [d3d12_xs] D3D12SerializeVersionedRootSignature(version=0x{version:x}, flags 0x{flags:x}) -> 0x{hr:x8} (forwarded to d3d12.dll)");
+
+        if (HResult.Failed(hr))
+        {
+            _log.Warn($"[d3d12_xs] root signature rejected: {BlobText(*errorOut)}");
+        }
+
+        ComObject.Release(ownError);
 
         return hr;
+    }
+
+    /// <summary>The text in an ID3DBlob (GetBufferPointer slot 3, GetBufferSize slot 4), or empty.</summary>
+    private static string BlobText(nint blob)
+    {
+        const int BufferPointerSlot = 3;
+        const int BufferSizeSlot = 4;
+
+        if (blob == 0)
+        {
+            return string.Empty;
+        }
+
+        nint text = ((delegate* unmanaged<nint, nint>)ComObject.Slot(blob, BufferPointerSlot))(blob);
+        nuint size = ((delegate* unmanaged<nint, nuint>)ComObject.Slot(blob, BufferSizeSlot))(blob);
+
+        return Marshal.PtrToStringAnsi(text, (int)size).TrimEnd('\0', '\n');
     }
 
     /// <summary>HRESULT D3D12SerializeRootSignature(const D3D12_ROOT_SIGNATURE_DESC*, D3D_ROOT_SIGNATURE_VERSION, ID3DBlob**, ID3DBlob**).</summary>

@@ -52,6 +52,9 @@ internal sealed unsafe class XboxObjects
     /// <summary>The device wrapper the game holds (GetDevice on any child returns it); 0 before device creation.</summary>
     public nint Device => Volatile.Read(ref _device);
 
+    /// <summary>The desktop device behind <see cref="Device"/>; 0 before device creation.</summary>
+    public nint DesktopDevice => Volatile.Read(ref _desktopDevice);
+
     /// <summary>
     /// Binds <paramref name="slot"/> of <paramref name="kind"/>'s vtable to <paramref name="handler"/>, a native
     /// function taking the wrapper as its first argument (an <c>[UnmanagedCallersOnly]</c> method or generated code).

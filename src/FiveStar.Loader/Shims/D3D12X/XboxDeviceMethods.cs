@@ -90,4 +90,21 @@ internal static unsafe class XboxDeviceMethods
 
         return ShimContext.Runtime.D3D12X.PlacedResources.Create(self->Inner, address, description, clear, resource);
     }
+
+    /// <summary>
+    /// Slot 127, a committed resource with the argument list of desktop CreateCommittedResource3 (*inferred*: heap
+    /// properties, heap flags, desc, initial barrier layout, clear value, protected session, castable formats, IID,
+    /// out; call at 0x14193e1b4, next to the slot-133 path; a 4K render target comes with layout 3, UNORDERED_ACCESS).
+    /// See <see cref="XboxCommittedResources"/>.
+    /// </summary>
+    [UnmanagedCallersOnly]
+    public static int CreateCommittedResource(XboxObject* self, void* properties, int heapFlags, ResourceDescription* description, int initialLayout, void* clear, nint protectedSession, uint castableCount, void* castableFormats, Guid* iid, nint* resource)
+    {
+        if (self == null || description == null || resource == null)
+        {
+            return HResult.InvalidArgument;
+        }
+
+        return ShimContext.Runtime.D3D12X.CommittedResources.Create(self->Inner, properties, heapFlags, description, initialLayout, clear, iid, resource);
+    }
 }
