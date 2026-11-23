@@ -75,7 +75,7 @@ ntdll answers only for OS-loaded modules; mapping it lets the loader bind that i
 |---|---|
 | `xmem.dll` | `XMemAlloc`: requests of 64 KiB or more, or with a PageSize attribute, from `VirtualAlloc`; others from the aligned native heap, alignment from the attribute bits 24..28 (code n is 2^(n-1), at least 16). `XMemFree` releases what `XMemAlloc` returned and ignores other pointers. `XMemVirtualQuery` fills `MEMORY_BASIC_INFORMATION` and zeroes the 16-byte tail. `XMemGetWorkingSetStatistics` writes peak and current working set. `XMemAllocDefault`/`XMemFreeDefault` as `XMemAlloc`/`XMemFree` |
 | `xmem.dll` pages | `XMemVirtualAlloc` passes only MEM_RESERVE/MEM_COMMIT and the low protection byte to `VirtualAlloc` (a MEM_PHYSICAL reservation only reserves). Physical pages are numbers (64 KiB pages counted in 4 KiB frames, never 0); `XMemMapPhysicalPages` and `XMemMapPhysicalPagesScatter` commit read-write memory at the target (a null page array or a 0 entry decommits). `XMemIsToolsMemAvailable` and `XMemTransferMemory` return 0 |
-| `d3d12_xs.dll` | `D3D12SerializeRootSignature`, `D3D12SerializeVersionedRootSignature`, `D3D12Create[Versioned]RootSignatureDeserializer` forwarded to the PC `d3d12.dll`; everything else E_NOTIMPL (`D3D12XboxCreateDevice` is tested for failure) |
+| `d3d12_xs.dll` | `D3D12SerializeRootSignature`, `D3D12SerializeVersionedRootSignature`, `D3D12Create[Versioned]RootSignatureDeserializer` forwarded to the PC `d3d12.dll`; `D3D12XboxCreateDevice` on a desktop device and `D3D12ConfigureVirtualMemoryX` as a no-op ([d3d12x-shim.md](d3d12x-shim.md)); everything else E_NOTIMPL |
 | `acphal.dll` | APU heap: `ApuCreateHeap` commits one region for both parts; `ApuAlloc` hands out zeroed, aligned blocks of it (first fit); an APU address is the offset plus 0x10000; `ApuFree`, `ApuIsVirtualAddressValid`, `ApuMapVirtualAddress`, `ApuMapApuAddress` follow. `AcpHalCreate` and `AcpHalAllocateShapeContexts` return E_NOTIMPL (no SHAPE hardware), so audio start-up fails cleanly |
 | `chad.dll`, `xapu.dll` | XDsp and XApu connect, activate, submit, enqueue and dequeue return E_NOTIMPL; `XApuGetResultCount` 0; disconnect and deactivate 0 |
 | `xg_xs.dll` | `XGCreateTextureComputer`, `XGSuggestSwizzleMode` return E_NOTIMPL (console tiling not implemented) |
@@ -339,7 +339,7 @@ Most of the thunk path is `QueryApiImpl`'s lookup of the (clsid, iid) object und
   `XPersistentLocalStorageSpaceInfo`; what the console returns as package identifier.
 - `XGameRuntimeInitializeWithOptions` options; waiters re-arming after each signal; `XGameSaveGetContainerInfo` on a
   missing container (S_OK, no callback).
-- D3D12.X beyond root signatures, and whether its root-signature versions and flags match the PC ones.
+- D3D12.X beyond the device ([d3d12x-shim.md](d3d12x-shim.md)), and whether its root-signature versions and flags match the PC ones.
 - Overrides of files inside `.rpf` archives: the archive file table is encrypted, so the overlay works on whole files
   only. Which functions the game executable opens its files with.
 - GameInput on the console: the API version (v0 IIDs and vtables here; later versions change IIDs, slots and
