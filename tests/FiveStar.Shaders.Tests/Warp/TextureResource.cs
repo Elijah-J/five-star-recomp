@@ -5,5 +5,30 @@ using Vortice.DXGI;
 
 namespace FiveStar.Shaders.Tests.Warp;
 
-/// <summary>A 2D texture (one mip) at a <c>ResourceDescriptorHeap</c> slot, texels given as raw 32-bit words.</summary>
-public sealed record TextureResource(int HeapIndex, Format Format, int Width, int Height, uint[] Words);
+/// <summary>
+/// A texture (one mip) at a <c>ResourceDescriptorHeap</c> slot, texels given as raw 32-bit words, layer after layer.
+/// <see cref="Layers"/> is the array size of an array or cube (6) and the depth of a 3D texture. A writable texture is
+/// bound as a UAV and read back after the run.
+/// </summary>
+public sealed record TextureResource(int HeapIndex, Format Format, int Width, int Height, uint[] Words)
+{
+    public TextureKind Kind { get; init; } = TextureKind.Texture2D;
+
+    public int Layers { get; init; } = 1;
+
+    public bool Writable { get; init; }
+
+    /// <summary>Bytes per texel: 4 for the one-channel 32-bit formats, else 16 (RGBA32).</summary>
+    public int TexelBytes
+    {
+        get
+        {
+            if (Format is Format.R32_UInt or Format.R32_SInt or Format.R32_Float)
+            {
+                return 4;
+            }
+
+            return 16;
+        }
+    }
+}

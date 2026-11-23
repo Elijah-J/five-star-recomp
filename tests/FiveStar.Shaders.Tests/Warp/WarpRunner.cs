@@ -26,10 +26,23 @@ public sealed class WarpRunner
     {
         return Run(recording =>
         {
-            var root = recording.Own(PipelineFactory.RootSignature(_device.Device, job.Bindings.RootConstantCount, RootLayout.Bindless));
+            var layout = RootLayout.Bindless;
+
+            if (job.FallbackTable is not null)
+            {
+                layout = RootLayout.FallbackTable;
+            }
+
+            var root = recording.Own(PipelineFactory.RootSignature(_device.Device, job.Bindings.RootConstantCount, layout));
             var state = recording.Own(PipelineFactory.Compute(_device.Device, root, job.Shader));
             recording.CreateHeaps(job.Bindings);
             recording.SetComputeRoot(root, job.Bindings);
+
+            if (job.FallbackTable is not null)
+            {
+                recording.List.SetComputeRootDescriptorTable(1, recording.ResourceTable(job.FallbackTable.Value));
+            }
+
             recording.List.SetPipelineState(state);
 
             recording.List.Dispatch((uint)job.GroupsX, (uint)job.GroupsY, (uint)job.GroupsZ);

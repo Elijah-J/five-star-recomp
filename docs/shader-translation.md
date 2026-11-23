@@ -9,10 +9,10 @@ model 6.7. Public entry: `HlslTranslator.Translate(ShaderProgram) -> Translation
    from `<fssm folder>/../dxbc/<name>.dxbc` when present.
 2. **Blocks** (`ControlFlowTranslator`): rewrite long jumps, split into basic blocks, drop unreachable blocks.
 3. **Emitters** (`Translation/Emitters`): one emitter per instruction family turns each instruction into HLSL statements.
-4. **Program** (`Translation/Stages`, `Translation/Structure`): structs, declarations, prologue, dispatch loop (or structured
-   control flow) and output mapping.
-5. **Compile** (`CorpusTranslator`, `DxcCompiler`): dxc, with the mesh fallback where needed; `TranslationCache` and
-   `CachedCompiler` reuse earlier results (see Cache).
+4. **Program** (`Translation/Stages`, `Translation/Structure`): structs, declarations, prologue, structured control
+   flow (or the dispatch loop) and output mapping.
+5. **Compile** (`CorpusTranslator`, `DxcCompiler`): dxc, with the mesh fallback where needed or asked for;
+   `TranslationCache` and `CachedCompiler` reuse earlier results (see Cache).
 
 ## Disassembly
 
@@ -48,14 +48,14 @@ Prints the program, code block and instruction counts and the first difference o
 ## Control flow
 
 Every branch condition is scalar (SCC) or a wave-wide reduction (`execz`/`vccz` become `WaveActiveAnyTrue`), so all
-lanes of a wave follow the same path and divergence lives only in `active`. Blocks become `case`s of a
-`switch (pc)` inside `[loop] while (pc < PC_YIELD)`; each block ends by setting `pc` (`PC_END` after `s_endpgm`). Block
-leaders are the entry, branch targets and the instruction after a branch or an early `s_endpgm`; blocks not reachable
-from the entry (constant tables after the last `s_endpgm`) are skipped. A program without branches is emitted as
-straight-line code without the loop.
+lanes of a wave follow the same path and divergence lives only in `active`. Block leaders are the entry, branch
+targets and the instruction after a branch or an early `s_endpgm`; blocks not reachable from the entry (constant tables
+after the last `s_endpgm`) are skipped. A program without branches is emitted as straight-line code.
 
-**Structured form** (`TranslationOptions.StructuredControlFlow`, CLI `--structured`). The blocks become nested
-statements instead of `switch` cases:
+**Dispatch form** (`--dispatch`, `TranslationOptions.StructuredControlFlow` false). Blocks become `case`s of a
+`switch (pc)` inside `[loop] while (pc < PC_YIELD)`; each block ends by setting `pc` (`PC_END` after `s_endpgm`).
+
+**Structured form** (the default). The blocks become nested statements:
 
 | Graph shape | HLSL |
 |---|---|
@@ -78,6 +78,9 @@ or the end; WARP's shader compiler crashes when the `while` is left out.
 The whole program keeps the dispatch form, with a comment `// control flow: dispatch loop (<reason>)`, when its graph
 is irreducible (a cycle entered other than through one dominating header: `irreducible`) or has a loop that never
 exits (`loop without exit`; DXIL requires every loop to have a break).
+
+Structured is the default since the control-flow differential (see Testing) ran both forms of real programs side by
+side: their outputs are equal apart from fast-math rounding in dxc.
 
 `s_getpc; s_add_u32/s_sub_u32; s_addc_u32/s_subb_u32; s_setpc` on one register pair is a long branch and becomes a
 static branch. Other `s_setpc`/`s_swappc` (indirect jumps) are not supported, except the fetch-shader call at a
@@ -154,7 +157,7 @@ strip. The record size `GS_VTX_DW` is derived from the LDS write offsets between
 
 | Limit | Handling |
 |---|---|
-| Mesh output over 32 KB (D3D12 PC limit) | rewritten as a compute shader plus a vertex-pulling vertex shader (`MeshComputeFallback`, files `.msfb_cs.hlsl` / `.msfb_vs.hlsl`) |
+| Mesh output over 32 KB (D3D12 PC limit), or a GPU without mesh shaders | rewritten as a compute shader plus a vertex-pulling vertex shader (`MeshComputeFallback`, files `.msfb_cs.hlsl` / `.msfb_vs.hlsl`); `--mesh-fallbacks` builds it for every mesh program |
 | HLSL over 150,000 characters | compiled with `-Od` (dxc's optimizer is very slow on huge dispatch loops) |
 | Wave size | AMD lane numbers are kept. Pixel, vertex and mesh programs emulate the console wave on any hardware wave size (see Wave size). A compute program that reads other lanes by number gets `[WaveSize(32 or 64)]` (`TranslationOptions.PinWaveSize`, on in `fivestar shader translate`), so it fails to load on a GPU without that wave size instead of computing wrong results |
 | f32 → f16 | `f32tof16_rne` (round to nearest even, as AMD) |
@@ -172,6 +175,10 @@ strip. The record size `GS_VTX_DW` is derived from the LDS write offsets between
 DispatchMesh(x, y, z) becomes: clear `u2` to {0, 1, 0, 0, 0, 0}; Dispatch(x, y, z); UAV barrier; ExecuteIndirect
 DrawIndexed with arguments `u2` and index buffer `u1` (R32_UINT). A group that does not fit is dropped and its
 counted index range is made degenerate; culled primitives become degenerate triangles.
+
+GPUs without mesh shaders need the fallback for every mesh program (`--mesh-fallbacks`). All 8,765 build it (structured
+form). On an AMD iGPU without mesh-shader support the driver accepted every fallback pair of a 697-program sample; the
+largest compute halves need up to 16.6 GB of driver memory, so sweep them with `--jobs 1`.
 
 ## Wave size
 
@@ -274,14 +281,16 @@ to the generated HLSL.
 
 ```
 fivestar shader translate <program.fssm | folder> <out> [--cache <dir>] [--retry results.json]
-                          [--stages ps,vs,cs,ms,gs] [--jobs N] [--limit N] [--step K] [--no-compile] [--structured]
+                          [--stages ps,vs,cs,ms,gs] [--jobs N] [--limit N] [--step K] [--no-compile] [--dispatch]
                           [--native-waves] [--mesh-fallbacks] [--llvm-disassembler] [--llvm <folder>] [--dxc <path>]
 ```
 
 Translates every `*.fssm` (in name order; `--step K` takes every K-th, `--limit N` the first N), writes
 `<out>/<name>.hlsl`, compiles it to `<name>.dxil` and writes `<out>/results.json`. `--cache` keeps translations and
 DXIL between runs (see Cache). `--retry` re-runs only programs whose status in that file is not final and merges the
-results. `--no-compile` skips dxc. `--structured` emits the structured control-flow form (see Control flow).
+results. `--no-compile` skips dxc. `--dispatch` emits the dispatch form instead of structured control flow (see Control
+flow). `--mesh-fallbacks` builds the mesh fallback for every mesh program that compiles natively too, for GPUs without
+mesh shaders; its reason in results.json is `fallback ok` or the fallback's error.
 `--native-waves` turns wave emulation off (see Wave size). A compute program pinned to 64 lanes also gets
 `<name>.w32.hlsl`/`.dxil` where possible; its reason in results.json says so. `--mesh-fallbacks` also compiles the
 mesh fallback of every mesh program that compiles (reason `fallback ok`), for GPUs without mesh shaders. A compiling
@@ -301,7 +310,7 @@ while an in-process crash or allocation failure ends the whole run.
 | Status | Meaning |
 |---|---|
 | `ok` | translated and compiled |
-| `ok-msfb` | mesh shader compiled through the fallback |
+| `ok-msfb` | mesh shader compiled through the fallback (dxc rejected the native one) |
 | `skip-stage` | stage unknown or not selected |
 | `regs-fail` | FSSM header not decodable |
 | `disasm-fail` | disassembly failed |
@@ -426,8 +435,8 @@ resume rules of `pso`. A cache shader that matches several programs (same code) 
 ## Testing
 
 `tests/FiveStar.Shaders.Tests` assembles handwritten gfx1013 programs with llvm-mc (the tests and `decode-check` are
-the only users of LLVM), decodes them with `RdnaDecoder`, translates them, compiles them with dxc and runs them on D3D12
-WARP. Results are compared with a reference model of the ISA (`Reference/`), never with the
+the only users of LLVM), decodes them with `RdnaDecoder`, translates them (structured form), compiles them with dxc and
+runs them on D3D12 WARP. Results are compared with a reference model of the ISA (`Reference/`), never with the
 translator's output. Covered: pixel shaders (VALU, SALU, packed f16, cross-lane, EXEC, helper lanes, control flow,
 memory, exports), compute (ids, LDS, wave32/wave64 wave operations, buffer and global memory, atomics), ray
 intersection, the mesh path and its fallback (including overflow), vertex fetch, a handwritten GS and the real
@@ -444,6 +453,43 @@ variant with full-wave expectations (including the two full-wave cases WARP othe
 checked with a VS whose two float2 outputs share a register while the PS reads one of them flat: unlinked the
 pipeline fails, linked it draws the flat value of the provoking vertex. Test
 classes run one at a time (`xunit.runner.json`): WARP crashes the test host when they run in parallel.
+
+**Control-flow differential** (`ControlFlowDifferentialTests`, `Differential/`). Real programs run in both forms on WARP
+with the same synthetic inputs, and every output word must be equal. The harness redirects each descriptor-heap index a
+program computes to a slot of the declared resource type (two per type) and each sampler index to one of eight samplers,
+and fills user SGPRs, a 64 KB memory window, buffers and textures with small integers, offsets into the window and
+floats in [-2, 2]. Every loop gets an iteration budget, since synthetic data can make a search or BVH walk endless.
+Compute programs run as they are (one group); a pixel shader runs behind a wrapper that writes each output's raw bits
+to its own uint target (16×16, each input a constant per triangle corner); a vertex shader runs in a compute wrapper
+that stores the Out struct of 64 vertices; a mesh shader runs as its compute fallback (vertex records, indices, draw
+arguments). Each program runs with three input sets; a form that differs from itself on a rerun is a race, not a
+mismatch. `FIVESTAR_DIFF_PROGRAMS` (per stage, default 3), `FIVESTAR_DIFF_FIRST`, `FIVESTAR_DIFF_STAGE` and
+`FIVESTAR_DIFF_OUT` (keeps the shaders and writes `differential.jsonl`) scale it up.
+
+Run on 1,390 programs (the first of each stage in a fixed hash order of the names):
+
+| Stage | Sampled | Equal | Same text | Not compared |
+|---|---|---|---|---|
+| Compute | 420 | 94 | 24 | 6 races; 267 large, 27 with a group barrier, 2 over the loop budget |
+| Pixel | 330 | 108 | 54 | 9 WARP stalls; 155 large, 4 over the loop budget |
+| Vertex | 320 | 122 | 146 | 1 fast-math difference, 2 WARP stalls; 49 large |
+| Mesh | 320 | 91 | | 229 large |
+
+"Same text": the program has no branches, so both forms are one text. Of the 415 equal programs 362 wrote at least one
+output word; the others discard every pixel or skip their work on synthetic data. No difference came from the
+translator:
+
+- Fast-math (1 vertex shader): 64 words 1 ulp apart. dxc's default float optimizations (reassociation, contraction)
+  treat the two code shapes differently; compiled with `-Gis` (IEEE strict) both forms agree, on WARP and on an RTX
+  4090. The dispatch form is no more exact than the structured one.
+- Races (6 compute programs): lanes of one console wave share LDS without a barrier. On WARP's 4-lane waves that is a
+  race between waves, and each form differs from itself between runs; on an RTX 4090 both forms agree.
+- WARP stalls (9 pixel, 2 vertex shaders): WARP does not finish running the dxc-optimized structured form (one compiled
+  with `-Od` runs in 14 s). On an RTX 4090 both forms run in milliseconds and agree.
+
+Not compared: dispatch-form HLSL over 64,000 characters (WARP's compiler needs minutes and many GB: 90 KB took over
+10 minutes and 13 GB), compute programs with a group barrier (WARP's compiler crashes on a barrier inside the dispatch
+`switch`) and geometry shaders (no harness).
 
 ## Unknown
 

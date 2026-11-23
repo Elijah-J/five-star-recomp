@@ -19,18 +19,21 @@ internal static class TranslateCommand
     private const int TwoPaths = 2;
     private const int BytesPerMebibyte = 1 << 20;
     private const string NoCompileFlag = "no-compile";
+    private const string DispatchFlag = "dispatch";
+
+    // The default since the differential check on real programs; still accepted so older command lines run.
     private const string StructuredFlag = "structured";
     private const string NativeWavesFlag = "native-waves";
     private const string MeshFallbacksFlag = "mesh-fallbacks";
 
     public static int Run(IReadOnlyList<string> args)
     {
-        var arguments = new CommandArguments(args, new HashSet<string> { NoCompileFlag, StructuredFlag, NativeWavesFlag, MeshFallbacksFlag, ShaderTools.LlvmDisassemblerFlag });
+        var arguments = new CommandArguments(args, new HashSet<string> { NoCompileFlag, DispatchFlag, StructuredFlag, NativeWavesFlag, MeshFallbacksFlag, ShaderTools.LlvmDisassemblerFlag });
 
         if (arguments.Positional.Count != TwoPaths)
         {
             throw new ArgumentException(
-                "translate <fssm-or-folder> <out> [--cache <dir>] [--retry results.json] [--stages ps,vs,cs,ms,gs] [--jobs N] [--structured] [--native-waves] [--mesh-fallbacks] [--llvm-disassembler]");
+                "translate <fssm-or-folder> <out> [--cache <dir>] [--retry results.json] [--stages ps,vs,cs,ms,gs] [--jobs N] [--dispatch] [--native-waves] [--mesh-fallbacks] [--llvm-disassembler]");
         }
 
         var programs = Programs(arguments);
@@ -38,7 +41,7 @@ internal static class TranslateCommand
         var (disassembler, llvm) = ShaderTools.Disassembler(arguments);
         var options = new CorpusOptions(arguments.Positional[1], Stages(arguments), arguments.IntegerOption("jobs") ?? Environment.ProcessorCount, retry)
         {
-            Translation = new TranslationOptions(arguments.Flag(StructuredFlag), PinWaveSize: true, EmulateWaveSize: !arguments.Flag(NativeWavesFlag)),
+            Translation = new TranslationOptions(!arguments.Flag(DispatchFlag), PinWaveSize: true, EmulateWaveSize: !arguments.Flag(NativeWavesFlag)),
             MeshFallbacks = arguments.Flag(MeshFallbacksFlag),
         };
 

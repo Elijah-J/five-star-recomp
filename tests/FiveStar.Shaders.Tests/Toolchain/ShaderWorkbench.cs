@@ -3,6 +3,7 @@
 
 using FiveStar.Shaders.Compilation;
 using FiveStar.Shaders.Tests.Assembly;
+using FiveStar.Shaders.Tooling;
 using FiveStar.Shaders.Translation;
 
 namespace FiveStar.Shaders.Tests.Toolchain;
@@ -14,9 +15,11 @@ namespace FiveStar.Shaders.Tests.Toolchain;
 public sealed class ShaderWorkbench
 {
     private static readonly TimeSpan CompileTimeout = TimeSpan.FromMinutes(2);
+    private static readonly TranslationOptions Options = new(StructuredControlFlow: true, PinWaveSize: false, EmulateWaveSize: true);
 
     private readonly RdnaAssembler _assembler;
     private readonly DxcCompiler _compiler;
+    private readonly string _dxc;
     private readonly string _folder;
 
     public ShaderWorkbench(ShaderToolchain tools, string folder)
@@ -24,6 +27,7 @@ public sealed class ShaderWorkbench
         _folder = folder;
         _assembler = new RdnaAssembler(tools.Llvm, folder);
         _compiler = new DxcCompiler(DxcOptions.Defaults(tools.Dxc, retry: false));
+        _dxc = tools.Dxc;
         RuntimeIncludes.WriteTo(folder);
     }
 
@@ -32,9 +36,10 @@ public sealed class ShaderWorkbench
         return _assembler.Assemble(name, source, waveSize);
     }
 
+    /// <summary>The form <c>fivestar shader translate</c> emits: structured control flow, wave sizes emulated, not pinned.</summary>
     public static string Translate(ShaderProgram program)
     {
-        return HlslTranslator.Translate(program).Hlsl;
+        return HlslTranslator.Translate(program, Options).Hlsl;
     }
 
     /// <summary>Compiles HLSL with the profile prefix (ps, vs, cs, ms, gs) to DXIL; dxc errors become an exception.</summary>
@@ -50,6 +55,26 @@ public sealed class ShaderWorkbench
         }
 
         return File.ReadAllBytes(Path.ChangeExtension(path, ".dxil"));
+    }
+
+    /// <summary>
+    /// Compiles with IEEE strictness (<c>-Gis</c>): no fast-math reassociation or contraction, so the result depends on
+    /// the operations alone, not on how the optimizer sees the code around them.
+    /// </summary>
+    public byte[] CompileStrict(string name, string hlsl, string profile)
+    {
+        var path = Path.Combine(_folder, name + ".strict.hlsl");
+        File.WriteAllText(path, hlsl);
+        var dxil = Path.ChangeExtension(path, ".dxil");
+        string[] arguments = ["-T", profile + "_6_7", "-E", "main", "-HV", "2021", "-Gis", "-I", _folder, "-Fo", dxil, path];
+        var result = ExternalTool.Run(_dxc, arguments, CompileTimeout);
+
+        if (result.ExitCode != 0)
+        {
+            throw new InvalidOperationException($"dxc -Gis rejected {name} ({profile}): {DxcCompiler.FirstError(result.Error)}");
+        }
+
+        return File.ReadAllBytes(dxil);
     }
 
     /// <summary>Compiles a helper shader embedded from the Shaders folder.</summary>

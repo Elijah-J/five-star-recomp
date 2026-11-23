@@ -8,7 +8,7 @@ namespace FiveStar.Shaders.Compilation;
 
 /// <summary>
 /// Translates many FSSM programs and validates each with dxc: writes <c>&lt;name&gt;.hlsl</c> and <c>.dxil</c> (and the mesh
-/// fallback pair <c>.msfb_cs</c>/<c>.msfb_vs</c> where needed, the wave32 variant <c>.w32</c> of wave64-pinned compute
+/// fallback pair <c>.msfb_cs</c>/<c>.msfb_vs</c> where needed or asked for, the wave32 variant <c>.w32</c> of wave64-pinned compute
 /// programs), the runtime headers and results.json.
 /// </summary>
 public sealed partial class CorpusTranslator

@@ -3,5 +3,11 @@
 
 namespace FiveStar.Shaders.Tests.Warp;
 
-/// <summary>A clamp-addressed sampler at a <c>SamplerDescriptorHeap</c> slot, point or linear filtered.</summary>
-public sealed record SamplerResource(int HeapIndex, bool Linear);
+/// <summary>
+/// A clamp-addressed sampler at a <c>SamplerDescriptorHeap</c> slot, point or linear filtered; a comparison sampler
+/// (less-or-equal) for <c>SamplerComparisonState</c>.
+/// </summary>
+public sealed record SamplerResource(int HeapIndex, bool Linear)
+{
+    public bool Comparison { get; init; }
+}

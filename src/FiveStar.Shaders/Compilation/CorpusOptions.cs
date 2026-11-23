@@ -11,8 +11,8 @@ namespace FiveStar.Shaders.Compilation;
 /// </summary>
 public sealed record CorpusOptions(string OutputFolder, IReadOnlySet<ShaderStage>? Stages, int Parallelism, string? RetryResults)
 {
-    /// <summary>The translator choices (the dispatch form with pinned wave sizes unless set).</summary>
-    public TranslationOptions Translation { get; init; } = new(StructuredControlFlow: false, PinWaveSize: true, EmulateWaveSize: true);
+    /// <summary>The translator choices (structured control flow with pinned wave sizes unless set).</summary>
+    public TranslationOptions Translation { get; init; } = new(StructuredControlFlow: true, PinWaveSize: true, EmulateWaveSize: true);
 
     /// <summary>
     /// Whether a mesh program that compiles also gets the compute + vertex-pulling fallback, for GPUs without mesh

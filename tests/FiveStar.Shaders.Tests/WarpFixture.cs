@@ -33,6 +33,9 @@ public sealed class WarpFixture : IDisposable
         _computeWaveSize = new Lazy<int>(ProbeComputeWave);
     }
 
+    /// <summary>The class's work folder, deleted with the fixture.</summary>
+    public string Folder => _folder.Value;
+
     public ShaderWorkbench Workbench => _workbench.Value;
 
     public WarpRunner Runner => new(_device.Value);

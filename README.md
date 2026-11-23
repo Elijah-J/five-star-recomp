@@ -22,7 +22,7 @@ that can be built and verified without it.
 
 | Area | State |
 |---|---|
-| Shader translation | Every shader stage the game uses is translated (vertex, pixel, compute, mesh, geometry, ray intersection), and all 25,884 programs compile. An optional structured control-flow form makes the output 39% smaller. Instruction behaviour is checked on D3D12 WARP. |
+| Shader translation | Every shader stage the game uses is translated (vertex, pixel, compute, mesh, geometry, ray intersection), and all 25,884 programs compile. Branches become structured `if`/`else` and loops, 39% smaller than the older dispatch loop and checked to give the same results on real programs. Instruction behaviour is checked on D3D12 WARP. |
 | Archives | Contents can be extracted without the encrypted file table (no names yet). Metadata files parse completely. |
 | Textures | Most textures export; pages using the console's BCPack compression cannot be decoded yet. |
 | Models | Drawable geometry (meshlets, packed vertices) decodes and exports as OBJ ([docs/models.md](docs/models.md)). |

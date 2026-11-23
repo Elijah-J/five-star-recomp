@@ -21,6 +21,7 @@ public sealed class Recording : IDisposable
     private readonly ID3D12Device _device;
     private readonly List<IDisposable> _owned = [];
     private readonly List<(int HeapIndex, ID3D12Resource Buffer, ID3D12Resource Readback, int Words)> _writable = [];
+    private readonly List<(int HeapIndex, ID3D12Resource Texture, ID3D12Resource Readback, TextureLayout Layout)> _writableTextures = [];
     private readonly List<(ID3D12Resource Target, ID3D12Resource Readback)> _targets = [];
     private Framebuffer? _framebuffer;
     private ID3D12QueryHeap? _queries;
@@ -230,9 +231,20 @@ public sealed class Recording : IDisposable
             List.CopyBufferRegion(readback, 0, buffer, 0, (ulong)words * 4);
         }
 
+        foreach (var (_, texture, readback, layout) in _writableTextures)
+        {
+            List.ResourceBarrier(ResourceBarrier.BarrierTransition(texture, ResourceStates.UnorderedAccess, ResourceStates.CopySource));
+
+            for (var subresource = 0; subresource < layout.Subresources; subresource++)
+            {
+                List.CopyTextureRegion(new TextureCopyLocation(readback, layout.Footprint(subresource)), 0, 0, 0, new TextureCopyLocation(texture, (uint)subresource), null);
+            }
+        }
+
         device.Execute(List);
         var targets = _targets.Select(entry => TargetWords(entry.Readback)).ToList();
         var buffers = _writable.ToDictionary(entry => entry.HeapIndex, entry => Read(entry.Readback, entry.Words));
+        var textures = _writableTextures.ToDictionary(entry => entry.HeapIndex, entry => entry.Layout.Unstage(Read(entry.Readback, entry.Layout.StagedBytes / 4)));
         uint[]? arguments = null;
 
         if (_arguments is not null)
@@ -240,7 +252,7 @@ public sealed class Recording : IDisposable
             arguments = Read(_arguments, 6);
         }
 
-        return new WarpResult(targets, _framebuffer?.Width ?? 0, buffers, Statistics(), arguments);
+        return new WarpResult(targets, _framebuffer?.Width ?? 0, buffers, Statistics(), arguments) { Textures = textures };
     }
 
     public void Dispose()
@@ -347,31 +359,43 @@ public sealed class Recording : IDisposable
 
     private void AddTexture(TextureResource texture)
     {
-        const int BytesPerTexel = 16;
-        var pitch = ((texture.Width * BytesPerTexel) + 255) & ~255;
-        var rowWords = texture.Width * BytesPerTexel / 4;
-        var staged = new uint[pitch / 4 * texture.Height];
-
-        for (var y = 0; y < texture.Height; y++)
-        {
-            Array.Copy(texture.Words, y * rowWords, staged, y * pitch / 4, rowWords);
-        }
-
+        var layout = new TextureLayout(texture);
+        var staged = layout.Stage();
         var upload = Buffer(staged.Length * 4, HeapType.Upload, ResourceStates.GenericRead);
         Write(upload, staged);
-        var description = ResourceDescription.Texture2D(texture.Format, (uint)texture.Width, (uint)texture.Height, 1, 1);
-        var resource = Own(_device.CreateCommittedResource(new HeapProperties(HeapType.Default), HeapFlags.None, description, ResourceStates.Common));
-        var footprint = new SubresourceFootPrint(texture.Format, (uint)texture.Width, (uint)texture.Height, 1, (uint)pitch);
+        var resource = Own(_device.CreateCommittedResource(new HeapProperties(HeapType.Default), HeapFlags.None, layout.Resource(), ResourceStates.Common));
 
-        List.CopyTextureRegion(new TextureCopyLocation(resource, 0), 0, 0, 0, new TextureCopyLocation(upload, new PlacedSubresourceFootPrint { Footprint = footprint }), null);
-        List.ResourceBarrier(ResourceBarrier.BarrierTransition(resource, ResourceStates.CopyDest, ResourceStates.AllShaderResource));
-        _device.CreateShaderResourceView(resource, null, ResourceSlot(texture.HeapIndex));
+        for (var subresource = 0; subresource < layout.Subresources; subresource++)
+        {
+            List.CopyTextureRegion(new TextureCopyLocation(resource, (uint)subresource), 0, 0, 0, new TextureCopyLocation(upload, layout.Footprint(subresource)), null);
+        }
+
+        if (!texture.Writable)
+        {
+            List.ResourceBarrier(ResourceBarrier.BarrierTransition(resource, ResourceStates.CopyDest, ResourceStates.AllShaderResource));
+            _device.CreateShaderResourceView(resource, layout.ShaderResourceView(), ResourceSlot(texture.HeapIndex));
+
+            return;
+        }
+
+        List.ResourceBarrier(ResourceBarrier.BarrierTransition(resource, ResourceStates.CopyDest, ResourceStates.UnorderedAccess));
+        _device.CreateUnorderedAccessView(resource, null, layout.UnorderedAccessView(), ResourceSlot(texture.HeapIndex));
+        _writableTextures.Add((texture.HeapIndex, resource, Buffer(layout.StagedBytes, HeapType.Readback, ResourceStates.CopyDest), layout));
     }
 
     private void CreateSampler(ID3D12DescriptorHeap heap, SamplerResource sampler)
     {
         var filter = sampler.Linear ? Filter.MinMagMipLinear : Filter.MinMagMipPoint;
-        var description = new SamplerDescription(filter, TextureAddressMode.Clamp, TextureAddressMode.Clamp, TextureAddressMode.Clamp);
+
+        if (sampler.Comparison)
+        {
+            filter = sampler.Linear ? Filter.ComparisonMinMagMipLinear : Filter.ComparisonMinMagMipPoint;
+        }
+
+        var description = new SamplerDescription(filter, TextureAddressMode.Clamp, TextureAddressMode.Clamp, TextureAddressMode.Clamp)
+        {
+            ComparisonFunction = ComparisonFunction.LessEqual,
+        };
         var increment = _device.GetDescriptorHandleIncrementSize(DescriptorHeapType.Sampler);
         _device.CreateSampler(ref description, heap.GetCPUDescriptorHandleForHeapStart() + (int)(sampler.HeapIndex * increment));
     }

@@ -10,7 +10,7 @@ its bitcode removed, so the PC driver cannot compile it. The translator turns th
 |---|---|
 | A wave of 32 or 64 lanes | one HLSL invocation per lane |
 | EXEC mask | a per-lane `active` flag |
-| Branches | a wave-uniform block dispatch loop (`switch` on the program counter) |
+| Branches | structured `if`/`else` and loops; a wave-uniform block dispatch loop (`switch` on the program counter) where the graph does not allow that, or with `--dispatch` |
 | Lane masks | per-lane booleans; wave ballots where a mask is read as an integer |
 | Resource descriptors | bindless heap indices written by the runtime into the descriptors |
 | Hardware input registers | decoded from the program header (stage, wave size, input layout) |
@@ -23,7 +23,7 @@ its bitcode removed, so the PC driver cannot compile it. The translator turns th
 | Pixel | 12,049 | helper lanes included in wave operations (Shader Model 6.7) |
 | Vertex | 2,191 | the driver's fetch shader becomes vertex inputs |
 | Compute | 2,684 | |
-| Mesh (NGG) | 8,765 | two phases so output counts are set before any output write; 46 exceed PC's 32 KB output limit and run as compute plus a vertex-pulling vertex shader |
+| Mesh (NGG) | 8,765 | two phases so output counts are set before any output write; 46 exceed PC's 32 KB output limit and run as compute plus a vertex-pulling vertex shader, a path every mesh program can take on GPUs without mesh shaders |
 | Geometry | 195 | legacy geometry shader with on-chip output; the embedded copy shader runs as a function per emitted vertex |
 
 ## Ray tracing
@@ -70,4 +70,4 @@ details and the limits.
 | Mesh output over 32 KB | compute plus vertex pulling |
 | Group shared memory 28 KB | mesh outputs written directly instead of staged |
 | Ordered pixel access (POPS) | rasterizer-ordered views |
-| Very large programs | 3 programs exceed `dxc`'s time budget; needs structured control flow |
+| Very large programs | 3 programs take 25 to 80 minutes in `dxc` |

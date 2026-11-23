@@ -14,7 +14,8 @@ namespace FiveStar.Shaders.Tests.Warp;
 /// </summary>
 public sealed class WarpDevice : IDisposable
 {
-    private static readonly TimeSpan GpuTimeout = TimeSpan.FromSeconds(20);
+    // Large real programs (differential tests) run for minutes on WARP.
+    private static readonly TimeSpan GpuTimeout = TimeSpan.FromMinutes(5);
 
     private ID3D12Device _device = null!;
     private ID3D12CommandQueue _queue = null!;
