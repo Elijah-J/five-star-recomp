@@ -10,8 +10,9 @@ using FiveStar.Loader.Shims;
 namespace FiveStar.Loader.Host;
 
 /// <summary>
-/// The <c>--classify</c> mode: reads <c>module!symbol</c> lines, classifies each through the shim table and writes
-/// one <c>kind&lt;TAB&gt;module!symbol&lt;TAB&gt;detail</c> line per import. It maps no image, so it is cheap and the
+/// The <c>--classify</c> mode: reads <c>module!symbol</c> lines, classifies each through the shim table and the
+/// module facts (the <c>--search</c> directories are the package folder) and writes one
+/// <c>kind&lt;TAB&gt;module!symbol&lt;TAB&gt;detail</c> line per import. It maps no image, so it is cheap and the
 /// caller (the <c>fivestar exe analyze</c> report) does not duplicate the loader's shim list.
 /// </summary>
 internal static class ClassifyCommand
@@ -20,15 +21,16 @@ internal static class ClassifyCommand
     private const char OrdinalMarker = '#';
     private const char FieldSeparator = '\t';
 
-    public static int Run(string inputPath, string? outputPath)
+    public static int Run(HostOptions options)
     {
         var log = new LoaderLog(TextWriter.Null, null, false);
         var heap = new CodeHeap();
         using var lastError = new LastErrorBridge(heap, log);
         var shims = new ShimTable(lastError, heap);
-        var classifier = new ImportClassifier(shims);
+        var loaderOptions = HostComposition.CreateLoaderOptions(options);
+        var classifier = new ImportClassifier(shims, loaderOptions.SearchDirectories, loaderOptions.ManualModules);
 
-        var lines = File.ReadAllLines(inputPath);
+        var lines = File.ReadAllLines(options.ClassifyInput!);
         var output = new List<string>(lines.Length);
 
         foreach (var line in lines)
@@ -36,7 +38,7 @@ internal static class ClassifyCommand
             AddLine(classifier, line, output);
         }
 
-        Write(outputPath, output);
+        Write(options.ClassifyOutput, output);
 
         return LoaderHost.Success;
     }

@@ -63,7 +63,9 @@ internal static class ExeAnalyzer
         var queries = new HashSet<string>(ImportAudit.Queries(sites), StringComparer.Ordinal);
         queries.UnionWith(GdkAudit.NameQueries(gdkTallies));
 
-        return LoaderClassifier.Classify(loaderPath, queries, options.OutDir);
+        var packageDir = Path.GetDirectoryName(Path.GetFullPath(options.ExePath)) ?? Environment.CurrentDirectory;
+
+        return LoaderClassifier.Classify(loaderPath, queries, options.OutDir, packageDir);
     }
 
     private static IReadOnlyList<string> ArchiveNames(string? dumpFolder)

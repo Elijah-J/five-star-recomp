@@ -9,6 +9,7 @@ namespace FiveStar.Cli.Exe;
 internal static class DayOne
 {
     private const string XboxStubKind = "XboxStub";
+    private const string MissingKind = "Missing";
     private const int TopNamesShown = 6;
 
     public static IReadOnlyList<GapItem> Build(
@@ -60,6 +61,7 @@ internal static class DayOne
 
     private static void AddImports(IReadOnlyList<ImportGap> imports, List<GapItem> gaps)
     {
+        AddMissing(imports, gaps);
         var stubs = imports.Where(import => string.Equals(import.Kind, XboxStubKind, StringComparison.Ordinal)).ToList();
 
         if (stubs.Count == 0)
@@ -70,5 +72,18 @@ internal static class DayOne
         var top = stubs.Take(TopNamesShown).Select(import => $"{import.Dll}!{import.Function} ({import.Sites.ToString(CultureInfo.InvariantCulture)})");
         var why = $"Xbox-only imports answered by a fixed-value stub; confirm the game tolerates them: {string.Join(", ", top)}";
         gaps.Add(new GapItem("Loader", $"{stubs.Count} Xbox-only imports on stubs", why));
+    }
+
+    private static void AddMissing(IReadOnlyList<ImportGap> imports, List<GapItem> gaps)
+    {
+        var modules = imports.Where(import => string.Equals(import.Kind, MissingKind, StringComparison.Ordinal)).Select(import => import.Dll).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+        if (modules.Count == 0)
+        {
+            return;
+        }
+
+        var why = $"not in the package, not on this PC and no shim, so their imports stay unresolved: {string.Join(", ", modules)}";
+        gaps.Add(new GapItem("Loader", $"{modules.Count} unknown Xbox system modules", why));
     }
 }

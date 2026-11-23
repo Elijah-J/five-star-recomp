@@ -21,14 +21,18 @@ internal static class LoaderClassifier
     private const string InputName = "exe-analyze-queries.txt";
     private const string OutputName = "exe-analyze-verdicts.txt";
 
-    /// <summary>Verdicts keyed by the <c>module!symbol</c> query, or null when the loader could not be run.</summary>
-    public static IReadOnlyDictionary<string, LoaderVerdict>? Classify(string loaderPath, IReadOnlyCollection<string> queries, string workDir)
+    /// <summary>
+    /// Verdicts keyed by the <c>module!symbol</c> query, or null when the loader could not be run.
+    /// <paramref name="packageDir"/> is the folder the executable ships in; the loader treats modules found there as
+    /// package modules.
+    /// </summary>
+    public static IReadOnlyDictionary<string, LoaderVerdict>? Classify(string loaderPath, IReadOnlyCollection<string> queries, string workDir, string packageDir)
     {
         var input = Path.Combine(workDir, InputName);
         var output = Path.Combine(workDir, OutputName);
         File.WriteAllLines(input, queries);
 
-        if (!RunLoader(loaderPath, input, output))
+        if (!RunLoader(loaderPath, input, output, packageDir))
         {
             return null;
         }
@@ -36,7 +40,7 @@ internal static class LoaderClassifier
         return Parse(output);
     }
 
-    private static bool RunLoader(string loaderPath, string input, string output)
+    private static bool RunLoader(string loaderPath, string input, string output, string packageDir)
     {
         var start = new ProcessStartInfo(loaderPath)
         {
@@ -50,6 +54,8 @@ internal static class LoaderClassifier
         start.ArgumentList.Add(input);
         start.ArgumentList.Add("--classify-out");
         start.ArgumentList.Add(output);
+        start.ArgumentList.Add("--search");
+        start.ArgumentList.Add(packageDir);
 
         return Execute(start, output);
     }

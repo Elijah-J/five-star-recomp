@@ -2,14 +2,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Runtime.InteropServices;
+using FiveStar.Loader.Native;
 
 namespace FiveStar.Loader.Shims;
 
 /// <summary>
 /// d3d12_xs.dll (D3D12.X) entry points: the root-signature helpers, forwarded to the PC d3d12.dll. Everything else in
-/// d3d12_xs (device creation, the D3D12.X interfaces) is not implemented and binds to a logged stub.
+/// d3d12_xs (device creation, the D3D12.X interfaces) is not implemented and binds to a logged stub returning
+/// E_NOTIMPL: the game tests D3D12XboxCreateDevice with <c>js</c>, where S_OK with no device would fault.
 /// </summary>
-[ShimModule("d3d12_xs.dll")]
+[ShimModule("d3d12_xs.dll", UnresolvedReturn = HResult.NotImplemented)]
 internal static unsafe class D3D12XsShim
 {
     [Shim("d3d12_xs.dll", "D3D12SerializeVersionedRootSignature")]

@@ -9,6 +9,7 @@ internal static class Win32Constants
     // winnt.h: VirtualAlloc / VirtualFree allocation types.
     public const uint MemCommit = 0x1000;
     public const uint MemReserve = 0x2000;
+    public const uint MemDecommit = 0x4000;
     public const uint MemRelease = 0x8000;
     public const uint MemReserveCommit = MemReserve | MemCommit;
 

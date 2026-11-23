@@ -128,24 +128,7 @@ internal sealed class ImageLoader
     /// <summary>A module file in the search directories (exact name first, then a case-insensitive match).</summary>
     public string? FindModuleFile(string key)
     {
-        foreach (string directory in _searchDirectories)
-        {
-            string file = Path.Combine(directory, key);
-
-            if (File.Exists(file))
-            {
-                return file;
-            }
-
-            var hit = Directory.EnumerateFiles(directory).FirstOrDefault(f => string.Equals(Path.GetFileName(f), key, StringComparison.OrdinalIgnoreCase));
-
-            if (hit is not null)
-            {
-                return hit;
-            }
-        }
-
-        return null;
+        return HostModules.FindInDirectories(_searchDirectories, key);
     }
 
     /// <summary>Whether another mapped image binds an import to <paramref name="image"/>.</summary>
