@@ -15,14 +15,10 @@ internal sealed class GdkAbiStep : ISetupStep
 {
     public const string StepName = "gdk-abi";
 
-    private const string LibraryName = "xgameruntime.lib";
-    private const string GdkFolder = "Microsoft GDK";
     private const string TableName = "gdk-abi.txt";
     private const string ModulePattern = "*.dll";
     private const string NoLibrary = "no-gdk";
 
-    // The 64-bit library sits in an amd64 or x64 folder of the GDK.
-    private static readonly string[] SixtyFourBitFolders = ["amd64", "x64"];
     private static readonly TimeSpan TypicalTime = TimeSpan.FromSeconds(5);
 
     public string Name => StepName;
@@ -79,23 +75,6 @@ internal sealed class GdkAbiStep : ISetupStep
     /// <summary>The library from <c>--gdk-lib</c>, else the newest 64-bit one of an installed GDK, or null.</summary>
     private static string? Library(SetupContext context)
     {
-        var given = context.Arguments.Option("gdk-lib");
-
-        if (given is not null)
-        {
-            return given;
-        }
-
-        var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), GdkFolder);
-
-        if (!Directory.Exists(root))
-        {
-            return null;
-        }
-
-        return Directory.EnumerateFiles(root, LibraryName, SearchOption.AllDirectories)
-            .Where(path => SixtyFourBitFolders.Contains(Path.GetFileName(Path.GetDirectoryName(path)), StringComparer.OrdinalIgnoreCase))
-            .Order(StringComparer.Ordinal)
-            .LastOrDefault();
+        return context.Arguments.Option("gdk-lib") ?? GdkLibraryLocator.FindInstalled(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86));
     }
 }
