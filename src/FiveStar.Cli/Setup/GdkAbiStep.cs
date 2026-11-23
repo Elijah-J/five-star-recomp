@@ -15,7 +15,6 @@ internal sealed class GdkAbiStep : ISetupStep
 {
     public const string StepName = "gdk-abi";
 
-    private const string TableName = "gdk-abi.txt";
     private const string ModulePattern = "*.dll";
     private const string NoLibrary = "no-gdk";
 
@@ -42,7 +41,7 @@ internal sealed class GdkAbiStep : ISetupStep
         return new StepFingerprint(inputs, Fingerprints.OfAssemblies(typeof(GdkThunkLibrary)));
     }
 
-    public bool HasOutputs(SetupContext context) => Library(context) is null || File.Exists(Path.Combine(context.LoaderFolder, TableName));
+    public bool HasOutputs(SetupContext context) => Library(context) is null || File.Exists(context.AbiTable);
 
     public long RequiredBytes(SetupContext context) => 0;
 
@@ -58,7 +57,7 @@ internal sealed class GdkAbiStep : ISetupStep
         }
 
         Directory.CreateDirectory(context.LoaderFolder);
-        var table = Path.Combine(context.LoaderFolder, TableName);
+        var table = context.AbiTable;
         GdkAbiCommand.Run(new Archive.CommandArguments([library, .. Modules(context), "--out", table], []));
 
         return StepResult.Done($"{table} from {library}");

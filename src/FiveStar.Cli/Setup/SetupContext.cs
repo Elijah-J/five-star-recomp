@@ -27,6 +27,15 @@ internal sealed record SetupContext(string Dump, string Work, int? Limit, int Ev
 
     public string LoaderFolder => Path.Combine(Work, "loader");
 
+    /// <summary>The thunk ABI table of the <c>gdk-abi</c> step, for <c>fivestar-loader --gdk-abi</c>.</summary>
+    public string AbiTable => Path.Combine(LoaderFolder, "gdk-abi.txt");
+
+    /// <summary>Where <c>fivestar run</c> lets the loader write its TLS host DLLs (<c>--work-dir</c>).</summary>
+    public string TlsFolder => Path.Combine(LoaderFolder, "tls");
+
+    /// <summary>The loader logs of <c>fivestar run</c>, one per run.</summary>
+    public string LogFolder => Path.Combine(Work, "logs");
+
     public string StateFolder => Path.Combine(Work, "state");
 
     public string ShaderArchive => Path.Combine(Dump, "shaders.rpf");
