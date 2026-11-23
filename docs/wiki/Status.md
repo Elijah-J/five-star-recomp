@@ -23,7 +23,7 @@ with real pipelines and bound descriptors, but rectangle lists, render-target st
 | Translator checks | 134 tests pass, most of them on D3D12 WARP, and 4 are skipped (they need a full 32 or 64-lane wave); ray intersection is bit-exact; the built-in RDNA decoder matches LLVM on all 44 million instructions of the corpus |
 | Archives | about 68% of all archive bytes extract without the encrypted file table; file names are not known |
 | Metadata (PSO) | 6,026 metadata files and about 39,700 paged resources parse completely |
-| Textures | 354,520 of 357,115 (99.3%) export across all 57 texture files; all 102,725 BCPack BC1 pages decode; 2,112 textures wait for the other BCPack codecs (mostly BC7) |
+| Textures | 354,998 of 357,115 (99.4%) export across all 57 texture files, including cube maps, arrays and volumes; every texture's layout fits its stored span; all 102,725 BCPack BC1 pages decode; the rest wait only for the other BCPack codecs (mostly BC7) |
 | Models | 4,304,343 of 4,306,994 geometries (99.94%) of 383,907 drawables decode across 7 archives: meshlets (including the large vehicle bodies whose meshlet starts wrap past 65,535), packed positions, normals, tangents, four texture coordinate sets, skin influences and inverse bind matrices; OBJ export |
 | Videos | 515 Bink 2 videos extract from `movies.rpf` |
 | Audio | all 1,603,231 sounds in `audio.rpf` export as Ogg Opus or WAV (Opus, XMA2, PCM); our XMA2 decoder matches FFmpeg on all 1,818 XMA2 streams (exact sample counts, at least 136 dB SNR) and can export them as PCM |
