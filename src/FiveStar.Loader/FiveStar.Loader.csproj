@@ -17,6 +17,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Opus decoding for the xapu.dll queue (BSD-3-Clause, THIRD_PARTY_NOTICES.md). -->
+    <PackageReference Include="Concentus" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="FiveStar.Loader.Tests" />
     <InternalsVisibleTo Include="FiveStar.Benchmarks" />
   </ItemGroup>

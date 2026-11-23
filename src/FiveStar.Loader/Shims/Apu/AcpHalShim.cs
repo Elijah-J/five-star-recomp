@@ -9,30 +9,39 @@ namespace FiveStar.Loader.Shims.Apu;
 /// <summary>
 /// acphal.dll, the console's audio co-processor HAL. Not in the public GDK headers: every signature here is inferred
 /// from the executable's call sites (argument registers, how the result is tested) and matches the shape of the
-/// older XDK APU API. The APU memory functions run on <see cref="ApuHeap"/>. The SHAPE hardware (AcpHalCreate,
-/// AcpHalAllocateShapeContexts) does not exist on a PC: those return E_NOTIMPL, which the game's audio start-up
-/// tests with <c>js</c> and turns into a clean "audio init failed" (the init routine returns false).
+/// older XDK APU API. The APU memory functions run on <see cref="ApuHeap"/>; the SHAPE functions on
+/// <see cref="AcpHalDevice"/>. They must succeed: when one fails, the game's audio start-up executes an <c>int3</c>.
 /// </summary>
 [ShimModule(Module, UnresolvedReturn = HResult.NotImplemented)]
 internal static unsafe class AcpHalShim
 {
     public const string Module = "acphal.dll";
 
-    private const long NotImplemented = HResult.NotImplemented;
-    private const long Nothing = 0;
+    /// <summary>HRESULT AcpHalCreate(IAcpHal** out): the caller then calls (*out)->vtbl[0](obj, 0x1000, 0x1000).</summary>
+    [Shim(Module, "AcpHalCreate")]
+    [UnmanagedCallersOnly]
+    private static int AcpHalCreate(nint* result)
+    {
+        return ShimContext.Runtime.AcpHal.Create(result);
+    }
 
-    [NotImplementedTable(Module)]
-    private static readonly (string Name, long ReturnValue)[] Catalog =
-    [
-        // HRESULT AcpHalCreate(IAcpHal** out): the caller then calls (*out)->vtbl[0](obj, 0x1000, 0x1000).
-        ("AcpHalCreate", NotImplemented),
+    /// <summary>HRESULT AcpHalAllocateShapeContexts(SHAPE_CONTEXTS* contexts): the caller zeroes count * 64 bytes at +0x38 on success.</summary>
+    [Shim(Module, "AcpHalAllocateShapeContexts")]
+    [UnmanagedCallersOnly]
+    private static int AcpHalAllocateShapeContexts(byte* contexts)
+    {
+        return ShimContext.Runtime.AcpHal.AllocateContexts(contexts);
+    }
 
-        // HRESULT AcpHalAllocateShapeContexts(SHAPE_CONTEXTS* contexts): the caller zeroes count * 64 bytes at +0x38 on success.
-        ("AcpHalAllocateShapeContexts", NotImplemented),
+    /// <summary>AcpHalReleaseShapeContexts(): called with no argument at teardown; the result is not read.</summary>
+    [Shim(Module, "AcpHalReleaseShapeContexts")]
+    [UnmanagedCallersOnly]
+    private static int AcpHalReleaseShapeContexts()
+    {
+        ShimContext.Runtime.AcpHal.ReleaseContexts();
 
-        // Teardown; the result is not read.
-        ("AcpHalReleaseShapeContexts", Nothing),
-    ];
+        return HResult.Ok;
+    }
 
     /// <summary>HRESULT ApuCreateHeap(UINT32 cachedSizeInBytes, UINT32 nonCachedSizeInBytes).</summary>
     [Shim(Module, "ApuCreateHeap")]

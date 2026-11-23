@@ -45,8 +45,11 @@ internal sealed class LoaderRuntime : IDisposable
         XMem = new XMemAllocator(Images, log);
         XMemPhysical = new XMemPhysicalMemory(log);
         XMemWorkingSet = new XMemWorkingSet(log);
-        Apu = new ApuHeap(log);
         Xg = new XgComputers(Stubs, CodeHeap);
+
+        Apu = new ApuHeap(log);
+        AcpHal = new AcpHalDevice(Apu, log);
+        XApu = new XApuDevice(log);
 
         D3D12 = new D3D12Forwarder(log);
         D3D12X = new XboxDeviceFactory(D3D12, Stubs, CodeHeap, log);
@@ -110,6 +113,12 @@ internal sealed class LoaderRuntime : IDisposable
     /// <summary>The acphal.dll APU heap.</summary>
     public ApuHeap Apu { get; }
 
+    /// <summary>The acphal.dll SHAPE contexts and IAcpHal object.</summary>
+    public AcpHalDevice AcpHal { get; }
+
+    /// <summary>xapu.dll: the Opus decode queue.</summary>
+    public XApuDevice XApu { get; }
+
     /// <summary>The DirectStorage factory XCRDAPI.dll hands out.</summary>
     public DStorageFactory Storage { get; }
 
@@ -134,6 +143,8 @@ internal sealed class LoaderRuntime : IDisposable
         Storage.Dispose();
         Xg.Dispose();
 
+        XApu.Dispose();
+        AcpHal.Dispose();
         Apu.Dispose();
         LastError.Dispose();
 
