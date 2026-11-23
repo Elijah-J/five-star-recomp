@@ -187,50 +187,57 @@ bool cmp_class(float x, uint m) {
 
 // ---- formatted buffer loads. code = layout*8 + numeric type (GCN dfmt/nfmt numbering), written into
 // V# dword3 by the D3D12.X shim (buffer_load_format) or taken from the instruction (tbuffer_load_format).
-float cvt_num(uint v, uint bits, uint num) {
-    uint mx = bits >= 32 ? 0xffffffffu : ((1u << bits) - 1);
-    int sv = bits >= 32 ? asint(v) : (asint(v << (32 - bits)) >> (32 - bits));
-    switch (num) {
-        case 0: return (float)v / (float)mx;                                  // UNORM
-        case 1: return max((float)sv / (float)(mx >> 1), -1.0);               // SNORM
-        case 2: return (float)v;                                              // USCALED
-        case 3: return (float)sv;                                             // SSCALED
-        case 7: return bits == 32 ? asfloat(v) : bits == 16 ? f16tof32(v) : (float)v; // FLOAT (11/10-bit handled by caller)
-    }
-    return 0;
+// Branch-free (select only, no switch or loop): FmtLoad is inlined at every call, and a program can hold thousands,
+// each of which would otherwise add dozens of blocks and an [unroll] loop that dxc unrolls against the whole function.
+// Fields per layout, components x..w: bit offset | width << 8 (width 0 = no component). AMD format names list fields
+// from the MSB: 2_10_10_10 = R10G10B10A2 (R in the low bits). 10_11_11 / 11_11_10: TODO.
+static const uint4 FMT_FIELDS[16] = {
+    uint4(0, 0, 0, 0),
+    uint4(0x800, 0, 0, 0),                      // 1: 8
+    uint4(0x1000, 0, 0, 0),                     // 2: 16
+    uint4(0x800, 0x808, 0, 0),                  // 3: 8_8
+    uint4(0x2000, 0, 0, 0),                     // 4: 32
+    uint4(0x1000, 0x1010, 0, 0),                // 5: 16_16
+    uint4(0, 0, 0, 0),
+    uint4(0, 0, 0, 0),
+    uint4(0x200, 0xa02, 0xa0c, 0xa16),          // 8: 10_10_10_2
+    uint4(0xa00, 0xa0a, 0xa14, 0x21e),          // 9: 2_10_10_10
+    uint4(0x800, 0x808, 0x810, 0x818),          // 10: 8_8_8_8
+    uint4(0x2000, 0x2020, 0, 0),                // 11: 32_32
+    uint4(0x1000, 0x1010, 0x1020, 0x1030),      // 12: 16_16_16_16
+    uint4(0x2000, 0x2020, 0x2040, 0),           // 13: 32_32_32
+    uint4(0x2000, 0x2020, 0x2040, 0x2060),      // 14: 32_32_32_32
+    uint4(0, 0, 0, 0),
+};
+uint fmt_field(uint4 w, uint field) {
+    uint off = field & 0xffu, bits = field >> 8, d = off >> 5;
+    uint word = select(d == 0u, w.x, select(d == 1u, w.y, select(d == 2u, w.z, w.w)));
+    return (word >> (off & 31u)) & select(bits >= 32u, 0xffffffffu, (1u << (bits & 31u)) - 1u);
+}
+uint fmt_convert(uint v, uint bits, uint num) {
+    uint mx = select(bits >= 32u, 0xffffffffu, (1u << (bits & 31u)) - 1u), sh = (32u - bits) & 31u;
+    int sv = select(bits >= 32u, asint(v), asint(v << sh) >> sh);
+    float un = (float)v / (float)mx;                                         // UNORM
+    float sn = max((float)sv / (float)(mx >> 1), -1.0);                      // SNORM
+    float fp = select(bits == 32u, asfloat(v), select(bits == 16u, f16tof32(v), (float)v));   // FLOAT
+    float f = select(num == 0u, un, select(num == 1u, sn, select(num == 2u, (float)v,   // USCALED
+              select(num == 3u, (float)sv, select(num == 7u, fp, 0.0)))));                 // SSCALED
+    return select(num == 4u, v, select(num == 5u, asuint(sv), asuint(f)));                 // UINT, SINT
+}
+uint fmt_component(uint4 w, uint field, uint num, uint missing) {
+    return select((field >> 8) != 0u, fmt_convert(fmt_field(w, field), field >> 8, num), missing);
 }
 uint4 FmtLoad(uint heap_index, uint addr, uint code) {
     ByteAddressBuffer b = ResourceDescriptorHeap[heap_index];
-    uint base = addr & ~3u, sh = (addr & 3u) * 8;
+    uint base = addr & ~3u, sh = (addr & 3u) * 8u;
     uint4 w = b.Load4(base); uint w4 = b.Load(base + 16);
-    if (sh != 0) w = uint4((w.x >> sh) | (w.y << (32 - sh)), (w.y >> sh) | (w.z << (32 - sh)), (w.z >> sh) | (w.w << (32 - sh)), (w.w >> sh) | (w4 << (32 - sh)));
-    uint layout = code >> 3, num = code & 7;
-    uint4 raw = uint4(0, 0, 0, 0); uint4 bits = uint4(0, 0, 0, 0); uint n = 0;
-    switch (layout) {
-        case 1:  raw.x = w.x & 0xff; bits = uint4(8, 0, 0, 0); n = 1; break;
-        case 2:  raw.x = w.x & 0xffff; bits = uint4(16, 0, 0, 0); n = 1; break;
-        case 3:  raw.xy = uint2(w.x & 0xff, (w.x >> 8) & 0xff); bits = uint4(8, 8, 0, 0); n = 2; break;
-        case 4:  raw.x = w.x; bits = uint4(32, 0, 0, 0); n = 1; break;
-        case 5:  raw.xy = uint2(w.x & 0xffff, w.x >> 16); bits = uint4(16, 16, 0, 0); n = 2; break;
-        // AMD format names list fields from the MSB: 2_10_10_10 = R10G10B10A2 (R in the low bits)
-        case 9:  raw = uint4(w.x & 0x3ff, (w.x >> 10) & 0x3ff, (w.x >> 20) & 0x3ff, w.x >> 30); bits = uint4(10, 10, 10, 2); n = 4; break;
-        case 8:  raw = uint4(w.x & 0x3, (w.x >> 2) & 0x3ff, (w.x >> 12) & 0x3ff, w.x >> 22); bits = uint4(2, 10, 10, 10); n = 4; break;
-        case 10: raw = uint4(w.x & 0xff, (w.x >> 8) & 0xff, (w.x >> 16) & 0xff, w.x >> 24); bits = uint4(8, 8, 8, 8); n = 4; break;
-        case 11: raw.xy = w.xy; bits = uint4(32, 32, 0, 0); n = 2; break;
-        case 12: raw = uint4(w.x & 0xffff, w.x >> 16, w.y & 0xffff, w.y >> 16); bits = uint4(16, 16, 16, 16); n = 4; break;
-        case 13: raw.xyz = w.xyz; bits = uint4(32, 32, 32, 0); n = 3; break;
-        case 14: raw = w; bits = uint4(32, 32, 32, 32); n = 4; break;
-        default: break;   // 10_11_11 / 11_11_10: TODO
-    }
-    uint4 r = uint4(0, 0, 0, (num == 4 || num == 5) ? 1u : asuint(1.0));
-    [unroll] for (uint i = 0; i < 4; i++) {
-        if (i < n) {
-            if (num == 4) r[i] = raw[i];
-            else if (num == 5) r[i] = bits[i] >= 32 ? raw[i] : asuint(asint(raw[i] << (32 - bits[i])) >> (32 - bits[i]));
-            else r[i] = asuint(cvt_num(raw[i], bits[i], num));
-        }
-    }
-    return r;
+    uint4 shifted = (w >> sh) | (uint4(w.yzw, w4) << ((32u - sh) & 31u));
+    w = select(sh != 0u, shifted, w);
+    uint layout = code >> 3, num = code & 7u;
+    uint4 fields = select(layout < 16u, FMT_FIELDS[layout & 15u], uint4(0, 0, 0, 0));
+    uint one = select(num - 4u <= 1u, 1u, asuint(1.0));
+    return uint4(fmt_component(w, fields.x, num, 0u), fmt_component(w, fields.y, num, 0u),
+                 fmt_component(w, fields.z, num, 0u), fmt_component(w, fields.w, num, one));
 }
 
 // ---- cube maps (AMD conventions). face: 0 +X, 1 -X, 2 +Y, 3 -Y, 4 +Z, 5 -Z
@@ -287,8 +294,7 @@ void FmtStore(uint heap_index, uint addr, uint code, uint4 v, uint n) {
     RWByteAddressBuffer b = ResourceDescriptorHeap[heap_index];
     uint layout = code >> 3, num = code & 7;
     bool ints = num == 4 || num == 5;
-    uint4 c = ints ? v : uint4(0, 0, 0, 0);
-    if (!ints) [unroll] for (uint i = 0; i < 4; i++) c[i] = asuint(asfloat(v[i]));   // keep bits, encode below
+    uint4 c = v;
     uint a = addr & ~3u;
     switch (layout) {
         case 4:  b.Store(a, ints ? c.x : enc_num(asfloat(v.x), 32, num)); break;

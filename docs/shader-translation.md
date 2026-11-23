@@ -37,7 +37,10 @@ Prints the program, code block and instruction counts and the first difference o
 ## Execution model
 
 - One HLSL invocation is one GPU lane. Every SGPR and VGPR is a `uint` variable (`s4`, `v7`, `s_vcc`, `s_m0`, `s_exec`).
-- EXEC is the per-lane bool `active`. VALU and memory results are written `if (active)`; stores and atomics are guarded.
+- EXEC is the per-lane bool `active`. A VALU result that only calls arithmetic and conversion functions is written
+  `v = select(active, (uint)(value), v)`, straight-line code (`PureExpression`); other VALU and memory results are
+  written `if (active)`; stores and atomics are guarded. EXEC stays a lane mask after an integer write (`active` is
+  refreshed from the bits), so saving and combining it later is bool logic, not ballots.
 - A lane mask held in SGPRs (v_cmp results, saved EXEC) is a per-lane bool `m_sN`; v_cmp writes `active && cond`.
 - A lane mask used as an integer (`s_bcnt1`, `s_ff1`, stored, compared) is rebuilt with `WaveActiveBallot` /
   `WaveActiveCountBits`; an integer SGPR pair used as a mask is tested with `lane_bit(lo, hi)`.
@@ -158,7 +161,7 @@ strip. The record size `GS_VTX_DW` is derived from the LDS write offsets between
 | Limit | Handling |
 |---|---|
 | Mesh output over 32 KB (D3D12 PC limit), or a GPU without mesh shaders | rewritten as a compute shader plus a vertex-pulling vertex shader (`MeshComputeFallback`, files `.msfb_cs.hlsl` / `.msfb_vs.hlsl`); `--mesh-fallbacks` builds it for every mesh program |
-| HLSL over 150,000 characters | compiled with `-Od` (dxc's optimizer is very slow on huge dispatch loops) |
+| HLSL over 2,500,000 characters | compiled with `-Od` (dxc's optimizer needs minutes on the largest programs) |
 | Wave size | AMD lane numbers are kept. Pixel, vertex and mesh programs emulate the console wave on any hardware wave size (see Wave size). A compute program that reads other lanes by number gets `[WaveSize(32 or 64)]` (`TranslationOptions.PinWaveSize`, on in `fivestar shader translate`), so it fails to load on a GPU without that wave size instead of computing wrong results |
 | f32 → f16 | `f32tof16_rne` (round to nearest even, as AMD) |
 | FMA | `mad` (the prelude's exact `fma32` exists but is slow) |
@@ -277,6 +280,11 @@ What cannot be emulated:
 cross-lane helpers, cube math, exact conversions) and `rdna_bvh.hlsli` are embedded in the assembly and written next
 to the generated HLSL.
 
+dxc inlines every helper at every call, so a helper that one instruction calls has no loops and few branches: `FmtLoad`
+picks its fields from a table with `select`, and the BVH box node handles its four children one call each. dxc unrolls
+an `[unroll]` loop by rebuilding analyses of the whole function, so a few thousand inlined loops in a large program
+cost tens of minutes.
+
 ## Commands
 
 ```
@@ -300,7 +308,7 @@ elapsed time, estimated time left and finish time, and the cache counts.
 
 dxc runs as `dxc.exe -T <stage>_6_7 -E main -HV 2021 -I <out> -Fo <name>.dxil`, one process per compile, with a 180 s
 limit; a timed-out compile is retried with `-Od` for 300 s (900 s with `--retry`); fallback compiles have 600 s.
-Sources over 150,000 characters use `-Od` from the start. dxc comes from `--dxc`, then `FIVESTAR_DXC`, then the
+Sources over 2,500,000 characters use `-Od` from the start. dxc comes from `--dxc`, then `FIVESTAR_DXC`, then the
 Windows SDK default when it exists, then `PATH`. Compiling in-process through `dxcompiler.dll` was measured no faster
 (a dxc.exe start costs about 10 ms against a median compile of 0.85 s), and a process can be killed at the limit
 while an in-process crash or allocation failure ends the whole run.

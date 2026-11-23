@@ -15,6 +15,7 @@ public static class PixelControlFlowCases
             ScalarLoop(),
             DivergentLoop(),
             NestedExecSave(),
+            ExecSaveAfterIntegerWrite(),
             VccBranches(),
             DiscardChecker(),
             DiscardQuad(),
@@ -136,6 +137,27 @@ public static class PixelControlFlowCases
         return new PixelCase("cf_exec_saved", Program, 2, ExecSavedResult) { Raw = true };
     }
 
+    // EXEC written as an integer, then saved, narrowed and restored as a lane mask: x < 5 runs v20.
+    private static PixelCase ExecSaveAfterIntegerWrite()
+    {
+        const string Program = """
+            v_cvt_u32_f32_e32 v10, v2
+            v_mov_b32 v20, 0
+            s_mov_b32 s13, -1
+            s_and_b32 exec_lo, exec_lo, s13
+            s_mov_b32 s14, exec_lo
+            v_cmp_gt_u32_e32 vcc_lo, 5, v10
+            s_and_b32 exec_lo, exec_lo, vcc_lo
+            v_mov_b32 v20, 7
+            s_mov_b32 exec_lo, s14
+            v_add_nc_u32_e32 v21, 1, v20
+            {EXPORT}
+            s_endpgm
+            """;
+
+        return new PixelCase("cf_exec_save_after_integer", Program, 2, ExecSaveAfterIntegerResult) { Raw = true };
+    }
+
     // s_cbranch_vccnz / vccz / s_branch on wave-uniform conditions (the PC wave is one quad; x < 4 is uniform per quad).
     private static PixelCase VccBranches()
     {
@@ -237,6 +259,16 @@ public static class PixelControlFlowCases
         }
 
         return [0, 0];
+    }
+
+    private static Expected[] ExecSaveAfterIntegerResult(PixelContext pixel)
+    {
+        if (pixel.X < 5)
+        {
+            return [7, 8];
+        }
+
+        return [0, 1];
     }
 
     private static Expected[] VccResult(PixelContext pixel)

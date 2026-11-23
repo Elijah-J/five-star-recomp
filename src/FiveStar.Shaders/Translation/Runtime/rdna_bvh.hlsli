@@ -70,34 +70,49 @@ void bvh_sort(inout uint ca, inout uint cb, inout float da, inout float db) {
     }
 }
 
+// Children of a box node. Written out per child rather than as [unroll] loops: each loop dxc unrolls costs a pass over
+// the whole function, and a program can inline this thousands of times.
+void bvh_child16(uint a, out float3 bmin, out float3 bmax) {
+    // per child 3 dwords of f16 pairs: (minx|miny<<16, minz|maxx<<16, maxy|maxz<<16)
+    uint d0 = MemLoad(a, 0u), d1 = MemLoad(a, 4u), d2 = MemLoad(a, 8u);
+    bmin = float3(f16tof32(d0), f16tof32(d0 >> 16), f16tof32(d1));
+    bmax = float3(f16tof32(d1 >> 16), f16tof32(d2), f16tof32(d2 >> 16));
+}
+void bvh_child32(uint a, out float3 bmin, out float3 bmax) {
+    bmin = bvh_load3f(a);
+    bmax = bvh_load3f(a + 12u);
+}
+uint bvh_child_hit(float3 org, float3 inv, float3 bmin, float3 bmax, float extent, float gf, uint child, out float key) {
+    float2 s = bvh_box(org, inv, bmin, bmax, extent);
+    precise float lim = s.y * gf;
+    key = s.x;                            // closest-entry sort key (min_t)
+    return (s.x <= lim) ? child : BVH_INVALID;
+}
+
 uint4 bvh_box_node(uint addr, bool box16, float extent, float3 org, float3 inv, uint grow, bool sort) {
     uint4 child = bvh_load4(addr);
     float3 bmin[4], bmax[4];
     if (box16) {
-        // 64-byte node: 4 child pointers, then per child 3 dwords of f16 pairs: (minx|miny<<16, minz|maxx<<16, maxy|maxz<<16)
-        [unroll] for (uint i = 0; i < 4; i++) {
-            uint a = addr + 16u + 12u * i;
-            uint d0 = MemLoad(a, 0u), d1 = MemLoad(a, 4u), d2 = MemLoad(a, 8u);
-            bmin[i] = float3(f16tof32(d0), f16tof32(d0 >> 16), f16tof32(d1));
-            bmax[i] = float3(f16tof32(d1 >> 16), f16tof32(d2), f16tof32(d2 >> 16));
-        }
+        // 64-byte node: 4 child pointers, then 12 bytes per child at 16 + 12*i
+        bvh_child16(addr + 16u, bmin[0], bmax[0]);
+        bvh_child16(addr + 28u, bmin[1], bmax[1]);
+        bvh_child16(addr + 40u, bmin[2], bmax[2]);
+        bvh_child16(addr + 52u, bmin[3], bmax[3]);
     } else {
         // 128-byte node: 4 child pointers, then per child min.xyz, max.xyz (f32) at 16 + 24*i
-        [unroll] for (uint i = 0; i < 4; i++) {
-            bmin[i] = bvh_load3f(addr + 16u + 24u * i);
-            bmax[i] = bvh_load3f(addr + 28u + 24u * i);
-        }
+        bvh_child32(addr + 16u, bmin[0], bmax[0]);
+        bvh_child32(addr + 40u, bmin[1], bmax[1]);
+        bvh_child32(addr + 64u, bmin[2], bmax[2]);
+        bvh_child32(addr + 88u, bmin[3], bmax[3]);
     }
     // growth factor 1 + grow * 2^-24 (one f32 multiply, one f32 add, as GPURT)
     precise float ge = (float)grow * 5.960464478e-8;
     precise float gf = 1.0 + ge;
     uint c[4]; float k[4];
-    [unroll] for (uint j = 0; j < 4; j++) {
-        float2 s = bvh_box(org, inv, bmin[j], bmax[j], extent);
-        precise float lim = s.y * gf;
-        c[j] = (s.x <= lim) ? child[j] : BVH_INVALID;
-        k[j] = s.x;                       // closest-entry sort key (min_t)
-    }
+    c[0] = bvh_child_hit(org, inv, bmin[0], bmax[0], extent, gf, child.x, k[0]);
+    c[1] = bvh_child_hit(org, inv, bmin[1], bmax[1], extent, gf, child.y, k[1]);
+    c[2] = bvh_child_hit(org, inv, bmin[2], bmax[2], extent, gf, child.z, k[2]);
+    c[3] = bvh_child_hit(org, inv, bmin[3], bmax[3], extent, gf, child.w, k[3]);
     if (sort) {
         bvh_sort(c[0], c[2], k[0], k[2]);
         bvh_sort(c[1], c[3], k[1], k[3]);

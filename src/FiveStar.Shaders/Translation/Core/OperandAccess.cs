@@ -125,17 +125,19 @@ internal sealed partial class OperandAccess
 
         var key = destination.At(component);
         _state.Touch(key);
-        _state.Masks.Remove(key);
-        _state.MaskHighHalves.Remove(key);
-        _state.MaskLanes.Remove(key);
         TrackConstant(key, value);
 
         if (key.Kind == RegisterKey.Scalar && (key.Index == SpecialRegisters.ExecLo || key.Index == SpecialRegisters.ExecHi))
         {
+            // EXEC stays a mask: `active` is refreshed from the bits, and reads of EXEC as an integer use a ballot anyway.
             WriteExecInteger(key, value);
 
             return;
         }
+
+        _state.Masks.Remove(key);
+        _state.MaskHighHalves.Remove(key);
+        _state.MaskLanes.Remove(key);
 
         if (key.Kind == RegisterKey.Scalar)
         {
@@ -379,6 +381,13 @@ internal sealed partial class OperandAccess
         if (keep is not null)
         {
             value = $"({keep} ? ({value}) : {key.Name})";
+        }
+
+        if (PureExpression.IsPure(value))
+        {
+            _state.Emit($"  {key.Name} = select(active, (uint)({value}), {key.Name});");
+
+            return;
         }
 
         _state.Emit($"  if (active) {key.Name} = {value};");
