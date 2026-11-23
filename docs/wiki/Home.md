@@ -6,6 +6,22 @@ Five Star Recomp works toward running the Xbox Series version of **Grand Theft A
 The console's CPU is x86-64, so the game code itself runs on a PC unchanged. The project rebuilds what surrounds it:
 GPU shaders, the console runtime, the graphics API and the data formats.
 
+```mermaid
+flowchart LR
+  subgraph dump["your Xbox Series dump"]
+    code["game code, x86-64"]
+    shaders["GPU programs, RDNA machine code"]
+    runtime["console runtime: GDK, xmem"]
+    gfx["graphics API: D3D12.X"]
+    data["archives, textures, models, audio"]
+  end
+  code -->|"runs unchanged, mapped by the loader"| pc["Windows PC"]
+  shaders -->|"translated to HLSL, compiled by dxc"| pc
+  runtime -->|"loader shims"| pc
+  gfx -->|"D3D12, needs the executable"| pc
+  data -->|"format readers"| pc
+```
+
 ## Pages
 
 | Page | Contents |

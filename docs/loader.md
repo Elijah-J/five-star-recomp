@@ -6,17 +6,19 @@ nothing is translated. Until the game executable is available it is exercised on
 
 ## Loading an image
 
-| Step | What happens |
-|---|---|
-| Map | `VirtualAlloc` at the preferred `ImageBase`, else anywhere (an image without `.reloc` then fails); headers and sections copied |
-| Relocate | `.reloc` entries DIR64, HIGHLOW, HIGH and LOW, when the base moved |
-| Exports | read before the imports are bound, so import cycles resolve |
-| Imports | normal and delay-load imports (delay imports bound at load), by name and by ordinal; order below |
-| Patch | the code patches for this module (below), while the pages are still writable |
-| Protect | `PAGE_*` per section from its characteristics; headers read-only |
-| `.pdata` | `RtlAddFunctionTable`, so SEH, C++ EH and stack walks work through the image |
-| TLS | a generated "TLS host" DLL (below) |
-| Entry | `DllMain(DLL_PROCESS_ATTACH)`, dependencies first; FALSE fails the load |
+```mermaid
+flowchart TD
+  map["Map<br/>VirtualAlloc at the preferred ImageBase, else anywhere<br/>(an image without .reloc then fails); headers and sections copied"]
+  reloc["Relocate<br/>.reloc entries DIR64, HIGHLOW, HIGH and LOW, when the base moved"]
+  exports["Exports<br/>read before the imports are bound, so import cycles resolve"]
+  imports["Imports<br/>normal and delay-load imports (delay imports bound at load),<br/>by name and by ordinal; order in Import resolution"]
+  patch["Patch<br/>the code patches for this module, while the pages are still writable"]
+  protect["Protect<br/>PAGE_* per section from its characteristics; headers read-only"]
+  pdata[".pdata<br/>RtlAddFunctionTable, so SEH, C++ EH and stack walks work through the image"]
+  tls["TLS<br/>a generated TLS host DLL"]
+  entry["Entry<br/>DllMain(DLL_PROCESS_ATTACH), dependencies first; FALSE fails the load"]
+  map --> reloc --> exports --> imports --> patch --> protect --> pdata --> tls --> entry
+```
 
 Unloading runs `DllMain(DLL_PROCESS_DETACH)`, frees the TLS host, deletes the function table and releases the memory,
 in reverse initialization order.
@@ -33,6 +35,23 @@ and executable at once. `--unresolved stub` (default) logs the first call and re
 terminates on the call; `error` fails the load.
 
 ## Import resolution
+
+```mermaid
+flowchart TD
+  unres["unresolved stub (--unresolved)"]
+  imp["import module!symbol"] --> shim{"shim for (module, symbol),<br/>a module alias or (*, symbol)?"}
+  shim -->|"yes"| bshim["the shim"]
+  shim -->|"no"| xbox{"Xbox-only module?"}
+  xbox -->|"listed as not implemented"| ni["stub returning the listed value"]
+  xbox -->|"any other symbol"| unres
+  xbox -->|"no"| img{"image already mapped, or a manual module<br/>in the search directories?"}
+  img -->|"yes"| exp{"exported?"}
+  exp -->|"yes"| bimg["the image's export; a forwarder resolves again"]
+  exp -->|"no"| unres
+  img -->|"no"| sys{"LoadLibraryExW from System32<br/>and the export found?"}
+  sys -->|"yes"| bsys["the System32 export"]
+  sys -->|"no"| unres
+```
 
 1. **Shim.** Matched on (module, symbol), then through a module alias, then on ("*", symbol). A module declared
    Xbox-only (`xmem.dll`, `d3d12_xs.dll`, `xgameruntime.dll`, `gameinput.dll`) never falls through: a function listed as not
@@ -74,13 +93,13 @@ ntdll answers only for OS-loaded modules; mapping it lets the loader bind that i
 | `XDisplay*` | HDR: Enabled with the display's luminance when the primary display's desktop runs HDR10 (DXGI `GetDesc1`), else Disabled; a timeout deferral holds a "display required" power request |
 | `XClosedCaption*`, `XHighContrastGetMode`, `XSpeechSynthesizerEnumerateInstalledVoices` | captions white on black at scale 1, enabled as the game last set; high contrast from the Windows setting; no voices |
 | `XLaunchUri`, `XLaunchRestartOnCrash`, `XGameInvite*`, `XGameActivation*`, `XGameProtocol*` | an http(s) URI opens in the browser, others are logged; restart arguments recorded; invite, activation and protocol events register and never fire |
+| `gameinput.dll` `GameInputCreate` | an IGameInput over XInput, the keyboard, the mouse and a keyboard-and-mouse virtual gamepad (below); also registered as `xgameruntime.dll!GameInputCreate` for the thunk ABI table |
 | other `xgameruntime.dll` functions of the public headers | not implemented: E_NOTIMPL, E_GAMESTREAMING_NOT_INITIALIZED for game streaming, or 0 for bool, count and void functions; first call logged |
 
 Of the 365 named thunks in `libHttpClient.GDK.dll`, 154 have a shim and 211 a not-implemented entry, so each one returns
 a deliberate value (before this table grew: 88 shims, 186 entries, 91 left to the module default). Of the 418 thunks of
 the PC GDK library, 177 have a shim. The library has no XAchievements, XUserStats, XThread affinity, XMemory or clock
 functions; achievements and stats are Xbox services that titles reach over HTTP.
-| `gameinput.dll` `GameInputCreate` | an IGameInput over XInput, the keyboard, the mouse and a keyboard-and-mouse virtual gamepad (below); also registered as `xgameruntime.dll!GameInputCreate` for the thunk ABI table |
 
 The GDK shims also answer for any `api-ms-win-*gaming*` or `ext-ms-win-*gaming*` module name, for symbols starting
 with `X`; other functions of those API sets go to System32.
@@ -141,6 +160,29 @@ GDK titles link `xgameruntime.lib`, which loads `xgameruntime.dll`, looks up `In
 `InitializeApiImplEx`, `InitializeApiImplEx2`, `QueryApiImpl`, `UninitializeApiImpl` and `XErrorReport`, and implements
 every `X*` call as `QueryApiImpl(&clsid, &iid, &object)` followed by a COM-style call through the object's vtable.
 `libHttpClient.GDK.dll` contains this library.
+
+```mermaid
+sequenceDiagram
+  participant T as GDK thunk in the image
+  participant Q as loader QueryApiImpl
+  participant O as object for (clsid, iid)
+  participant S as shim
+  T->>Q: QueryApiImpl(&clsid, &iid, &object)
+  alt pair in the --gdk-abi table
+    Q-->>T: the object of that pair
+  else no table entry
+    Q-->>T: REGDB_E_CLASSNOTREG
+  end
+  T->>O: call through vtable slot n
+  alt slot mapped to a function
+    O->>S: generated thunk drops this, shifts the arguments
+    S-->>T: result
+  else unmapped slot
+    O-->>T: E_NOTIMPL
+  end
+  T->>O: Release (slot 2)
+  O-->>T: no-op reference count
+```
 
 The loader answers `LoadLibraryExW("xgameruntime.dll")` with a virtual module, makes the `InitializeApiImpl*`
 functions succeed and logs `XErrorReport`. `QueryApiImpl` builds one object per (clsid, iid) from a table of

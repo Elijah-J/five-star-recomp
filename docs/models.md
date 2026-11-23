@@ -11,6 +11,38 @@ All values little-endian; offsets are from the object named.
 
 ## Objects
 
+```mermaid
+flowchart TD
+  subgraph virtual["virtual segment, pointers 0x50000000 + offset"]
+    root["Drawable root"]
+    sg["Shader group"]
+    ml["Model list, one per level of detail"]
+    model["Model"]
+    geom["Geometry"]
+    shader["Shader"]
+    tex["Texture"]
+    vbo["Vertex buffer object"]
+    mbo["Meshlet buffer object"]
+  end
+  subgraph physical["physical segment, pointers 0x60000000 + offset"]
+    vb["Vertex buffer: stream table, streams"]
+    mb["Meshlet buffer: meshlets, triangles, meshlet vertices"]
+  end
+  root -->|"+0x10"| sg
+  root -->|"+0x50 + 8 × lod"| ml
+  ml -->|"models"| model
+  model -->|"geometries"| geom
+  model -.->|"shader index per geometry"| shader
+  sg -->|"shaders"| shader
+  shader -->|"textures"| tex
+  tex -.->|"name hash"| etpf["ETPF hash list of the .ttpf files"]
+  geom -->|"+0x08"| vbo
+  geom -->|"+0x40 meshlet info"| mbo
+  vbo -->|"+0x18"| vb
+  mbo -->|"+0x18"| mb
+  mb -.->|"vertex buffer index per meshlet vertex"| vb
+```
+
 | Object | Offset | Meaning |
 |---|---|---|
 | Drawable root | +0x10 | Shader group |

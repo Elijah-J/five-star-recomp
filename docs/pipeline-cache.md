@@ -13,17 +13,32 @@ All integers are little-endian.
 
 ## Layout
 
-| Section | Size |
-|---|---|
-| Header | 0x80 |
-| Graphics pipeline records | 0x70 × graphics count |
-| Compute pipeline records | 0x18 × compute count |
-| Metadata index | 8 × metadata count: u32 offset (from the metadata area), u32 size |
-| Shader index | 8 × shader count: u32 offset (from the code area, 256-byte aligned), u32 size |
-| Metadata area | metadata bytes |
-| Code area | code bytes |
+The sections follow each other without padding:
 
-The sections follow each other without padding.
+```mermaid
+flowchart TD
+  header["Header: 0x80"]
+  graphics["Graphics pipeline records: 0x70 × graphics count"]
+  compute["Compute pipeline records: 0x18 × compute count"]
+  mindex["Metadata index: 8 × metadata count<br/>u32 offset (from the metadata area), u32 size"]
+  sindex["Shader index: 8 × shader count<br/>u32 offset (from the code area, 256-byte aligned), u32 size"]
+  marea["Metadata area: metadata bytes"]
+  carea["Code area: code bytes"]
+  header --- graphics --- compute --- mindex --- sindex --- marea --- carea
+```
+
+How the records reach their data:
+
+```mermaid
+flowchart LR
+  gr["graphics record"] -->|"0x08 state, 0x0C input layout,<br/>metadata entry of each slot"| mindex["metadata index"]
+  gr -->|"shader index of each slot"| sindex["shader index"]
+  cr["compute record"] -->|"0x08, 0x0C, 0x14"| mindex
+  cr -->|"0x10"| sindex
+  mindex -->|"offset, size"| marea["metadata area"]
+  sindex -->|"offset, size"| code["code block in the code area"]
+  code -.->|"same first 24 bytes"| fssm["code block of the extracted FSSM program"]
+```
 
 ### Header
 

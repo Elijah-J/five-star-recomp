@@ -9,6 +9,21 @@
 themselves: 103 nested `RPF9` headers sit on 4 KiB boundaries, each with its own encrypted table of contents. Their
 entries are AWC containers, which start with `ADAT`.
 
+```mermaid
+flowchart TD
+  rpf["audio.rpf: RPF9, 103 entries"] --> nested["nested RPF9 archive, on a 4 KiB boundary"]
+  nested --> awc["AWC container: ADAT"]
+  awc --> header["header: optional tables, stream info, chunk table"]
+  header --> stream["stream: id, chunk count"]
+  stream --> chunk["chunk: offset, size, tag"]
+  chunk --> data["0x55 audio data"]
+  chunk --> fmt["0x76 format of a single stream"]
+  chunk --> mfmt["0x48 format of a multichannel stream"]
+  chunk --> seek["0xA3 seek table"]
+  chunk --> peak["0x36 peak levels"]
+  mfmt -.->|"channels"| chan["the other, chunkless streams"]
+```
+
 | Found | Count | Bytes |
 |---|---|---|
 | AWC containers | 7,160 (7,159 on a 4 KiB boundary, one on a 16-byte boundary) | 26.55 GiB, 99.87% of the archive |

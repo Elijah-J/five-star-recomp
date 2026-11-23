@@ -44,6 +44,21 @@ The carver applies these rules:
 Paged resources keep their virtual and physical segments in separate chunk runs, so they come out as two blobs. When
 the virtual segment is an exact multiple of 64 KiB, the physical run is merged into it.
 
+```mermaid
+flowchart TD
+  start["entry start: 16-byte aligned zlib stream"] --> full{"entry a multiple of 64 KiB?"}
+  full -->|"no"| done["entry ends"]
+  full -->|"yes"| next{"chunk at the next 16-byte boundary"}
+  next -->|"zlib, at most 64 KiB"| full
+  next -->|"raw, PSO file"| pso["up to the size in CHKS"] --> full
+  next -->|"raw, zlib chunk 64 KiB later"| raw["a full 64 KiB"] --> full
+  next -->|"raw tail, other entry"| done
+  done --> kind{"blob kind"}
+  kind -->|"rsc or prd0"| virt["virtual segment"]
+  virt -->|"next blob, not rsc, prd0 or psin"| phys["phys: physical segment"]
+  phys -->|"virtual segment a multiple of 64 KiB"| merged["merged into the virtual blob"]
+```
+
 ### Blob kinds
 
 | Kind | Test on the inflated bytes |

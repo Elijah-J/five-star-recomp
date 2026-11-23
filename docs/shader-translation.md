@@ -5,14 +5,20 @@ model 6.7. Public entry: `HlslTranslator.Translate(ShaderProgram) -> Translation
 
 ## Pipeline
 
-1. **Load** (`ProgramLoader`): decode the FSSM header; disassemble the code (see Disassembly); read ISG1/OSG1/PSV0
-   from `<fssm folder>/../dxbc/<name>.dxbc` when present.
-2. **Blocks** (`ControlFlowTranslator`): rewrite long jumps, split into basic blocks, drop unreachable blocks.
-3. **Emitters** (`Translation/Emitters`): one emitter per instruction family turns each instruction into HLSL statements.
-4. **Program** (`Translation/Stages`, `Translation/Structure`): structs, declarations, prologue, structured control
-   flow (or the dispatch loop) and output mapping.
-5. **Compile** (`CorpusTranslator`, `DxcCompiler`): dxc, with the mesh fallback where needed or asked for;
-   `TranslationCache` and `CachedCompiler` reuse earlier results (see Cache).
+```mermaid
+flowchart TD
+  fssm["FSSM program"] --> load
+  dxbc["its DXBC container, when present"] -.->|"ISG1, OSG1, PSV0"| load
+  load["Load (ProgramLoader)<br/>decode the FSSM header, disassemble the code"]
+  load --> blocks["Blocks (ControlFlowTranslator)<br/>rewrite long jumps, split into basic blocks,<br/>drop unreachable blocks"]
+  blocks --> emit["Emitters (Translation/Emitters)<br/>one emitter per instruction family<br/>turns each instruction into HLSL statements"]
+  emit --> prog["Program (Translation/Stages, Translation/Structure)<br/>structs, declarations, prologue, structured control flow<br/>or the dispatch loop, output mapping"]
+  prog --> compile["Compile (CorpusTranslator, DxcCompiler)<br/>dxc, with the mesh fallback where needed or asked for"]
+  cache[("TranslationCache, CachedCompiler")] -.->|"earlier results"| compile
+  compile --> dxil["DXIL"]
+```
+
+The container is read from `<fssm folder>/../dxbc/<name>.dxbc` (see Disassembly and Cache).
 
 ## Disassembly
 
@@ -270,16 +276,28 @@ need a GPU with 64-lane waves: their waves branch apart, so a group barrier cann
 wave size, wave32 variant and mesh fallback, so a runtime picks the DXIL without reading HLSL. For an adapter
 (`AdapterInfo`):
 
-| Program | Runs | Outcome |
-|---|---|---|
-| any, adapter below shader model 6.7 | nothing | incorrect |
-| cs, not pinned or pin within `WaveLaneCountMin`-`Max` | native | ok |
-| cs, pin outside, with a wave32 variant | `<name>.w32.dxil` | variant |
-| cs, pin outside, no variant | native (fails to load) | incorrect |
-| ms, adapter with mesh shaders | native, or the fallback when only that compiled | ok / fallback |
-| ms, adapter without mesh shaders | the fallback (`--mesh-fallbacks`), else native (fails) | fallback / incorrect |
-| ms with a floor above `WaveLaneCountMin`, with mesh shaders and a superstep form | `<name>.w32.dxil` | variant |
-| ps, vs, gs, ms with a floor above `WaveLaneCountMin` | as above | incorrect |
+```mermaid
+flowchart TD
+  sm{"adapter has shader model 6.7?"} -->|"no"| none["incorrect"]
+  sm -->|"yes"| stage{"stage"}
+  stage -->|"cs"| pin{"pinned to a wave size outside<br/>WaveLaneCountMin-Max?"}
+  pin -->|"no"| csok["native: ok"]
+  pin -->|"yes"| gw{"wave32 variant?"}
+  gw -->|"yes"| csvar["name.w32.dxil: variant"]
+  gw -->|"no"| csbad["native, fails to load: incorrect"]
+  stage -->|"ms"| mn{"mesh shaders and<br/>native DXIL compiled?"}
+  mn -->|"no"| fb{"mesh fallback compiled?<br/>(--mesh-fallbacks)"}
+  fb -->|"no"| msbad["native, fails: incorrect"]
+  fb -->|"yes"| fallback["fallback"]
+  mn -->|"yes"| native["native"]
+  stage -->|"ps, vs, gs"| native
+  native --> floor{"floor above<br/>WaveLaneCountMin?"}
+  fallback --> floor
+  floor -->|"no"| ok["ok / fallback"]
+  floor -->|"yes"| ss{"native mesh program<br/>with a superstep form?"}
+  ss -->|"yes"| msvar["name.w32.dxil: variant"]
+  ss -->|"no"| floorbad["incorrect"]
+```
 
 The driver picks a graphics wave anywhere between `WaveLaneCountMin` and `Max`, so a floor counts only as met when
 `WaveLaneCountMin` reaches it. `fivestar shader plan` prints the counts per adapter and `fivestar shader pso` creates

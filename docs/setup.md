@@ -13,14 +13,23 @@ fivestar setup <dump folder> --clean-cache
 
 ## Steps
 
-| Step | Does | Output in the work folder | Depends on |
-|---|---|---|---|
-| `verify` | reads the title id and version from `MicrosoftGame.Config`; checks `shaders.rpf` and the texture page files exist. Another title fails; another version gives a warning | none | |
-| `shader-extract` | `fivestar shader extract` of `shaders.rpf` | `shaders/dxbc`, `shaders/fssm` | `verify` |
-| `shader-translate` | `fivestar shader translate --mesh-fallbacks` of every program, compiled with dxc through the shader cache | `shaders/hlsl` (HLSL, DXIL, `results.json`, `variants.json`), `shader-cache` | `shader-extract` |
-| `pipeline-cache` | `fivestar shader psocache` of the console pipeline cache, matched to the programs | `pipelines` (`pipelines.json`, `code/`) | `shader-extract` |
-| `textures` | `fivestar texture extract` of every page file | `textures/<page file path>/*.dds` | `verify` |
-| `gdk-abi` | `fivestar platform gdk-abi` from the PC GDK's `xgameruntime.lib`, for `fivestar-loader --gdk-abi`. Without a GDK it finishes with a note | `loader/gdk-abi.txt` | `verify` |
+```mermaid
+flowchart LR
+  verify["verify"] --> extract["shader-extract"]
+  extract --> translate["shader-translate"]
+  extract --> cache["pipeline-cache"]
+  verify --> textures["textures"]
+  verify --> gdk["gdk-abi"]
+```
+
+| Step | Does | Output in the work folder |
+|---|---|---|
+| `verify` | reads the title id and version from `MicrosoftGame.Config`; checks `shaders.rpf` and the texture page files exist. Another title fails; another version gives a warning | none |
+| `shader-extract` | `fivestar shader extract` of `shaders.rpf` | `shaders/dxbc`, `shaders/fssm` |
+| `shader-translate` | `fivestar shader translate --mesh-fallbacks` of every program, compiled with dxc through the shader cache | `shaders/hlsl` (HLSL, DXIL, `results.json`, `variants.json`), `shader-cache` |
+| `pipeline-cache` | `fivestar shader psocache` of the console pipeline cache, matched to the programs | `pipelines` (`pipelines.json`, `code/`) |
+| `textures` | `fivestar texture extract` of every page file | `textures/<page file path>/*.dds` |
+| `gdk-abi` | `fivestar platform gdk-abi` from the PC GDK's `xgameruntime.lib`, for `fivestar-loader --gdk-abi`. Without a GDK it finishes with a note | `loader/gdk-abi.txt` |
 
 `variants.json` lists every compiled program with its DXIL forms (native, wave32 variant or mesh superstep form, mesh fallback) and wave
 floor, so the runtime picks the form for the GPU without reading HLSL (see

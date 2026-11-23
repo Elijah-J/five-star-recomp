@@ -6,6 +6,21 @@ bitcode; an Xbox XDAT wrapper in its place holds the native RDNA program (FSSM, 
 ([pipeline-cache.md](pipeline-cache.md)). Code:
 `src/FiveStar.Shaders/Containers`.
 
+```mermaid
+flowchart TD
+  rpf["shaders.rpf"] --> sgd["SGD5 tables: sgd1, sgd2, ..."]
+  rpf --> cache["driver pipeline cache (pipeline-cache.md)"]
+  sgd --> rec["shader record: name, tag, sizes"]
+  rec -->|"raw deflate"| dxbc["DXBC container"]
+  dxbc --> chunks["SFI0, ISG1, OSG1, PSV0, HASH, PRIV"]
+  dxbc --> dxil["DXIL chunk: program header"]
+  dxil --> xdat["XDAT wrapper, in place of the bitcode"]
+  xdat --> s12["section 0x12: compressed and decompressed size"]
+  xdat --> s0d["section 0x0D: zlib stream"]
+  xdat --> s07["section 0x07: NOBC"]
+  s0d -->|"inflate"| fssm["FSSM program (fssm.md)"]
+```
+
 All integers are little-endian.
 
 ## SGD5 tables

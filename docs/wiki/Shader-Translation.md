@@ -4,6 +4,24 @@ The game ships its GPU programs only as native AMD RDNA (gfx10) machine code. Th
 its bitcode removed, so the PC driver cannot compile it. The translator turns the machine code into HLSL, which
 `dxc` compiles to DXIL for any PC GPU.
 
+```mermaid
+flowchart TD
+  rpf["shaders.rpf"] --> sgd["SGD5 shader records"]
+  sgd --> dxbc["DXBC container: signatures, DXIL chunk without bitcode"]
+  dxbc --> xdat["XDAT wrapper"]
+  xdat --> fssm["FSSM: header and RDNA machine code"]
+  fssm --> decode["decode the machine code"]
+  decode --> translate["translate"]
+  dxbc -.->|"signatures"| translate
+  translate --> hlsl["HLSL"]
+  hlsl --> dxc["dxc"]
+  dxc --> dxil["DXIL, shader model 6.7"]
+  dxil --> variants["variants.json: the form each GPU runs"]
+  dxil --> pso["pipeline checks on a GPU"]
+  rpf --> cache["driver pipeline cache"]
+  cache -.->|"VS+PS and MS+PS pairs"| pso
+```
+
 ## Model
 
 | Console concept | HLSL translation |

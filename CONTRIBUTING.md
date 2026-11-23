@@ -69,8 +69,8 @@ lists each violation as `path:line: [Rule] message`.
 
 Short, factual and to the point.
 
-- One page per subject in `docs/`: what it is, the exact layout or behaviour (tables for binary layouts), how to use
-  the tool. Nothing else.
+- One page per subject in `docs/`: what it is, the exact layout or behaviour (tables for binary layouts and other
+  data, a Mermaid diagram for a structure or flow), how to use the tool. Nothing else.
 - Facts only. Mark what is unconfirmed once, in an "Unknown" section.
 - No status notes, history or task lists. There is no changelog file: the git history is the changelog, so commit
   subjects must say what changed.
