@@ -31,12 +31,10 @@ internal sealed unsafe class FramePacer
 
     private const long MicrosecondsPerSecond = 1_000_000;
 
-    /// <summary>HRESULT_FROM_WIN32(WAIT_TIMEOUT).</summary>
-    private const int WaitTimeout = unchecked((int)0x80070102);
-
     private const long MillisecondsPerSecond = 1000;
 
     private readonly long[] _offsets = new long[EventTypes];
+    private readonly bool[] _scheduled = new bool[EventTypes];
     private FrameGrid _grid;
 
     /// <summary>The last token a present carried on the current grid; 0 for none.</summary>
@@ -99,19 +97,24 @@ internal sealed unsafe class FramePacer
         }
 
         Volatile.Write(ref _offsets[type], microseconds * Stopwatch.Frequency / MicrosecondsPerSecond);
+        Volatile.Write(ref _scheduled[type], true);
     }
 
-    /// <summary>Slot 80: (type, timeout in ms, flags, token in/out).</summary>
+    /// <summary>
+    /// Slot 80: (type, timeout in ms, flags, token in/out). S_FALSE when a finite timeout ends first, E_INVALIDARG for
+    /// an event type slot 79 never scheduled (the origin always counts as scheduled); the game breaks only on a failing
+    /// HRESULT (0x14248463e, 0x14248244e, 0x14248240d).
+    /// </summary>
     [HotPath]
     public int Wait(uint type, uint timeout, uint flags, ulong* token)
     {
-        var grid = Grid;
-        long offset = 0;
-
-        if (type < EventTypes)
+        if (type >= EventTypes || (type != OriginEvent && !Volatile.Read(ref _scheduled[type])))
         {
-            offset = Volatile.Read(ref _offsets[type]);
+            return HResult.InvalidArgument;
         }
+
+        var grid = Grid;
+        long offset = Volatile.Read(ref _offsets[type]);
 
         long now = Stopwatch.GetTimestamp();
         ulong reached = Reached(grid, offset, now);
@@ -155,7 +158,7 @@ internal sealed unsafe class FramePacer
             {
                 PreciseWait.Until(limit);
 
-                return WaitTimeout;
+                return HResult.False;
             }
         }
 

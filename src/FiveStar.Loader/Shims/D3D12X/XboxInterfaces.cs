@@ -25,6 +25,7 @@ internal static class XboxInterfaces
     private const int SmallSlotCount = 64;
 
     private static readonly int PlainObjectSize = Unsafe.SizeOf<XboxObject>();
+    private static readonly int DeviceObjectSize = Unsafe.SizeOf<XboxDeviceObject>();
     private static readonly int ResourceObjectSize = Unsafe.SizeOf<XboxResourceObject>();
     private static readonly int DescriptorHeapObjectSize = Unsafe.SizeOf<XboxDescriptorHeapObject>();
     private static readonly int FenceObjectSize = Unsafe.SizeOf<XboxFenceObject>();
@@ -93,7 +94,7 @@ internal static class XboxInterfaces
 
     private static readonly XboxInterface[] All =
     [
-        new(XboxInterfaceKind.Device, "ID3D12Device", MaxSlotCount, PlainObjectSize, DeviceSlots),
+        new(XboxInterfaceKind.Device, "ID3D12Device", MaxSlotCount, DeviceObjectSize, DeviceSlots),
         Child(XboxInterfaceKind.CommandQueue, "ID3D12CommandQueue", QueueObjectSize, QueueSlots),
         Child(XboxInterfaceKind.CommandAllocator, "ID3D12CommandAllocator", PlainObjectSize, AllocatorSlots),
         new(XboxInterfaceKind.CommandList, "ID3D12GraphicsCommandList", MaxSlotCount, CommandListObjectSize, [.. Common, .. ListSlots]),

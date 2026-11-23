@@ -138,6 +138,12 @@ internal sealed unsafe class XboxObjects
     public nint WrapDevice(nint inner)
     {
         nint wrapper = Wrap(XboxInterfaceKind.Device, inner);
+
+        if (wrapper != 0)
+        {
+            ((XboxDeviceObject*)wrapper)->DescriptorCalls = XboxDeviceObject.ThroughSlots;
+        }
+
         Volatile.Write(ref _desktopDevice, inner);
         Volatile.Write(ref _device, wrapper);
 

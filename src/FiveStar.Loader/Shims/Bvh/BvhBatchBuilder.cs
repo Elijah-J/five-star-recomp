@@ -8,11 +8,11 @@ using FiveStar.Shaders.Bvh;
 namespace FiveStar.Loader.Shims.Bvh;
 
 /// <summary>
-/// BuildRaytracingAccelerationStructureBatched2X on the CPU for bottom-level structures: each desc's geometry is read
-/// from game memory through the CPU addresses of its buffers, built with <see cref="XdxrBlas"/> and written to the
-/// destination, provided it fits in the size the console reports for the same inputs (the size the game allocated).
-/// Compacted-size and current-size requests get the structure size. Top-level builds are skipped: the console's
-/// instance-node encoding is not known yet (docs/raytracing.md).
+/// BuildRaytracingAccelerationStructureBatched2X on the CPU: a bottom-level desc's geometry is read from game memory
+/// through the CPU addresses of its buffers and built with <see cref="XdxrBlas"/>; a top-level desc's instance descs
+/// and the headers of their BLASes are read the same way and built with <see cref="XdxrTlas"/>. The structure is
+/// written to the destination provided it fits in the size the console reports for the same inputs (the size the game
+/// allocated). Compacted-size and current-size requests get the structure size.
 /// </summary>
 internal sealed unsafe class BvhBatchBuilder
 {
@@ -35,7 +35,8 @@ internal sealed unsafe class BvhBatchBuilder
     private const uint CompactedSize = 0;
     private const uint CurrentSize = 3;
 
-    /// <summary>D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL.</summary>
+    /// <summary>D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL and _BOTTOM_LEVEL.</summary>
+    private const uint TopLevel = 0;
     private const uint BottomLevel = 1;
 
     /// <summary>D3D12_ELEMENTS_LAYOUT_ARRAY_OF_POINTERS.</summary>
@@ -48,6 +49,7 @@ internal sealed unsafe class BvhBatchBuilder
     private readonly ConsoleBvhModule? _console;
     private readonly OnceLog _once;
     private readonly List<BvhTriangle> _triangles = [];
+    private readonly List<BvhInstance> _instances = [];
     private readonly object _gate = new();
 
     /// <param name="memory">Where console GPU addresses are read and written.</param>
@@ -81,9 +83,16 @@ internal sealed unsafe class BvhBatchBuilder
 
     private bool BuildOne(byte* desc)
     {
-        if (*(uint*)(desc + TypeOffset) != BottomLevel)
+        uint type = *(uint*)(desc + TypeOffset);
+
+        if (type == TopLevel)
         {
-            return Skip("top-level build: instance-node layout unknown");
+            return BuildTopLevel(desc);
+        }
+
+        if (type != BottomLevel)
+        {
+            return Skip("unknown acceleration-structure type");
         }
 
         if (!TryReadTriangles(desc))
@@ -91,8 +100,26 @@ internal sealed unsafe class BvhBatchBuilder
             return Skip("geometry unreadable or in an unsupported format");
         }
 
-        var structure = XdxrBlas.Build(_triangles);
+        return Store(desc, XdxrBlas.Build(_triangles));
+    }
 
+    private bool BuildTopLevel(byte* desc)
+    {
+        _instances.Clear();
+        uint count = *(uint*)(desc + CountOffset);
+        bool pointers = *(uint*)(desc + LayoutOffset) == ArrayOfPointers;
+        ulong address = *(ulong*)(desc + GeometriesOffset);
+
+        if (count > 0 && !InstanceDescs.TryRead(address, count, pointers, _memory, _instances))
+        {
+            return Skip("instance descs unreadable");
+        }
+
+        return Store(desc, XdxrTlas.Build(_instances));
+    }
+
+    private bool Store(byte* desc, byte[] structure)
+    {
         if ((ulong)structure.Length > AllocatedSize(desc))
         {
             return Skip("structure larger than the console size");

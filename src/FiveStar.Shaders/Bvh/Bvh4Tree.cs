@@ -6,9 +6,9 @@ using System.Numerics;
 namespace FiveStar.Shaders.Bvh;
 
 /// <summary>
-/// A 4-wide hierarchy over triangles, split top-down: each box sorts its triangles by centroid along the longest axis
-/// of their centroid bounds and hands each quarter to a child. Boxes are numbered in preorder (the root is 0); a
-/// triangle child is a position in <see cref="Order"/>.
+/// A 4-wide hierarchy over leaves (triangles or instances) given by their bounds, split top-down: each box sorts its
+/// leaves by centroid along the longest axis of their centroid bounds and hands each quarter to a child. Boxes are
+/// numbered in preorder (the root is 0); a leaf child is a position in <see cref="Order"/>.
 /// </summary>
 internal sealed class Bvh4Tree
 {
@@ -17,40 +17,33 @@ internal sealed class Bvh4Tree
     private const int AxisY = 1;
     private const int AxisZ = 2;
 
-    private readonly IReadOnlyList<BvhTriangle> _triangles;
     private readonly BvhBounds[] _bounds;
     private readonly Vector3[] _centroids;
     private readonly float[] _keys;
     private readonly List<Bvh4Child[]> _boxes = [];
 
-    public Bvh4Tree(IReadOnlyList<BvhTriangle> triangles)
+    public Bvh4Tree(IReadOnlyList<BvhBounds> leaves)
     {
-        _triangles = triangles;
-        _bounds = new BvhBounds[triangles.Count];
-        _centroids = new Vector3[triangles.Count];
-        _keys = new float[triangles.Count];
-        Order = new int[triangles.Count];
+        _bounds = new BvhBounds[leaves.Count];
+        _centroids = new Vector3[leaves.Count];
+        _keys = new float[leaves.Count];
+        Order = new int[leaves.Count];
 
-        for (int i = 0; i < triangles.Count; i++)
+        for (int i = 0; i < leaves.Count; i++)
         {
-            _bounds[i] = BvhBounds.Of(triangles[i]);
+            _bounds[i] = leaves[i];
             _centroids[i] = (_bounds[i].Min + _bounds[i].Max) * Half;
             Order[i] = i;
         }
     }
 
-    /// <summary>Triangle indices in leaf order.</summary>
+    /// <summary>Leaf indices in leaf order.</summary>
     public int[] Order { get; }
 
     /// <summary>The children of each box, by box index.</summary>
     public IReadOnlyList<Bvh4Child[]> Boxes => _boxes;
 
-    public BvhTriangle Triangle(int position)
-    {
-        return _triangles[Order[position]];
-    }
-
-    /// <summary>Builds the boxes over every triangle; there must be at least one.</summary>
+    /// <summary>Builds the boxes over every leaf; there must be at least one.</summary>
     public void Build()
     {
         Subdivide(0, Order.Length);
