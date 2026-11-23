@@ -21,6 +21,19 @@ internal static unsafe class D3D12XsShim
         return ShimContext.Runtime.D3D12.SerializeVersionedRootSignature(desc, blob, error);
     }
 
+    /// <summary>
+    /// D3D12ConfigureVirtualMemoryX(config): the console's GPU virtual-address layout, set before the game reserves its
+    /// GPU memory. A desktop GPU has its own, so this accepts any configuration; the game stops on a failure.
+    /// </summary>
+    [Shim("d3d12_xs.dll", "D3D12ConfigureVirtualMemoryX")]
+    [UnmanagedCallersOnly]
+    private static int D3D12ConfigureVirtualMemoryX(nint configuration)
+    {
+        ShimContext.Runtime.Log.Detail($"  [d3d12] D3D12ConfigureVirtualMemoryX(0x{configuration:x}) -> S_OK");
+
+        return HResult.Ok;
+    }
+
     [Shim("d3d12_xs.dll", "D3D12SerializeRootSignature")]
     [UnmanagedCallersOnly]
     private static int D3D12SerializeRootSignature(nint desc, uint version, nint* blob, nint* error)
