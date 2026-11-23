@@ -118,6 +118,8 @@ internal sealed class CommandLineParser
                 return SetD3D12Debug(true);
             case "--present-test":
                 return SetPresentTest();
+            case "--raytracing":
+                return SetRayTracing();
             default:
                 throw new CommandLineException($"unknown argument {option}");
         }
@@ -318,6 +320,13 @@ internal sealed class CommandLineParser
     private bool SetPresentTest()
     {
         _options.PresentTest = true;
+
+        return true;
+    }
+
+    private bool SetRayTracing()
+    {
+        _options.RayTracing = true;
 
         return true;
     }

@@ -40,7 +40,7 @@ public sealed unsafe class DumpTests : IClassFixture<DumpFixture>
         var outcomes = caller.Run("all");
 
         Assert.NotNull(outcomes);
-        Assert.Equal(8, outcomes.Count);
+        Assert.Equal(9, outcomes.Count);
         Assert.All(outcomes, o => Assert.True(o.Result is not null && o.Result.AsExpected, $"{o.Alias}: {o.Result?.Summary ?? o.Error}"));
     }
 
