@@ -61,6 +61,10 @@ flowchart LR
   Mapping splits the 64 KiB slot off (`VirtualFree(MEM_RELEASE | MEM_PRESERVE_PLACEHOLDER)`) and replaces it with a
   view; a remap unmaps the old view first. Unmapping a whole reservation through `XMemMapPhysicalPages` merges it back
   into one placeholder (`MEM_COALESCE_PLACEHOLDERS`).
+- **GPU aliases**: a GPU-only reservation (PAGE_NOACCESS plus PAGE_GRAPHICS_* bits) of the same size as the
+  CPU-accessible mappable reservation made just before it is that range's GPU alias: the game maps pages only into
+  the CPU range and addresses the GPU at the same offset in the alias ([gpu-resources.md](gpu-resources.md)).
+  `TryLocate` and `CpuAddress` resolve alias addresses to the CPU range.
 - **Other types**: MEM_RESERVE_PLACEHOLDER makes a placeholder for the game to split; everything else goes to
   `VirtualAlloc` (or `VirtualAlloc2` with MEM_REPLACE_PLACEHOLDER) with MEM_RESERVE/MEM_COMMIT and the low protection
   byte.
