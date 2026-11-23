@@ -117,7 +117,7 @@ ntdll answers only for OS-loaded modules; mapping it lets the loader bind that i
 | other `XStore*` the game calls | an unreachable store; no license or entitlement is ever reported. `XStoreAcquireLicenseFor{Package,Durables}*`, consumable balance and fulfillment, user collections/purchase ids and package downloads complete with E_GAMESTORE_NETWORK_ERROR (0x89245301) and no handle; `XStoreIsLicenseValid` false; entitled/associated product queries return an empty one-page query handle; the update query finds no updates; purchase, product page and redeem UI end with E_ABORT; `XStoreQueryPackageIdentifier` maps only the game's store id; license-changed and license-lost events register and never fire |
 | `XSystem*`, `XThread*`, `XGameGetXboxTitleId`, `XGameEventWrite`, `XError*`, `XPersistentLocalStorage*` | device type 7 (Series X) unless `--device-type`; fixed console and sandbox ids; app-specific device id: Base64 SHA-256 of title id and PC name; any non-null handle valid; time sensitivity per thread; title id from the config; events dropped; local storage in `--save-dir\localstorage`, a space prompt succeeds when the space is free, else E_ABORT |
 | `XGameUi*` | no system UI: dialogs complete through XAsync as if closed at once; S_OK for achievements, profile card, invites, error and state share; the message dialog answers its cancel button; the player picker picks nobody; text entry and web sign-in end with E_ABORT |
-| `XNetworking*` | connectivity hint: network initialized, level None, cost unrestricted; preferred UDP port 3074 (sync and async); change events register and never fire; `XNetworkingQuerySecurityInformationForUrl*` completes and `XNetworkingVerifyServerCertificate` fails (closed) with HRESULT_FROM_WIN32(ERROR_NETWORK_UNREACHABLE): the request handle belongs to the game's HTTP stack and no request is live offline |
+| `XNetworking*` | connectivity hint: network initialized, cost unrestricted, level None (`--network offline`) or InternetAccess (`--network sealed-online`; `--network-level` overrides); sealed online each connectivity-change callback runs once on its queue right after it registers, offline never; preferred UDP port 3074 (sync and async); the port-change event registers and never fires; `XNetworkingQuerySecurityInformationForUrl*` completes and `XNetworkingVerifyServerCertificate` fails (closed) with HRESULT_FROM_WIN32(ERROR_NETWORK_UNREACHABLE): the request handle belongs to the game's HTTP stack and no request is live offline |
 | `XDisplay*` | HDR: Enabled with the display's luminance when the primary display's desktop runs HDR10 (DXGI `GetDesc1`), else Disabled; a timeout deferral holds a "display required" power request |
 | `XClosedCaption*`, `XHighContrastGetMode`, `XSpeechSynthesizer*` | captions white on black at scale 1, enabled as the game last set; high contrast from the Windows setting; no voices; `XSpeechSynthesizerCreate` HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED), so no synthesizer or stream handle exists and the calls taking one return E_INVALIDARG |
 | `XLaunchUri`, `XLaunchRestartOnCrash`, `XLaunchNewGame`, `XGameInvite*`, `XGameActivation*`, `XGameProtocol*` | an http(s) URI opens in the browser, others are logged; restart arguments recorded; a new-game launch is logged and the game keeps running; invite, activation and protocol events register and never fire |
@@ -136,6 +136,38 @@ with `X`; other functions of those API sets go to System32.
 A shim that reports a last error is entered through a generated wrapper that writes `TEB.LastErrorValue` after the
 managed method returns, because the runtime's return path resets the value a managed `SetLastError` set. The wrapper
 copies up to 8 stack arguments (the fifth and later) into its own call.
+
+## Network seal
+
+No connection leaves the process, whatever `--network` says. The executable imports WinHTTP and Winsock (most of
+ws2_32 by ordinal), `libHttpClient.GDK.dll` and `XCurl.dll` import WinHTTP; these entry points are shims for every
+importer, by name and by ordinal, and `GetProcAddress` on the system DLL hands out the same shims.
+
+| Entry point | Sealed answer |
+|---|---|
+| `WinHttpConnect` | NULL, ERROR_WINHTTP_NAME_NOT_RESOLVED: no connection handle ever exists |
+| `WinHttpOpenRequest`, `WinHttpSendRequest`, `WinHttpReceiveResponse`, `WinHttpReadData`, `WinHttpWriteData`, `WinHttpQueryDataAvailable` | NULL or FALSE, ERROR_WINHTTP_CANNOT_CONNECT |
+| `getaddrinfo`, `GetAddrInfoW`, `GetAddrInfoExW`, `GetAddrInfoExA`, `gethostbyname`, `gethostbyaddr` | WSAHOST_NOT_FOUND; `getaddrinfo` and `GetAddrInfoW` of this computer's own name, `""` and `localhost` go to Windows, which answers them from the local interfaces |
+| `connect`, `WSAConnect`, `WSAConnectByName{W,A}`, `WSAConnectByList`, `sendto`, `WSASendTo` | SOCKET_ERROR or FALSE, WSAENETUNREACH (WSAHOST_NOT_FOUND for the by-name connects) |
+| `listen` | WSAENETDOWN |
+| `WSAIoctl` | WSAEOPNOTSUPP, so ConnectEx and WSASendMsg cannot be fetched |
+| `HCInitialize` (libHttpClient) | installs a perform function with `HCSetHttpCallPerformFunction`, then runs the library's own; every `HCHttpCallPerformAsync` completes with network error HRESULT_FROM_WIN32(ERROR_WINHTTP_NAME_NOT_RESOLVED) |
+
+Sockets are still created and bound, so a bound UDP port can appear (the game binds 0.0.0.0:3074 once its host-name
+lookup succeeds), but nothing can be sent from it. Each blocked target is logged once as
+`[network] blocked <function> <host:port | URL>`, each local lookup as `[network] allowed ...`. Session, option,
+header and URL-cracking WinHTTP functions stay with the system DLL; they send nothing.
+
+**How the executable reads the hint.** Three call sites; each checks the HRESULT and reads one field.
+
+| Reader | Field | Used for |
+|---|---|---|
+| "has internet" (RVA `0xf9d80`; false without a call while a global byte flag is set) | level 3 or 4 | an online-state monitor (RVA `0x266ea0`, which flips its online flag on a change), a ten-state machine (RVA `0x3dd4e10`, which without internet records failure reason 12), two more callers |
+| "network initialized" (RVA `0x18e7260`, behind `XGameRuntimeIsFeatureAvailable(XNetworking)`) | `networkInitialized` | three callers |
+| start-up wait (RVA `0x1cf8f00`) | `networkInitialized` | when false: registers a change callback with an event as context and waits on it, then unregisters |
+
+Levels Unknown, None and LocalAccess therefore take the same branches; only InternetAccess and
+ConstrainedInternetAccess differ.
 
 ## Code patches
 
@@ -329,6 +361,8 @@ fivestar-loader --load $dump\XboxBvhBuilder.dll --load $dump\Bink2Scarlett.dll -
 | `--gdk-abi <file>` | the thunk ABI table; default: from an installed PC GDK |
 | `--package-root <dir>` | where `MicrosoftGame.config` is read; default the main image's directory |
 | `--device-type <n>` | `XSystemGetDeviceType` result |
+| `--network offline\|sealed-online` | the connectivity level reported: None (default) or InternetAccess; outbound traffic is sealed either way ([Network seal](#network-seal)) |
+| `--network-level <l>` | report this level instead: 0..4 or `Unknown`, `None`, `LocalAccess`, `InternetAccess`, `ConstrainedInternetAccess` |
 | `--patches <file or folder>` | code patches (repeatable) |
 | `--mods <dir>` | mod folder over the package root (repeatable, first has priority) |
 | `--input <file>` | the keyboard-and-mouse gamepad mapping |
@@ -412,7 +446,8 @@ Most of the thunk path is `QueryApiImpl`'s lookup of the (clsid, iid) object und
 
 - The signatures of `XThreadVerifyNotTimeSensitive` and `XPackageGetIdentifier`, which the PC library exports but no
   public header declares (the first is answered with S_OK, the second is not implemented).
-- Whether the console reports connectivity level None or LocalAccess when Xbox services are unreachable.
+- Whether the console reports connectivity level None or LocalAccess when Xbox services are unreachable, and whether
+  it runs a connectivity-change callback at registration (sealed online runs each once).
 - The names of console-only thunks the PC GDK lacks (43 in `libHttpClient.GDK.dll`, most of them XUser through a
   console-only interface id), and the API-set names the game imports GDK functions from (the alias is a pattern).
 - Signatures inferred from call sites: `InitializeApiImpl*`, `QueryApiImpl`, `XErrorReport`, `XMemVirtualQuery`,
