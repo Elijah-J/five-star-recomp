@@ -110,6 +110,8 @@ internal sealed class CommandLineParser
                 return SetRunTimeout();
             case "--trace-system":
                 return SetTraceSystem();
+            case "--ffx":
+                return SetFidelityFxLibrary();
             default:
                 throw new CommandLineException($"unknown argument {option}");
         }
@@ -287,6 +289,13 @@ internal sealed class CommandLineParser
     private bool SetTraceSystem()
     {
         _options.TraceSystemCalls = true;
+
+        return true;
+    }
+
+    private bool SetFidelityFxLibrary()
+    {
+        _options.FidelityFxLibrary = Path.GetFullPath(Next());
 
         return true;
     }

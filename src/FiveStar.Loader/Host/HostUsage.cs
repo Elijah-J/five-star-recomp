@@ -25,7 +25,9 @@ internal static class HostUsage
           --translated-dir <dir> translated DXIL programs (fivestar shader translate)
           --gdk-abi <file>       XGameRuntime thunk ABI table: "clsid iid slot FunctionName" per line
           --input <file>         GameInput keyboard-and-mouse gamepad mapping ("setting value" per line)
-          --package-root <dir>   package root for XPackage / MicrosoftGame.config (default: main image directory)
+          --ffx <dll>            PC FidelityFX API DLL (AMD FidelityFX SDK, DX12) the game's FidelityFX calls go to;
+                                 without it FidelityFX reports no provider
+          --package-root <dir>  package root for XPackage / MicrosoftGame.config (default: main image directory)
           --device-type <n>      XSystemGetDeviceType result (default 7 = XboxScarlettAnaconda)
           --patches <path>       code patch file, or folder of *.fspatch files (repeatable, applied in order)
           --mods <dir>           mod folder laid over the package root (repeatable, first has priority)

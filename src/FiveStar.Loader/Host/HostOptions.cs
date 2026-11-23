@@ -58,6 +58,9 @@ internal sealed record HostOptions
     /// <summary>Translated DXIL programs (`fivestar shader translate`) for pipeline creation.</summary>
     public string? TranslatedDirectory { get; set; }
 
+    /// <summary>The PC FidelityFX API DLL the console FidelityFX calls are forwarded to; null leaves FidelityFX off.</summary>
+    public string? FidelityFxLibrary { get; set; }
+
     /// <summary>Run the main executable's entry point after loading, with the call trace and fault reporter on.</summary>
     public bool RunMain { get; set; }
 
