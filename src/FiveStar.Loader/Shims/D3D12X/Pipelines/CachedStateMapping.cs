@@ -21,12 +21,7 @@ internal static class CachedStateMapping
     public static GraphicsPipelineDescription Describe(
         FixedFunctionState state, nint gameRootSignature, IReadOnlyList<ShaderSource> shaders, IReadOnlyList<VertexElement> layout)
     {
-        var topology = state.TopologyType;
-
-        if (topology == 0)
-        {
-            topology = PipelineLayout.TriangleTopology;
-        }
+        var topology = TopologyTypes.Desktop(state.TopologyType);
 
         return GraphicsPipelineDescription.Defaults(gameRootSignature) with
         {

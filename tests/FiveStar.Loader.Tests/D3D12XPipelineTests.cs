@@ -1,6 +1,9 @@
 // Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+using FiveStar.Graphics;
+using FiveStar.Graphics.Programs;
+using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Shims.D3D12X.Pipelines;
 using FiveStar.Loader.Tests.Support;
 using Xunit;
@@ -43,6 +46,54 @@ public sealed unsafe class D3D12XPipelineTests
 
         Assert.Equal([0, 2], overrides.Select(entry => entry.Kind));
         Assert.Equal((2, 1), (overrides[0].Payload[4], overrides[1].Payload[8]));
+    }
+
+    [Fact]
+    public void Derive_kind_0_is_the_depth_stencil_and_kind_1_the_rasterizer_as_the_game_writes_them()
+    {
+        // 0x142479f40: kind 0 = {DepthEnable 1, write mask ALL, LESS_EQUAL}, kind 1 = {SOLID, CULL_FRONT}; read the
+        // other way round they were FillMode 1, CullMode 1 and a depth-write mask of 2 (the debug layer's errors).
+        using var memory = new NativeBlocks();
+        var entries = memory.Alloc(2 * 0x14C);
+        *(int*)(entries + 4) = 1;
+        *(int*)(entries + 8) = 1;
+        *(int*)(entries + 12) = 4;
+
+        *(int*)(entries + 0x14C) = 1;
+        *(int*)(entries + 0x14C + 4) = 3;
+        *(int*)(entries + 0x14C + 8) = 2;
+
+        var kinds = PipelineDescReader.Overrides(2, entries).Select(entry => (OverrideKind)entry.Kind);
+
+        Assert.Equal([OverrideKind.DepthStencil, OverrideKind.Rasterizer], kinds);
+    }
+
+    [Fact]
+    public void The_console_rectangle_topology_type_and_undefined_become_triangle()
+    {
+        using var memory = new NativeBlocks();
+        var stream = GameStream(memory);
+        *(int*)(stream + 0x27C) = TopologyTypes.ConsoleRectangle;
+
+        Assert.Equal(3, PipelineStreamParser.Parse(stream, 0x2B0).TopologyType);
+        int[] types = [0, 1, 2, 4];
+        Assert.Equal([3, 1, 2, 4], types.Select(TopologyTypes.Desktop));
+    }
+
+    [Fact]
+    public void A_wave64_pinned_compute_program_loads_its_wave32_variant_on_a_32_lane_adapter()
+    {
+        var manifest = new ShaderManifest(
+        [
+            new ProgramVariants("a", "cs", "a.dxil", null, null, 64, "a.w32.dxil", null),
+            new ProgramVariants("b", "cs", "b.dxil", null, null, 64, null, null),
+            new ProgramVariants("c", "ps", "c.dxil", 64, 4, null, null, null),
+        ]);
+        var adapter = new AdapterInfo(0, "rtx", false, "6.8", 32, 32, "Tier1");
+        var picker = new ProgramVariantPicker(manifest, adapter, new OnceLog(new LoaderLog(TextWriter.Null, null, false)));
+
+        string[] names = ["a", "b", "c", "d"];
+        Assert.Equal(["a.w32.dxil", null, "c.dxil", "d.dxil"], names.Select(name => picker.File(name, name + ".dxil")));
     }
 
     /// <summary>The 0x2B0-byte stream 0x14086f090 builds: fixed subobject offsets, empty DS/HS/GS slots.</summary>

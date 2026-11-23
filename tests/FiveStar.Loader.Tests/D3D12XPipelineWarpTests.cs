@@ -44,7 +44,7 @@ public sealed unsafe class D3D12XPipelineWarpTests(ITestOutputHelper output)
             Translate([vertex, pixel], programs, translated);
             output.WriteLine($"record {record.Index}: {vertex} + {pixel}");
 
-            Create(cache, record, new TranslatedProgramLibrary(index, translated), Path.Combine(work.FullName, "dxbc", vertex + ".dxbc"), Path.Combine(work.FullName, "dxbc", pixel + ".dxbc"));
+            Create(cache, record, new TranslatedProgramLibrary(index, translated, null), Path.Combine(work.FullName, "dxbc", vertex + ".dxbc"), Path.Combine(work.FullName, "dxbc", pixel + ".dxbc"));
         }
         finally
         {
