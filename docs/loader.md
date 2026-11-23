@@ -308,6 +308,9 @@ sensitivity × speed / 1000 px/s, clamped to 1, then raised to the curve exponen
 
 ## Running it
 
+To boot the game from a dump, use `fivestar run <dump>` ([running.md](running.md)): it builds the shaders and
+picks these options. The loader on its own:
+
 ```powershell
 dotnet build FiveStar.slnx
 $dump = "<your dump folder>"
