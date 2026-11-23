@@ -11,11 +11,24 @@ namespace FiveStar.Loader.Shims.D3D12X.Pipelines;
 /// </summary>
 internal sealed unsafe class PipelineSlots
 {
+    /// <summary>Logical processors per thread that calls the driver for pipelines (<see cref="PipelineBuildQueue"/>).</summary>
+    public const int CoresPerBuildThread = 2;
+
+    /// <summary>
+    /// How long a pipeline creation may take before the game gets a stand-in (<see cref="StandInPipelines"/>). From the
+    /// driver's shader cache a creation takes milliseconds; compiling a translated program takes seconds, the largest
+    /// minutes, and the game holds its frame until every queued creation returned.
+    /// </summary>
+    public static readonly TimeSpan CreationBudget = TimeSpan.FromSeconds(CreationBudgetSeconds);
+
+    private const int CreationBudgetSeconds = 1;
+
     // D3D12_PIPELINE_STATE_STREAM_DESC: SizeInBytes @0, pPipelineStateSubobjectStream @8.
     private const int StreamPointerField = sizeof(long);
 
     private readonly PipelineFactory _factory;
     private readonly OnceLog _warnings;
+    private readonly PipelineFailureTally _failures = new();
     private int _requests;
     private int _created;
 
@@ -65,8 +78,22 @@ internal sealed unsafe class PipelineSlots
         });
     }
 
-    /// <summary>Pipeline creations the game asked for so far, and how many returned a pipeline.</summary>
-    public string Summary => $"{Volatile.Read(ref _requests)} pipelines requested, {Volatile.Read(ref _created)} created";
+    /// <summary>Pipelines handed out before the driver built them.</summary>
+    public StandInPipelines StandIns => _factory.StandIns;
+
+    /// <summary>Pipeline creations the game asked for so far, how many returned a pipeline, stand-ins and those running.</summary>
+    public string Summary
+    {
+        get
+        {
+            var running = _factory.InFlight.Summary();
+            var counts = $"{Volatile.Read(ref _requests)} pipelines requested, {Volatile.Read(ref _created)} created, {_factory.StandIns.Summary}";
+
+            var parts = new[] { counts, _failures.Summary(), running }.Where(part => part.Length > 0);
+
+            return string.Join(", ", parts);
+        }
+    }
 
     private int Guarded(int slot, nint* result, Func<int> create)
     {
@@ -77,6 +104,7 @@ internal sealed unsafe class PipelineSlots
 
         *result = 0;
         Interlocked.Increment(ref _requests);
+        _factory.InFlight.Begin(slot);
 
         try
         {
@@ -86,14 +114,23 @@ internal sealed unsafe class PipelineSlots
             {
                 Interlocked.Increment(ref _created);
             }
+            else
+            {
+                _failures.Record(slot, $"{_factory.InFlight.Current()} -> {HResult.Format(hr)}");
+            }
 
             return hr;
         }
         catch (Exception exception) when (exception is InvalidDataException or NotSupportedException)
         {
             _warnings.Warn($"slot{slot}-{exception.Message}", $"[d3d12_xs] ID3D12Device.X::Slot{slot}: {exception.Message} -> E_NOTIMPL");
+            _failures.Record(slot, $"unreadable description: {exception.Message}");
 
             return HResult.NotImplemented;
+        }
+        finally
+        {
+            _factory.InFlight.End();
         }
     }
 }

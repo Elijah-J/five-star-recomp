@@ -3,11 +3,13 @@
 
 using System.Runtime.InteropServices;
 using FiveStar.Loader.Native;
+using FiveStar.Loader.Shims.D3D12X.Binding;
 
 namespace FiveStar.Loader.Shims.D3D12X;
 
 /// <summary>
-/// Command-list slot 25, SetPipelineState, as a handler: the pipeline (unwrapped) is recorded for
+/// Command-list slot 25, SetPipelineState, as a handler: a stand-in pipeline the driver has not built is not set and
+/// marks the list so its draws and dispatches are skipped; the pipeline (unwrapped) is recorded for
 /// <see cref="RectangleDraws"/> and forwarded to the desktop slot of the same number.
 /// </summary>
 internal static unsafe class RectangleListSlots
@@ -26,7 +28,22 @@ internal static unsafe class RectangleListSlots
     {
         var runtime = ShimContext.Runtime.D3D12X;
         nint desktop = runtime.Objects.Unwrap(pipeline);
+        bool pending = false;
+        var standIns = runtime.Pipelines?.StandIns;
+
+        if (standIns is not null)
+        {
+            desktop = standIns.Desktop(desktop, out pending);
+        }
+
+        CommandListBindings.Of(self)->PipelinePending = pending ? 1 : 0;
         runtime.Rectangles.SetPipeline(self, desktop);
+
+        if (pending)
+        {
+            return;
+        }
+
         nint inner = self->Inner;
         ((delegate* unmanaged<nint, nint, void>)ComObject.Slot(inner, SetPipelineStateSlot))(inner, desktop);
     }

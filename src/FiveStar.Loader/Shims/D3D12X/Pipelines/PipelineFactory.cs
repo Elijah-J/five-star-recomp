@@ -27,14 +27,22 @@ internal sealed unsafe class PipelineFactory
     /// <param name="programs">The translated programs.</param>
     /// <param name="warnings">Where failures are reported, once each.</param>
     /// <param name="rectangles">Told every graphics pipeline, for its rectangle-list variant; null for none.</param>
-    public PipelineFactory(nint device2, nint rootSignature, IProgramLibrary programs, OnceLog warnings, RectanglePipelines? rectangles)
+    /// <param name="standIns">Hands out pipelines the driver takes too long for.</param>
+    public PipelineFactory(nint device2, nint rootSignature, IProgramLibrary programs, OnceLog warnings, RectanglePipelines? rectangles, StandInPipelines standIns)
     {
         _device2 = device2;
         _rootSignature = rootSignature;
         _programs = programs;
         _warnings = warnings;
         _rectangles = rectangles;
+        StandIns = standIns;
     }
+
+    /// <summary>Pipelines handed out before the driver built them.</summary>
+    public StandInPipelines StandIns { get; }
+
+    /// <summary>The creations running now (<see cref="PipelineSlots"/> marks them).</summary>
+    public PipelineCreationsInFlight InFlight { get; } = new();
 
     public int Graphics(GraphicsPipelineDescription description, Guid* iid, nint* result)
     {
@@ -65,14 +73,12 @@ internal sealed unsafe class PipelineFactory
             desktop = description with { InputLayout = InputLayoutMapping.Map(description.InputLayout, vertex) };
         }
 
-        var hr = Remember(description, DesktopPipelineBuilder.Graphics(_device2, _rootSignature, desktop, programs, iid, result), result);
+        var names = string.Join(" + ", programs.Select(program => program.Name));
+        InFlight.Describe(names);
+        var wanted = *iid;
+        var hr = StandIns.Create(() => BuildGraphics(desktop, programs, wanted), result, names, built => _rectangles?.Remember(built, desktop, programs));
 
-        if (!HResult.Failed(hr) && *result != 0)
-        {
-            _rectangles?.Remember(*result, desktop, programs);
-        }
-
-        return hr;
+        return Remember(description, hr, result, names);
     }
 
     public int Compute(ComputePipelineDescription description, Guid* iid, nint* result)
@@ -84,7 +90,9 @@ internal sealed unsafe class PipelineFactory
             return HResult.NotFound;
         }
 
-        var hr = DesktopPipelineBuilder.Compute(_device2, _rootSignature, program, iid, result);
+        InFlight.Describe(program.Name);
+        var wanted = *iid;
+        var hr = StandIns.Create(() => BuildCompute(program, wanted), result, program.Name, null);
         Report(hr, program.Name);
 
         return hr;
@@ -102,6 +110,7 @@ internal sealed unsafe class PipelineFactory
 
         if (known is null)
         {
+            InFlight.Describe("derive from an unknown base");
             _warnings.Warn("derive-unknown-base", $"[d3d12_xs] pipeline derive: base 0x{basePipeline:x} was not created here");
 
             return HResult.InvalidArgument;
@@ -134,6 +143,22 @@ internal sealed unsafe class PipelineFactory
         }
     }
 
+    private PipelineResult BuildGraphics(GraphicsPipelineDescription description, List<TranslatedProgram> programs, Guid iid)
+    {
+        nint pipeline = 0;
+        int hr = DesktopPipelineBuilder.Graphics(_device2, _rootSignature, description, programs, &iid, &pipeline);
+
+        return new PipelineResult(hr, pipeline);
+    }
+
+    private PipelineResult BuildCompute(TranslatedProgram program, Guid iid)
+    {
+        nint pipeline = 0;
+        int hr = DesktopPipelineBuilder.Compute(_device2, _rootSignature, program, &iid, &pipeline);
+
+        return new PipelineResult(hr, pipeline);
+    }
+
     private TranslatedProgram? Resolve(ShaderSource source)
     {
         byte[] prefix;
@@ -154,15 +179,25 @@ internal sealed unsafe class PipelineFactory
         if (program is null)
         {
             var key = ProgramKeys.Text(prefix);
+            var names = _programs.Names(prefix);
             _warnings.Warn($"program-{key}", $"[d3d12_xs] no translated program for shader {key}");
+
+            if (names.Count == 0)
+            {
+                InFlight.Describe($"no extracted program {key}");
+            }
+            else
+            {
+                InFlight.Describe($"no loadable form of {names[0]}");
+            }
         }
 
         return program;
     }
 
-    private int Remember(GraphicsPipelineDescription description, int hr, nint* result)
+    private int Remember(GraphicsPipelineDescription description, int hr, nint* result, string names)
     {
-        Report(hr, $"{description.Shaders.Count} shaders");
+        Report(hr, names);
 
         if (HResult.Failed(hr) || *result == 0)
         {
@@ -181,6 +216,7 @@ internal sealed unsafe class PipelineFactory
     {
         if (HResult.Failed(hr))
         {
+            InFlight.Describe($"desktop creation {HResult.Format(hr)} ({what})");
             _warnings.Warn($"create-{hr:x8}-{what}", $"[d3d12_xs] desktop pipeline creation failed ({what}): {HResult.Format(hr)}");
         }
     }

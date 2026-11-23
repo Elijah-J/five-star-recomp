@@ -15,6 +15,9 @@ internal static unsafe class DesktopDevice
     /// <summary>IID_ID3D12PipelineState.</summary>
     public static readonly Guid PipelineStateIid = new("765a30f3-f624-4c6f-a828-ace948622445");
 
+    /// <summary>IID_IUnknown (unknwn.h).</summary>
+    public static readonly Guid UnknownIid = new("00000000-0000-0000-c000-000000000046");
+
     private const int QueryInterfaceSlot = 0;
     private const int AddRefSlot = 1;
     private const int ReleaseSlot = 2;

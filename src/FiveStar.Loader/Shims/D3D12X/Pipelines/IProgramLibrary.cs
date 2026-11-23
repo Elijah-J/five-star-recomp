@@ -8,4 +8,7 @@ internal interface IProgramLibrary
 {
     /// <summary>The program whose code starts with <paramref name="prefix"/>, or null when none was translated.</summary>
     TranslatedProgram? Find(ReadOnlySpan<byte> prefix);
+
+    /// <summary>The extracted programs whose code starts with <paramref name="prefix"/>, translated or not.</summary>
+    IReadOnlyList<string> Names(ReadOnlySpan<byte> prefix);
 }

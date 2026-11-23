@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Five Star Recomp contributors.
+// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Runtime.InteropServices;
@@ -184,6 +184,11 @@ internal static unsafe class CommandListBindingMethods
     [UnmanagedCallersOnly]
     public static void DrawInstanced(XboxObject* self, uint vertices, uint instances, uint firstVertex, uint firstInstance)
     {
+        if (PipelinePending(self))
+        {
+            return;
+        }
+
         Flush(self, false);
         ShimContext.Runtime.D3D12X.Rectangles.BeforeDraw(self);
         ShimContext.Runtime.D3D12X.DrawTrace?.Draw(self, vertices, instances);
@@ -196,6 +201,11 @@ internal static unsafe class CommandListBindingMethods
     [UnmanagedCallersOnly]
     public static void DrawIndexedInstanced(XboxObject* self, uint indices, uint instances, uint firstIndex, int baseVertex, uint firstInstance)
     {
+        if (PipelinePending(self))
+        {
+            return;
+        }
+
         Flush(self, false);
         ShimContext.Runtime.D3D12X.Rectangles.BeforeDraw(self);
         ShimContext.Runtime.D3D12X.DrawTrace?.Draw(self, indices, instances);
@@ -208,6 +218,11 @@ internal static unsafe class CommandListBindingMethods
     [UnmanagedCallersOnly]
     public static void Dispatch(XboxObject* self, uint x, uint y, uint z)
     {
+        if (PipelinePending(self))
+        {
+            return;
+        }
+
         Flush(self, true);
         nint inner = self->Inner;
         ((delegate* unmanaged<nint, uint, uint, uint, void>)ComObject.Slot(inner, DesktopDispatch))(inner, x, y, z);
@@ -218,12 +233,31 @@ internal static unsafe class CommandListBindingMethods
     [UnmanagedCallersOnly]
     public static void ExecuteIndirect(XboxObject* self, nint signature, uint maxCount, nint arguments, ulong argumentOffset, nint count, ulong countOffset)
     {
+        if (PipelinePending(self))
+        {
+            return;
+        }
+
         Flush(self, false);
         Flush(self, true);
         var objects = ShimContext.Runtime.D3D12X.Objects;
         nint inner = self->Inner;
         var execute = (delegate* unmanaged<nint, nint, uint, nint, ulong, nint, ulong, void>)ComObject.Slot(inner, DesktopExecuteIndirect);
         execute(inner, objects.Unwrap(signature), maxCount, objects.Unwrap(arguments), argumentOffset, objects.Unwrap(count), countOffset);
+    }
+
+    /// <summary>True while the list's pipeline is a stand-in the driver has not built: its draw or dispatch is skipped and counted.</summary>
+    [HotPath]
+    private static bool PipelinePending(XboxObject* self)
+    {
+        if (CommandListBindings.Of(self)->PipelinePending == 0)
+        {
+            return false;
+        }
+
+        ShimContext.Runtime.D3D12X.Pipelines?.StandIns.Skipped();
+
+        return true;
     }
 
     [HotPath]
@@ -234,6 +268,13 @@ internal static unsafe class CommandListBindingMethods
         nint inner = self->Inner;
         var reset = (delegate* unmanaged<nint, nint, nint, int>)ComObject.Slot(inner, DesktopReset);
         nint pipeline = objects.Unwrap(pipelineState);
+        var standIns = ShimContext.Runtime.D3D12X.Pipelines?.StandIns;
+
+        if (standIns is not null)
+        {
+            pipeline = standIns.Desktop(pipeline, out _);
+        }
+
         ShimContext.Runtime.D3D12X.Rectangles.Reset(self, pipeline);
 
         return reset(inner, objects.Unwrap(allocator), pipeline);

@@ -226,7 +226,10 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         var rectangles = new RectanglePipelines(device2, root, Path.Combine(translated, RectangleGeometryShader.Folder), warnings);
         Rectangles.Attach(rectangles);
 
-        Pipelines = new PipelineSlots(new PipelineFactory(device2, root, library, warnings, rectangles), warnings);
+        var builds = new PipelineBuildQueue(Environment.ProcessorCount / PipelineSlots.CoresPerBuildThread);
+        builds.Start();
+        var standIns = new StandInPipelines(PipelineSlots.CreationBudget, builds, warnings);
+        Pipelines = new PipelineSlots(new PipelineFactory(device2, root, library, warnings, rectangles, standIns), warnings);
         PipelineSlotHandlers.Register(Objects);
         _log.Detail($"  [d3d12_xs] pipeline slots on: programs {programs}, translated {translated}");
     }
