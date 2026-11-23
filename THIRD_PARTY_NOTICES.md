@@ -3,6 +3,14 @@
 Five Star Recomp is licensed under the GNU General Public License, version 3 or later (`LICENSE`). Parts of it are
 based on the projects below, used under the licenses quoted with them.
 
+## Leonida
+
+https://github.com/ItsNotRexed/Leonida, GPL-3.0. Its notes on the console D3D12.X list (slots 146 and 148, the
+device byte at +0x18), the create-device and present parameter names it collected from public sources, the
+WaitFrameEventX return codes and the BVH header and instance-node fields were leads; each was checked against the
+game's executable or shaders before use (docs/d3d12x-shim.md, docs/raytracing.md), and the instance node's 0x00 and
+0x70 fields are taken from it unverified. No code was copied.
+
 ## bcpack-rs
 
 https://github.com/Ahmet-Dedeler/bcpack-rs, revision `0a887de1edc9c22a425605091f1a8365fdf74dbb`, licensed MIT OR

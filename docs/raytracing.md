@@ -57,14 +57,19 @@ A type-6 node is an instance; CS_TraceShadowRays_Half reads it as:
 
 | Offset | Content |
 |---|---|
-| 0x30 | dword tested against 0xD5000000 (mask / flag bits in the top byte) |
+| 0x00 | object-to-world 3x4, row-major (the instance desc's Transform; not read by this shader) |
+| 0x30 | InstanceID (bits 23..0) \| InstanceMask << 24; the top byte is tested against the ray mask 0xD5 |
+| 0x34 | InstanceContributionToHitGroupIndex (bits 23..0) \| instance flags << 24 (bits 0 to 3 of the byte read) |
 | 0x38 | bits 29..0 the BLAS root node pointer (0x3FFFFFFF: none); bit 31 set: translation-only transform |
 | 0x3C | BLAS base address >> 8 |
-| 0x40 | translation x, y, z (f32) |
-| 0x4C to 0x6F | the nine remaining f32 of the 3x4 world-to-object matrix, applied to origin and direction |
+| 0x40 | world-to-object translation x, y, z (f32) |
+| 0x4C | world-to-object 3x3, row-major: x' = tx + m00 ox + m01 oy + m02 oz from 0x4C, 0x50, 0x54; y' from 0x58, 0x5C, 0x60; z' from 0x64, 0x68, 0x6C; the direction takes the 3x3 alone |
+| 0x70 | instance index (not read by this shader) |
 
-This is not GPURT's instance node (GPURT keeps the transform at 0). The exact matrix element order and the meaning
-of the bytes below 0x30 are not read out yet.
+The matrix order is read from the shader's arithmetic (s0..s3 at 0x40, s12..s15 at 0x50, s8..s11 at 0x60). The
+fields at 0x00, 0x30 (ID), 0x34 (contribution) and 0x70 follow Leonida's notes (GPL-3.0, from the DLL); the
+translation is first, not in column 3 as those notes have it. This is not GPURT's instance node (GPURT keeps the
+transform at 0).
 
 The rehydration caller (0x142490A20) skips a resource unless its serialized header has bit 24 set, puts the GPU
 address of the header in `Source` and passes the CPU address of the same bytes (the streaming range's CPU alias,
@@ -77,13 +82,13 @@ the first 32 MiB carved, every one in that place). Header fields, as the DLL's C
 
 | Dword | Content |
 |---|---|
-| 0 | flags: bit 24 serialized (cleared by rehydration), bit 18 writes the root's parent entry, bits 23..20 `n` |
+| 0 | flags: bit 31 bottom level, bit 24 serialized (cleared by rehydration), bit 18 writes the root's parent entry, bits 23..20 `n`, bit 17 set in every sample, low 16 bits format version 6 (names after Leonida's notes) |
 | 1 | total size / 64 − 1; the last dword of the structure is the level count, preceded by one (box32 end, box16 end) offset pair per level |
 | 2 | CRC32 of the build inputs (NumDescs and per-geometry counts and formats), checked by `ValidateRehydrateAccelerationStructureBuildDesc` |
 | 3 | triangle count |
 | 4..9 | bounds: min xyz, max xyz (f32) |
 | 10 | offset of the box nodes |
-| 11 | nonzero: dword 14 is the copy size; zero: the copy is 144·n² + 64 bytes |
+| 11 | offsetToPrimRemap in the public XboxBvh4Header (DagorEngine's XDXR traversal); 0 in every serialized BLAS (Leonida counted 272,864). The DLL's rehydration copies dword 14 bytes when it is non-zero, else 144·n² + 64 |
 | 12 | root node pointer (type 4 or 5 in every sample) |
 | 13 | offset of the triangle nodes |
 | 14 | copy size, and offset of the parent-pointer table |
@@ -134,7 +139,7 @@ CPU (`RehydrateRaytracingAccelerationStructureX`, CPU addresses only, no device 
 | Sizes | the DLL's own `GetRaytracingAccelerationStructurePrebuildInfo` with a stand-in object: CPU arithmetic that reads only its inputs and static globals, so the game allocates console-sized AMD structures (one-triangle BLAS: result 1024, scratch 16840; `--call GetRaytracingAccelerationStructurePrebuildInfo`) |
 | Rehydration | the DLL's CPU rehydration per desc, on a copy of the desc whose destination, transform, index and vertex addresses are replaced by their CPU addresses; every range is checked mapped first. The result lands in game memory, where the placed buffers and the shaders' memory window see it |
 | BLAS builds | the batched build on the CPU at record time (`BvhBatchBuilder`): geometry read through the CPU addresses of its vertex, index and transform buffers, built by `XdxrBlas`, written to the destination when it fits the console prebuild size; compacted-size and current-size requests get the structure size |
-| TLAS builds | skipped (logged once): the instance-node encoding is not fully known |
+| TLAS builds | on the CPU at record time (`BvhBatchBuilder`, `XdxrTlas`): the instance descs (an array or an array of addresses) and each BLAS's header (root, bounds) read through their CPU addresses; box32 nodes over the instances' world bounds, then 128-byte instance nodes as above; an instance with a null BLAS is left out |
 | Copies | COMPACT copies the structure bytes unchanged (dword 1 gives the size; node pointers are relative to the structure) |
 | DXR state objects | not translated: no dispatch has been found |
 
@@ -147,15 +152,22 @@ before.
 longest centroid axis and gives each quarter to a child. Box nodes come first in preorder (the root is the first),
 then one triangle node per triangle written as the rehydration writes a lone triangle; pointers count from the BVH
 base, so the nodes go `nodeOffset` bytes after it.
-`XdxrBlas.Build` puts the nodes after a 64-byte header in the serialized layout: dword 1 size, 3 triangle count, 4..9 bounds, 10 box offset (0x40), 11 = 1 and 14 the copy size, 12 the root (box32 at 0x40), 13 the first triangle node, 15 = 0x7F7F7F. `TriangleDecoder` reads R16/R32 or no indices and R32G32B32_FLOAT, R32G32_FLOAT, R16G16(B16A16)_FLOAT and _SNORM positions, then the 3x4 transform.
+`XdxrBlas.Build` puts the nodes after a 64-byte header in the serialized layout: dword 0 = 0x80000006 (bottom level, version 6), 1 size, 3 triangle count, 4..9 bounds, 10 box offset (0x40), 11 = 0 (no primitive remap), 12 the root (box32 at 0x40), 13 the first triangle node, 14 the structure size, 15 = 0x7F7F7F. `TriangleDecoder` reads R16/R32 or no indices and R32G32B32_FLOAT, R32G32_FLOAT, R16G16(B16A16)_FLOAT and _SNORM positions, then the 3x4 transform.
+`XdxrTlas.Build` uses the same tree over instance bounds: header dword 0 = 6, 3 the instance count, 13 the first
+instance node.
 
 The test walks a built BVH with the reference model of the instruction and compares the closest hit of 400 rays
-with testing all 500 triangles; a second builds an indexed, transformed mesh through the decoder and finds every triangle from the header's root. A loader test runs a batched desc as the game fills it through `BvhBatchBuilder`.
+with testing all 500 triangles; a second builds an indexed, transformed mesh through the decoder and finds every
+triangle from the header's root; a third builds a TLAS of two instances of one BLAS (one moved, one scaled, turned and
+moved), walks it as the shadow shader reads instance nodes and hits each triangle at both transforms. A loader test
+runs a batched desc as the game fills it through `BvhBatchBuilder`.
 
 ## Unknown
 
-- The DLL's TLAS encoding (its console compute shaders write the instance nodes; no CPU path exists), so the full
-  instance-node layout and the header fields beyond the root pointer.
+- The instance-node fields the shadow shader does not read (0x00, 0x70 and bit 30 of 0x38) and the TLAS header past
+  the root pointer: the DLL writes them with console compute shaders only.
+- Whether runtime-built BLASes carry bit 17 in dword 0, and whether the traversal reads the parent pointers
+  (dword 14), which the CPU builder does not write.
 - The XDXR header the shaders read for a BLAS built at run time beyond the root pointer at 0x30.
 - Whether the slot-101 pipeline is dispatched: the identifiers are fetched, but no DispatchRays call has been found
   (the X list slot numbering above 70 is not mapped); the 70 ray-tracing programs found are inline compute.
