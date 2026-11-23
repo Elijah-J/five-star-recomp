@@ -313,6 +313,11 @@ B5G6R5, B5G5R5A1 or B4G4R4A4 take a substitute format; see [gpu-resources.md](gp
 **Resource Map (slots 8, 9).** A resource the game placed (slot 133) maps to its own memory, as on the console;
 0x145121891 maps a texture and writes a mip at its XG offset. Others map on the desktop.
 
+**Spare allocators.** The game takes a list and an allocator from separate pools (0x140188430) and resets the list on
+an allocator that may back another recording list, which the console allows; the desktop answers E_INVALIDARG and the
+game breaks at 0x142474ce1. The list then records on a spare allocator kept for that game allocator and reset with it
+(allocator slot 8; SpareAllocators). Barriers leave out write states the desktop resource has no flag for
+(ResourceStates.Allowed; error #523 on a depth texture moved to UNORDERED_ACCESS).
 **Buffer views on split buffers.** A slot-133 buffer over pages in two sections is two desktop buffers, and the
 game's object is the first. A slot 18/19 buffer view goes to the run that holds its first element and is cut at the
 run's end (BufferViewRanges); a view past the first run's end removed the device (error #31). 16 of 3,388 buffers

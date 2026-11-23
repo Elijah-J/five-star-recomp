@@ -98,7 +98,7 @@ internal static unsafe class XboxDeviceCreation
         var create = (delegate* unmanaged<nint, void*, int, ResourceDescription*, int, void*, Guid*, nint*, int>)ComObject.Slot(inner, CreateCommittedResourceSlot);
         int hr = create(inner, properties, flags, &desktop, home, DepthViewDescriptions.ClearValue(clear, clearCopy, desktop.Format), iid, resource);
 
-        return WrapResource(hr, resource, desktop.Dimension, home);
+        return WrapResource(hr, resource, desktop, home);
     }
 
     [UnmanagedCallersOnly]
@@ -111,7 +111,7 @@ internal static unsafe class XboxDeviceCreation
         var create = (delegate* unmanaged<nint, nint, ulong, ResourceDescription*, int, void*, Guid*, nint*, int>)ComObject.Slot(inner, CreatePlacedResourceSlot);
         int hr = create(inner, Objects.Unwrap(heap), offset, &desktop, home, DepthViewDescriptions.ClearValue(clear, clearCopy, desktop.Format), iid, resource);
 
-        return WrapResource(hr, resource, desktop.Dimension, home);
+        return WrapResource(hr, resource, desktop, home);
     }
 
     [UnmanagedCallersOnly]
@@ -124,7 +124,7 @@ internal static unsafe class XboxDeviceCreation
         var create = (delegate* unmanaged<nint, ResourceDescription*, int, void*, Guid*, nint*, int>)ComObject.Slot(inner, CreateReservedResourceSlot);
         int hr = create(inner, &desktop, home, DepthViewDescriptions.ClearValue(clear, clearCopy, desktop.Format), iid, resource);
 
-        return WrapResource(hr, resource, desktop.Dimension, home);
+        return WrapResource(hr, resource, desktop, home);
     }
 
     /// <summary>
@@ -280,14 +280,14 @@ internal static unsafe class XboxDeviceCreation
         return changed;
     }
 
-    /// <summary>Wraps a created resource and records its dimension and home state on the wrapper.</summary>
-    private static int WrapResource(int hr, nint* resource, int dimension, int home)
+    /// <summary>Wraps a created resource and records its dimension, home state and flags on the wrapper.</summary>
+    private static int WrapResource(int hr, nint* resource, in ResourceDescription desktop, int home)
     {
         hr = Objects.WrapResult(hr, XboxInterfaceKind.Resource, resource);
 
         if (!HResult.Failed(hr) && resource != null)
         {
-            ResourceStates.Record(Objects.AsResource(*resource), dimension, home);
+            ResourceStates.Record(Objects.AsResource(*resource), desktop.Dimension, home, desktop.Flags);
         }
 
         return hr;

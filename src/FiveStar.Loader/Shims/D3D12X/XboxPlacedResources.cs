@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Five Star Recomp contributors.
+// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using FiveStar.Loader.Diagnostics;
@@ -24,6 +24,7 @@ internal sealed unsafe class XboxPlacedResources
 
     /// <summary>ID3D12Resource::GetGPUVirtualAddress (d3d12.h).</summary>
     private const int GetGpuAddressSlot = 11;
+    private const int GetDescSlot = 10;
 
     /// <summary>
     /// D3D12_RESOURCE_STATE_COMMON, D3D12_HEAP_FLAG_NONE, D3D12_HEAP_TYPE_DEFAULT and
@@ -88,7 +89,7 @@ internal sealed unsafe class XboxPlacedResources
             }
 
             *resource = _objects.WrapResource(inner, address);
-            ResourceStates.Record(_objects.AsResource(*resource), ResourceStates.BufferDimension, ResourceStates.Common);
+            ResourceStates.Record(_objects.AsResource(*resource), ResourceStates.BufferDimension, ResourceStates.Common, AllowUnorderedAccess);
             _log.Detail($"  [d3d12_xs] ID3D12Device.X::Slot133 CreatePlacedResource(0x{address:x}, 0x{description->Width:x} bytes) -> {runs.Count} page runs");
 
             return HResult.Ok;
@@ -111,7 +112,7 @@ internal sealed unsafe class XboxPlacedResources
         }
 
         *resource = _objects.WrapResource(inner, address);
-        ResourceStates.Record(_objects.AsResource(*resource), description->Dimension, state);
+        ResourceStates.Record(_objects.AsResource(*resource), description->Dimension, state, DesktopFlags(inner));
 
         return hr;
     }
@@ -199,6 +200,15 @@ internal sealed unsafe class XboxPlacedResources
         desktop.Flags &= AllowUnorderedAccess;
 
         return desktop;
+    }
+
+    /// <summary>The desktop resource's D3D12_RESOURCE_FLAGS (ID3D12Resource::GetDesc).</summary>
+    private static int DesktopFlags(nint resource)
+    {
+        ResourceDescription desc;
+        _ = ((delegate* unmanaged<nint, ResourceDescription*, ResourceDescription*>)ComObject.Slot(resource, GetDescSlot))(resource, &desc);
+
+        return desc.Flags;
     }
 
     private static ulong GpuAddress(nint resource)

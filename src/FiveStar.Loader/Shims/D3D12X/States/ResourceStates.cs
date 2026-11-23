@@ -69,8 +69,8 @@ internal static class ResourceStates
         return created;
     }
 
-    /// <summary>Records the dimension and home state on a resource wrapper (null is ignored).</summary>
-    public static unsafe void Record(XboxResourceObject* resource, int dimension, int home)
+    /// <summary>Records the dimension, home state and desktop flags on a resource wrapper (null is ignored).</summary>
+    public static unsafe void Record(XboxResourceObject* resource, int dimension, int home, int flags)
     {
         if (resource == null)
         {
@@ -79,5 +79,33 @@ internal static class ResourceStates
 
         resource->Dimension = dimension;
         resource->HomeState = home;
+        resource->Flags = flags;
+    }
+
+    /// <summary>
+    /// <paramref name="state"/> without the write states the desktop <paramref name="flags"/> do not allow (a flag the
+    /// shim dropped, such as UAV on depth); COMMON when nothing is left. A transition to them is error #523.
+    /// </summary>
+    [HotPath]
+    public static int Allowed(int state, int flags)
+    {
+        int allowed = state;
+
+        if ((flags & AllowRenderTarget) == 0)
+        {
+            allowed &= ~RenderTarget;
+        }
+
+        if ((flags & AllowUnorderedAccess) == 0)
+        {
+            allowed &= ~UnorderedAccess;
+        }
+
+        if ((flags & AllowDepthStencil) == 0)
+        {
+            allowed &= ~(DepthWrite | DepthRead);
+        }
+
+        return allowed;
     }
 }

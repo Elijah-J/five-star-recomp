@@ -276,8 +276,16 @@ internal static unsafe class CommandListBindingMethods
         }
 
         ShimContext.Runtime.D3D12X.Rectangles.Reset(self, pipeline);
+        nint desktop = objects.Unwrap(allocator);
+        int hr = reset(inner, desktop, pipeline);
 
-        return reset(inner, objects.Unwrap(allocator), pipeline);
+        // The allocator backs another recording list, which the console allows: record on a spare (SpareAllocators).
+        if (hr == HResult.InvalidArgument && desktop != 0)
+        {
+            hr = ShimContext.Runtime.D3D12X.SpareAllocators.Reset(inner, desktop, pipeline, reset);
+        }
+
+        return hr;
     }
 
     [HotPath]

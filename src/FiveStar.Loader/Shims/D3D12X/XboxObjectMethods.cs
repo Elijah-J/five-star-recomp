@@ -21,6 +21,9 @@ internal static unsafe class XboxObjectMethods
     /// <summary>ID3D12Resource::Map and ::Unmap (d3d12.h); the D3D12.X resource keeps the slots.</summary>
     public const int MapSlot = 8;
     public const int UnmapSlot = 9;
+    /// <summary>ID3D12CommandAllocator::Reset, the same slot on both.</summary>
+    public const int AllocatorResetSlot = 8;
+
     private const int DesktopMapSlot = MapSlot;
     private const int DesktopUnmapSlot = UnmapSlot;
 
@@ -120,6 +123,17 @@ internal static unsafe class XboxObjectMethods
         nint inner = self->Header.Inner;
 
         return ((delegate* unmanaged<nint, uint, void*, void**, int>)ComObject.Slot(inner, DesktopMapSlot))(inner, subresource, readRange, data);
+    }
+
+    /// <summary>Allocator slot 8, Reset: the desktop allocator and the spares lent for it (<see cref="SpareAllocators"/>).</summary>
+    [UnmanagedCallersOnly]
+    public static int ResetAllocator(XboxObject* self)
+    {
+        nint inner = self->Inner;
+        int hr = ((delegate* unmanaged<nint, int>)ComObject.Slot(inner, AllocatorResetSlot))(inner);
+        ShimContext.Runtime.D3D12X.SpareAllocators.ResetSpares(inner);
+
+        return hr;
     }
 
     /// <summary>Resource slot 9, Unmap(subresource, written range): nothing to do for game memory.</summary>

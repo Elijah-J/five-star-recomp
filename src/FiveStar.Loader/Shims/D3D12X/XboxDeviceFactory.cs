@@ -86,6 +86,9 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
     /// <summary>Resource descs made desktop ones, with the device's format support.</summary>
     public DesktopResourceDescriptions Descriptions { get; } = new();
 
+    /// <summary>Allocators lent to lists whose game allocator backs another recording list.</summary>
+    public SpareAllocators SpareAllocators { get; } = new();
+
     /// <summary>Warnings logged once per key, for slots the game calls often.</summary>
     public OnceLog Warnings { get; }
 
@@ -377,6 +380,9 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         delegate* unmanaged<XboxResourceObject*, uint, void*, void> unmap = &XboxObjectMethods.Unmap;
         Objects.SetHandler(XboxInterfaceKind.Resource, XboxObjectMethods.MapSlot, (nint)map);
         Objects.SetHandler(XboxInterfaceKind.Resource, XboxObjectMethods.UnmapSlot, (nint)unmap);
+
+        delegate* unmanaged<XboxObject*, int> resetAllocator = &XboxObjectMethods.ResetAllocator;
+        Objects.SetHandler(XboxInterfaceKind.CommandAllocator, XboxObjectMethods.AllocatorResetSlot, (nint)resetAllocator);
 
         delegate* unmanaged<XboxFenceObject*, ulong*> fenceValue = &FenceValueMirror.CompletedValueAddress;
         delegate* unmanaged<XboxFenceObject*, uint> releaseFence = &FenceValueMirror.ReleaseFence;
