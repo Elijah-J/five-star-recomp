@@ -6,9 +6,10 @@ using System.Runtime.InteropServices;
 namespace FiveStar.Loader.Shims.Network;
 
 /// <summary>
-/// Winsock sealed: name lookups fail with WSAHOST_NOT_FOUND, connects and datagram sends with WSAENETUNREACH,
-/// listening with WSAENETDOWN, and WSAIoctl (the way to ConnectEx and WSASendMsg) with WSAEOPNOTSUPP. Sockets can
-/// still be created, bound and closed. The executable imports most of ws2_32.dll by ordinal, so the ordinals of
+/// Winsock sealed: name lookups fail with WSAHOST_NOT_FOUND (getaddrinfo and GetAddrInfoW of the local names of
+/// <see cref="NetworkSeal"/> excepted), connects and datagram sends with WSAENETUNREACH, listening with WSAENETDOWN,
+/// and WSAIoctl (the way to ConnectEx and WSASendMsg) with WSAEOPNOTSUPP. Sockets can still be created, bound and
+/// closed. The executable imports most of ws2_32.dll by ordinal, so the ordinals of
 /// connect (4), listen (13), sendto (20), gethostbyaddr (51) and gethostbyname (52) are bound too.
 /// </summary>
 internal static unsafe partial class WinsockShim
@@ -19,14 +20,36 @@ internal static unsafe partial class WinsockShim
     [UnmanagedCallersOnly]
     private static int GetAddrInfo(byte* node, byte* service, nint hints, nint* result)
     {
-        return NotFound("getaddrinfo", SocketAddressText.Lookup(SocketAddressText.Ansi(node), SocketAddressText.Ansi(service)), result);
+        var seal = ShimContext.Runtime.Network;
+        string? host = SocketAddressText.Ansi(node);
+        string target = SocketAddressText.Lookup(host, SocketAddressText.Ansi(service));
+
+        if (!seal.IsLocalName(host))
+        {
+            return NotFound("getaddrinfo", target, result);
+        }
+
+        seal.Allow("getaddrinfo", target);
+
+        return Local(((delegate* unmanaged<byte*, byte*, nint, nint*, int>)seal.AnsiLookup)(node, service, hints, result));
     }
 
     [Shim(Module, "GetAddrInfoW", SetsLastError = true)]
     [UnmanagedCallersOnly]
     private static int GetAddrInfoW(char* node, char* service, nint hints, nint* result)
     {
-        return NotFound("GetAddrInfoW", SocketAddressText.Lookup(SocketAddressText.Wide(node), SocketAddressText.Wide(service)), result);
+        var seal = ShimContext.Runtime.Network;
+        string? host = SocketAddressText.Wide(node);
+        string target = SocketAddressText.Lookup(host, SocketAddressText.Wide(service));
+
+        if (!seal.IsLocalName(host))
+        {
+            return NotFound("GetAddrInfoW", target, result);
+        }
+
+        seal.Allow("GetAddrInfoW", target);
+
+        return Local(((delegate* unmanaged<char*, char*, nint, nint*, int>)seal.WideLookup)(node, service, hints, result));
     }
 
     /// <summary>GetAddrInfoExW(name, service, namespace, nspId, hints, result, timeout, overlapped, completion, handle).</summary>
@@ -129,6 +152,14 @@ internal static unsafe partial class WinsockShim
     private static int WsaIoctl(nint socket, uint code, nint input, uint inputLength, nint output, uint outputLength, nint returned, nint overlapped, nint completion)
     {
         return (int)Fail("WSAIoctl", $"code 0x{code:x8}", NetworkErrors.OperationNotSupported, NetworkErrors.SocketError);
+    }
+
+    /// <summary>The result of a local lookup Windows answered, also as the last error (the shim's return path resets it).</summary>
+    private static int Local(int error)
+    {
+        ShimContext.Runtime.LastError.Set(error);
+
+        return error;
     }
 
     /// <summary>A failed lookup: *result = NULL, the error returned and set as the last error.</summary>

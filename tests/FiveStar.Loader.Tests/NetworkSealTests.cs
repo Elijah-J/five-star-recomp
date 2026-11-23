@@ -62,6 +62,7 @@ public sealed unsafe class NetworkSealTests
         Assert.Equal(byName, getProcAddress(winsock, ConnectOrdinal));
 
         AssertLookupSealed(test);
+        AssertLocalLookupAnswered(test, winsock);
         AssertConnectSealed(byName);
         AssertWinHttpSealed(test);
 
@@ -86,6 +87,23 @@ public sealed unsafe class NetworkSealTests
         Assert.Equal(HostNotFound, found);
         Assert.Equal(HostNotFound, Marshal.GetLastSystemError());
         Assert.Equal(0, result);
+    }
+
+    /// <summary>"localhost" is answered by Windows from the local interfaces, so it reaches the real getaddrinfo.</summary>
+    private static void AssertLocalLookupAnswered(TestRuntime test, nint winsock)
+    {
+        var lookup = (delegate* unmanaged<byte*, byte*, nint, nint*, int>)test.Shim("ws2_32.dll", "getaddrinfo");
+        nint result = 0;
+        int found;
+
+        fixed (byte* name = "localhost\0"u8)
+        {
+            found = lookup(name, null, 0, &result);
+        }
+
+        Assert.Equal(0, found);
+        Assert.NotEqual(0, result);
+        ((delegate* unmanaged<nint, void>)NativeLibrary.GetExport(winsock, "freeaddrinfo"))(result);
     }
 
     /// <summary>A real socket handed to the sealed connect toward 192.0.2.1:443 (TEST-NET-1) stays unconnected.</summary>
