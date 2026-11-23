@@ -3,7 +3,7 @@
 
 using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Native;
-using FiveStar.Loader.Shims.D3D12X.Pipelines;
+using FiveStar.Loader.Shims.D3D12X.Resources;
 
 namespace FiveStar.Loader.Shims.D3D12X;
 
@@ -45,14 +45,14 @@ internal sealed unsafe class XboxPlacedResources
     private readonly List<nint> _runBuffers = [];
     private readonly XMemPhysicalMemory _memory;
     private readonly XboxObjects _objects;
-    private readonly OnceLog _warnings;
+    private readonly GpuTextures _textures;
     private readonly LoaderLog _log;
 
-    public XboxPlacedResources(XMemPhysicalMemory memory, XboxObjects objects, OnceLog warnings, LoaderLog log)
+    public XboxPlacedResources(XMemPhysicalMemory memory, XboxObjects objects, GpuTextures textures, LoaderLog log)
     {
         _memory = memory;
         _objects = objects;
-        _warnings = warnings;
+        _textures = textures;
         _log = log;
     }
 
@@ -95,19 +95,12 @@ internal sealed unsafe class XboxPlacedResources
 
     /// <summary>
     /// A texture at a game address. A desktop texture with the driver's layout cannot sit on a heap over game memory,
-    /// so it is a committed texture of its own: right for render targets and other GPU-written textures, while data
-    /// the CPU writes at the address does not reach it. GetGPUVirtualAddress still answers the game's address.
+    /// so it is a committed texture of its own, registered by address and filled from the game's bytes unless the GPU
+    /// writes it (<see cref="GpuTextures"/>). GetGPUVirtualAddress still answers the game's address.
     /// </summary>
     private int CreateTexture(nint device, ulong address, ResourceDescription* description, int initialLayout, void* clear, nint* resource)
     {
-        _warnings.Warn("slot133-texture", "[d3d12_xs] ID3D12Device.X::Slot133: textures at game addresses become committed desktop textures, not shared with game memory");
-        var desktop = ShimContext.Runtime.D3D12X.Descriptions.ToDesktop(device, description);
-
-        int* properties = stackalloc int[] { DefaultHeapType, 0, 0, 0, 0 };
-        Guid iid = ResourceIid;
-        nint inner = 0;
-        var create = (delegate* unmanaged<nint, int*, int, ResourceDescription*, int, void*, Guid*, nint*, int>)ComObject.Slot(device, DesktopCreateCommittedResourceSlot);
-        int hr = create(device, properties, NoHeapFlags, &desktop, BarrierLayouts.ToState(initialLayout), clear, &iid, &inner);
+        int hr = _textures.CreatePlaced(device, address, description, initialLayout, clear, out nint inner);
         _log.Detail($"  [d3d12_xs] ID3D12Device.X::Slot133 texture at 0x{address:x}: dimension {description->Dimension}, {description->Width}x{description->Height}, format {description->Format}, layout {initialLayout} -> {HResult.Format(hr)}");
 
         if (HResult.Failed(hr))

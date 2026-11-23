@@ -85,7 +85,7 @@ should create. From slot 44 on the order is not desktop's.
 | 48 | 0x180 | 4 | X: create command queue | queue IID, desc, IID, out |
 | 49, 50 | 0x188, 0x190 | 1 each | X | |
 | 55, 57, 62, 67, 86 | | 1 each | X: create pipeline state (five variants, [d3d12x-pipelines.md](d3d12x-pipelines.md)) | pipeline-state IID |
-| 61 | 0x1E8 | 1 | X: create sampler (*inferred*) | (0x6c-byte desc, CPU handle); the game then copies a sampler descriptor (0x1412b9800) |
+| 61 | 0x1E8 | 1 | X: create sampler (*inferred*) | (0x6c-byte desc, CPU handle), desc filled at 0x1412b96b0; the game then flushes the descriptor (0x1412b9800) |
 | 70 | 0x230 | 6 | X: create SRV without a resource object (*inferred*) | (D3D12_RESOURCE_DESC, 64-byte view desc: desktop SRV desc + GPU address at +0x28, CPU handle) (0x144ecc800) |
 | 71 | 0x238 | 2 | X | |
 | 73 | 0x248 | 3 | X: create command list | (16-byte desc, allocator, PSO, IID, out) |
@@ -151,8 +151,8 @@ method follows from the arguments and from the inline packet written instead:
 | 70 | 62 | OMSetDepthBounds | floats in xmm1, xmm2 |
 | 72, 75, 126 to 128, 142 | | X | one site each |
 
-Slots 26 to 28 are presumably ResourceBarrier, ExecuteBundle and SetDescriptorHeaps, and 31, 32 two X slots
-(*inferred*); between 52 and 61 two desktop methods are missing.
+Slot 32 is SetDescriptorHeaps (two heaps, call at 0x144e4cac2), so ResourceBarrier and ExecuteBundle are among slots
+26 to 31 with X slots (*inferred*); between 52 and 61 two desktop methods are missing.
 
 ### Descriptor heaps
 
@@ -209,11 +209,11 @@ slot. Slots taking GPU addresses (41 to 48) stay stubs until console addresses a
 | Device | 17 to 24 | view creation and descriptor copies with CPU handles translated (below) |
 | Device | 34, 35 | MakeResident, Evict: S_OK (desktop objects are resident from creation) |
 | Device | 48, 73 | compute queues (flags reduced to DISABLE_GPU_TIMEOUT) and command lists, wrapped |
-| Device | 61, 70 | a trilinear wrapping sampler, and a null SRV of the view's dimension (no desktop resource at console addresses yet); each logged once |
+| Device | 61, 70 | the desktop sampler of the console sampler desc, and an SRV on the desktop texture at the view's address ([gpu-resources.md](gpu-resources.md)) |
 | Device | 74 | logged, output zeroed, S_OK |
 | Device | 127 | committed resource (below) |
 | Device | 78 to 80 | frame interval, frame events and their wait on a timer ([Present](#present)) |
-| Device | 133 | buffer at a game address (below) |
+| Device | 133 | buffer at a game address (below), or a texture registered by address ([gpu-resources.md](gpu-resources.md)) |
 | Command queue | 12, 35 | unwrap up to 256 lists per call and run desktop ExecuteCommandLists; 35 ignores its frame object and flags |
 | Command queue | 32 | present on a swap chain ([Present](#present)) |
 | Resource | 2 | Release that also frees a slot-127 resource's title memory |
@@ -236,8 +236,8 @@ and descriptor work will use (on the console GPU address == CPU address). Update
 consecutive pages of one section, in the address order of the placeholder it is mapped into
 ([physical-memory.md](physical-memory.md)). The game's 0xAE00000-byte pool (three pieces of one placeholder, mapped
 later piece first) is one run and one buffer. A range with no mapped page gets a committed buffer that is not shared.
-A texture at a game address becomes a committed desktop texture of its own: right for render targets, while data
-the CPU writes at the address does not reach it.
+A texture at a game address becomes a committed desktop texture of its own, filled from the game's bytes unless the
+GPU writes it ([gpu-resources.md](gpu-resources.md)).
 
 Memory the game commits itself (XMemVirtualAlloc with MEM_COMMIT, such as the 2.2 GiB heap with PAGE_GRAPHICS_*
 protection) is GPU memory on the console too. The first console GPU address there that the table misses opens the
@@ -357,10 +357,8 @@ handles the game derives itself, the driver faults in SetGraphicsRootDescriptorT
 0x1400321ff).
 ## Unknown
 
-- The fields of the slot-61 sampler desc and the 64-byte slot-70 view desc past the address; device slot 71;
-  what slot 74's output is; whether list slot 139's third argument is flags.
-- Resources at console GPU addresses for slot-70 views and slot-133 textures, and textures the CPU fills, which
-  need desktop textures fed from game memory (console tiling, streaming through the scatter-mapped range).
+- Device slot 71; what slot 74's output is; whether list slot 139's third argument is flags. The open points of
+  slots 61, 70 and 133 are in [gpu-resources.md](gpu-resources.md).
 - CBVs at addresses the desktop cannot express (16-byte aligned); the allocator's slot 9 (callback, context).
 - List slots 26 to 32, 53 to 60, 62 and above 70; the list slots that take wrapped resources inside structures
   (barriers, texture copies) and GPU addresses.
