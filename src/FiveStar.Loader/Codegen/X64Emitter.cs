@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Five Star Recomp contributors.
+﻿// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Buffers.Binary;
@@ -50,6 +50,12 @@ internal sealed class X64Emitter
     private static readonly byte[] MovRaxFromRdxEncoding = [0x48, 0x8B, 0x02];
     private static readonly byte[] XchgRcxRdxEncoding = [0x48, 0x87, 0xCA];
     private static readonly byte[] JmpRaxDisp32Encoding = [0xFF, 0xA0];
+    private static readonly byte[] MovR10Imm64 = [0x49, 0xBA];
+    private static readonly byte[] MovR11dImm32 = [0x41, 0xBB];
+    private static readonly byte[] LockXaddR10MemR11 = [0xF0, 0x4D, 0x0F, 0xC1, 0x1A];
+    private static readonly byte[] AndR11dImm32 = [0x41, 0x81, 0xE3];
+    private static readonly byte[] MovDwordR10R11x4Disp8Imm32 = [0x43, 0xC7, 0x44, 0x9A];
+    private static readonly byte[] JmpR10Encoding = [0x41, 0xFF, 0xE2];
 
     private readonly List<byte> _code = [];
 
@@ -87,6 +93,44 @@ internal sealed class X64Emitter
     {
         Emit(MovR11Imm64);
         Emit64(value);
+    }
+
+    public void MovR10(ulong value)
+    {
+        Emit(MovR10Imm64);
+        Emit64(value);
+    }
+
+    /// <summary><c>mov r11d,imm32</c> (zero-extends into r11).</summary>
+    public void MovR11d(uint value)
+    {
+        Emit(MovR11dImm32);
+        Emit32(value);
+    }
+
+    /// <summary><c>lock xadd [r10],r11</c>.</summary>
+    public void LockXaddR10R11()
+    {
+        Emit(LockXaddR10MemR11);
+    }
+
+    /// <summary><c>and r11d,imm32</c>.</summary>
+    public void AndR11d(uint value)
+    {
+        Emit(AndR11dImm32);
+        Emit32(value);
+    }
+
+    /// <summary><c>mov dword [r10+r11*4+disp8],imm32</c>.</summary>
+    public void StoreDwordR10IndexR11(byte displacement, uint value)
+    {
+        Emit(MovDwordR10R11x4Disp8Imm32, displacement);
+        Emit32(value);
+    }
+
+    public void JmpR10()
+    {
+        Emit(JmpR10Encoding);
     }
 
     public void MovEax(uint value)

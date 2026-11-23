@@ -13,6 +13,10 @@ internal static class HostUsage
 
         options:
           --call <name>          call an inspected export (see --list-safe-calls); 'all' = every applicable one
+          --run                  run the main executable's entry point; reports faults in mapped code with the
+                                 last calls through shims and stubs
+          --run-timeout <s>      with --run: after s seconds report the main thread's stack and exit (code 3)
+          --trace-system         with --run: the call trace also records System32 imports
           --main <name>          image that plays the process exe for GetModuleHandle(NULL)/GetModuleFileName(NULL)
                                  (default: first mapped exe, else the first --load)
           --patch-peb            also point PEB.ImageBaseAddress at the main image (off by default)

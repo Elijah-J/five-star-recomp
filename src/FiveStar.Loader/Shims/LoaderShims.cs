@@ -52,6 +52,22 @@ internal static unsafe class LoaderShims
     }
 
     /// <summary>
+    /// AddVectoredExceptionHandler from mapped code: registered as asked, then the loader's fault reporter (if
+    /// installed) moves back in front, so it still sees each fault first. It only reports and continues the search.
+    /// </summary>
+    [Shim("*", "AddVectoredExceptionHandler")]
+    [UnmanagedCallersOnly]
+    private static nint AddVectoredExceptionHandler(uint first, nint handler)
+    {
+        var runtime = ShimContext.Runtime;
+        nint handle = Kernel32.AddVectoredExceptionHandler(first, handler);
+        runtime.Log.Detail($"  [loader] AddVectoredExceptionHandler({first}, {runtime.Images.Describe(handler)}) -> 0x{handle:x}");
+        runtime.Faults.KeepFirst();
+
+        return handle;
+    }
+
+    /// <summary>
     /// std::terminate from a mapped image (FH4 calls it for noexcept violations and unmatched throws) logs the native
     /// stack, then hands over to the real ucrtbase terminate, which fail-fasts.
     /// </summary>

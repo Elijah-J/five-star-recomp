@@ -30,6 +30,13 @@ and jumps to the image callback with `rcx` = image base. After `LoadLibrary` of 
 and allocates blocks for existing and future threads. ntdll ignores the TLS directory of a DLL without imports, so the
 host imports `kernel32!GetLastError`.
 
+**TLS slot 0.** The linker compiles an executable's thread_local accesses as `mov rax,gs:[58h]; mov rax,[rax]`: an
+executable's slot is always 0 and `_tls_index` is not read. Slot 0 of this process belongs to the host executable, so
+the TLS host of a mapped executable gets two more callbacks around the image's: the first (process and thread attach)
+saves the thread's slot-0 pointer in 8 bytes added after the template and points slot 0 at the executable's block; the
+last (process and thread detach) puts it back before ntdll frees the blocks. Threads that existed before the
+executable was mapped, other than the loading thread, keep the host's slot 0.
+
 **Unresolved imports.** Each gets a stub `mov rcx,id; mov rax,handler; jmp rax` in a code heap that is never writable
 and executable at once. `--unresolved stub` (default) logs the first call and returns 0 or the module's value; `trap`
 terminates on the call; `error` fails the load.
@@ -81,12 +88,13 @@ ntdll answers only for OS-loaded modules; mapping it lets the loader bind that i
 | `xg_xs.dll` | `XGCreateTextureComputer`, `XGSuggestSwizzleMode` return E_NOTIMPL (console tiling not implemented) |
 | `xcrdapi.dll` `DStorageGetFactory` | one stub factory: IUnknown, slot 8 (the staging buffer size set at start-up) S_OK, every other slot E_NOTIMPL logged once |
 | `RtlPcToFileHeader` (any module) | the mapped image containing the address, else the real ntdll function |
+| `AddVectoredExceptionHandler` (any module) | registered as asked; the fault reporter of `--run` then moves back in front |
 | `terminate` (any module) | logs the native stack, then calls `ucrtbase!terminate` |
 | `GetModuleHandle{A,W}`, `GetModuleHandleEx{A,W}`, `GetModuleFileName{A,W}` (any module) | NULL means the main image (`--main`; else the first mapped executable, else the first `--load`); names, handles and addresses of mapped images answer with the mapping; truncation follows Windows (size-1 characters, result size, `ERROR_INSUFFICIENT_BUFFER`); everything else goes to kernel32 |
 | `LoadLibrary{A,W,ExA,ExW}` (any module) | a mapped image: its base, reference counted; an Xbox-only module: a read-only page with a minimal PE header (a virtual module); a manual module or a DLL in the search directories, by name or by a path inside one: mapped now; data-file loads and the rest: the OS |
 | `GetProcAddress` (any module) | mapped image: its exports; virtual module: the shim table (unknown name: NULL, error 127); OS module: the "*" shim of that name if there is one, else the real export |
 | `FreeLibrary` (any module) | mapped image: reference count down; an image first mapped by `LoadLibrary` and imported by no other image is unloaded at 0; virtual module: TRUE |
-| `CreateFile{W,A}`, `CreateFile2`, `GetFileAttributes{W,ExW}`, `fopen`, `_wfopen`, `_fsopen`, `_wfsopen`, `_open`, `_wopen` (any module) | the file overlay (below), then the real function; an ANSI call that is redirected opens the mod file through the wide function |
+| `CreateFile{W,A}`, `CreateFile2`, `GetFileAttributes{W,ExW}`, `fopen`, `_wfopen`, `_fsopen`, `_wfsopen`, `_open`, `_wopen` (any module) | the console package drive and the file overlay (below), then the real function; an ANSI call that is redirected opens the mod file through the wide function |
 | `XGameRuntimeInitialize*`, `XGameRuntimeIsFeatureAvailable` | succeed; every feature available except XAppCapture, XSpeechSynthesizer and XGameStreaming |
 | `XTaskQueue*` | Manual, ThreadPool, SerializedThreadPool and Immediate ports; composite queues; delayed callbacks; waiters (re-armed after each signal); monitors; terminate (pending callbacks run with `canceled = true`); duplicate and close reference counted; a process queue (ThreadPool/ThreadPool) created on first use |
 | `XAsync*` | Begin, Schedule, Complete, GetStatus (with wait), GetResultSize, GetResult (identity and buffer checked), Cancel, Run; DoWork on the work port, the completion routine on the completion port, Cleanup once |
@@ -156,8 +164,11 @@ outside the image, an unknown shim). A skipped or failed patch writes nothing.
 package root (`--package-root`, else the main image's directory) through one of the file shims, the loader takes the
 path relative to the root and opens the same relative path in the first mod folder that contains that file. Paths
 outside the root, and files no mod folder has, open unchanged. `\\?\` prefixes and relative paths are resolved first.
-Each redirect is a detail line in the log (`[overlay] CreateFileW("...") -> "..."`). Without `--mods` the shims only
-forward.
+Each redirect is a detail line in the log (`[overlay] CreateFileW("...") -> "..."`), and with a log file every path
+the file shims see is one (`[file] GetFileAttributesW("...")`).
+
+The console mounts the game package as drive `G:`; a path starting with `G:\` is mapped to the package root before the mod
+folders are consulted.
 
 Directory listings (`FindFirstFile*`) are not merged: a file only a mod folder has opens, but is not listed.
 
@@ -282,6 +293,7 @@ fivestar-loader --load $dump\XboxBvhBuilder.dll --load $dump\Bink2Scarlett.dll -
 | Option | Meaning |
 |---|---|
 | `--load <dll>` | map an image (repeatable) |
+| `--run`, `--run-timeout <s>` | run the main executable's entry point (below) |
 | `--call <export>` / `--call all` | call an export that was disassembled first (`--list-safe-calls` lists them); others are refused |
 | `--main <name>` | the image that plays the process executable |
 | `--patch-peb` | also point `PEB.ImageBaseAddress` at the main image (restored at exit) |
@@ -300,6 +312,26 @@ fivestar-loader --load $dump\XboxBvhBuilder.dll --load $dump\Bink2Scarlett.dll -
 The output lists the images, an import table per image and module, the totals and the exports. Tests:
 `dotnet test tests/FiveStar.Loader.Tests`; with `FIVESTAR_DUMP` set to the dump folder they also load the six Xbox
 DLLs (825 imports, none unresolved), run the inspected exports and read the package identity.
+
+## Running the executable
+
+`--run` runs the main executable after loading: its TLS callbacks already ran when its TLS host loaded, then the
+entry point (the CRT startup, the static initializers, then `main`) runs on a thread with the image's
+`SizeOfStackReserve`. Before anything is loaded it turns on two diagnostics:
+
+- **Call trace.** Imports bound to a shim or an unresolved stub go through a thunk that adds the import's id to a
+  256-entry ring (`lock xadd`, only r10 and r11 touched) and jumps on.
+- **Fault reporter.** A first vectored exception handler. For a hardware exception (NTSTATUS severity error, not a
+  customer code) or a breakpoint whose first 12 stack frames include a mapped image, it logs the code (and the access
+  and address of an access violation), the image RVA, the `.pdata` function around it, 16 code bytes, the registers,
+  the stack and the last 24 traced calls; after 3 such records one line per fault, at most 64. It always continues the
+  search, so the game's own handlers still run.
+
+`--run-timeout <s>` suspends the main thread if the entry point has not returned after s seconds, logs the same
+record for it and exits with code 3. `--trace-system` also traces imports bound to System32 (the ring then covers far\nless time). Run boots in a child process: the CRT ends the process through `exit`.
+
+The loader is built with `<CETCompat>false</CETCompat>`: with CET shadow stacks, SEH resuming inside mapped code
+fail-fasts (0x30).
 
 ## Call cost
 

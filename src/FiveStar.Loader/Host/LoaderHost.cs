@@ -47,6 +47,13 @@ internal sealed class LoaderHost
 
         LoadAbiTable();
 
+        if (_options.RunMain)
+        {
+            // Before loading: TLS callbacks and DllMain already run mapped code.
+            _runtime.Trace.Enable(_options.TraceSystemCalls);
+            _runtime.Faults.Install();
+        }
+
         if (!ConfigureMods())
         {
             return UsageError;
@@ -57,6 +64,7 @@ internal sealed class LoaderHost
         ReportMainImage();
 
         rc = CallExports(rc);
+        rc = RunMain(rc);
         Finish();
         _log.Info($"done, exit code {rc}");
 
@@ -167,6 +175,25 @@ internal sealed class LoaderHost
         }
 
         return result;
+    }
+
+    private int RunMain(int rc)
+    {
+        var main = _runtime.Loader.MainImage;
+
+        if (!_options.RunMain || rc != Success)
+        {
+            return rc;
+        }
+
+        if (main is null || main.Pe.IsDll)
+        {
+            _log.Error("--run needs an executable as the main image");
+
+            return Failure;
+        }
+
+        return new ExecutableRunner(_runtime.Faults, _log).Run(main, _options.RunTimeout);
     }
 
     private void Finish()

@@ -15,7 +15,7 @@ namespace FiveStar.Loader.Loading;
 /// mov rcx,imageBase; mov rax,callback; jmp rax</c>.
 /// .data at 0x2000: IMAGE_TLS_DIRECTORY64, the host's _tls_index (+0x28), the callback array (+0x30), the template,
 /// and an import of kernel32!GetLastError (ntdll ignores the TLS directory of a DLL without imports).
-/// .reloc: DIR64 fixups for the directory's VAs and the callback array.
+/// .reloc: DIR64 fixups for the directory's VAs and the callback array.\n/// For an executable the callbacks start and end with the <see cref="TlsSlotZero"/> routines.
 /// </summary>
 internal static class TlsHostBuilder
 {
@@ -30,6 +30,7 @@ internal static class TlsHostBuilder
     private const int CallbackArrayOffset = 0x30;
     private const int MinimumDataSize = 0x40;
     private const int ThunkAlignment = 16;
+    private const int SlotZeroCallbacks = 2;
     private const int DataAlignment = 16;
     private const string ImportModule = "kernel32.dll";
     private const string ImportSymbol = "GetLastError";
@@ -41,7 +42,7 @@ internal static class TlsHostBuilder
 
     public static byte[] Build(TlsTemplate template)
     {
-        int callbackArraySize = sizeof(ulong) * (template.Callbacks.Count + 1);
+        int callbackArraySize = sizeof(ulong) * (CallbackCount(template) + 1);
 
         if (CallbackArrayOffset + callbackArraySize > PeImageBuilder.SectionAlignment)
         {
@@ -68,6 +69,30 @@ internal static class TlsHostBuilder
         return builder.Build();
     }
 
+    /// <summary>The host's callbacks: the image's, plus the slot-0 enter and leave routines for an executable.</summary>
+    private static int CallbackCount(TlsTemplate template)
+    {
+        int extra = 0;
+
+        if (template.OwnsSlotZero)
+        {
+            extra = SlotZeroCallbacks;
+        }
+
+        return template.Callbacks.Count + extra;
+    }
+
+    /// <summary>The host's zero fill: the image's, plus room for the saved slot-0 pointer of an executable.</summary>
+    private static uint ZeroFill(TlsTemplate template)
+    {
+        if (!template.OwnsSlotZero)
+        {
+            return template.ZeroFill;
+        }
+
+        return (uint)(TlsSlotZero.SaveOffset(template) + TlsSlotZero.SaveSize - template.RawData.Length);
+    }
+
     private static int Align(int value, int alignment)
     {
         return (value + alignment - 1) & ~(alignment - 1);
@@ -78,6 +103,14 @@ internal static class TlsHostBuilder
         var code = new X64Emitter();
         code.MovEax(1);
         code.Ret();
+        int saveOffset = TlsSlotZero.SaveOffset(template);
+
+        if (template.OwnsSlotZero)
+        {
+            code.PadTo(ThunkAlignment);
+            thunkRvas.Add(TextRva + (uint)code.Length);
+            TlsSlotZero.EmitEnter(code, TextRva, DataRva + HostIndexOffset, saveOffset);
+        }
 
         foreach (ulong callback in template.Callbacks)
         {
@@ -94,12 +127,19 @@ internal static class TlsHostBuilder
             code.JmpRax();
         }
 
+        if (template.OwnsSlotZero)
+        {
+            code.PadTo(ThunkAlignment);
+            thunkRvas.Add(TextRva + (uint)code.Length);
+            TlsSlotZero.EmitLeave(code, TextRva, DataRva + HostIndexOffset, saveOffset);
+        }
+
         return code.ToArray();
     }
 
     private static (byte[] Data, ImportTableImage Imports) BuildData(TlsTemplate template, List<uint> thunkRvas, BaseRelocationBuilder relocations)
     {
-        int templateOffset = Align(CallbackArrayOffset + (sizeof(ulong) * (template.Callbacks.Count + 1)), DataAlignment);
+        int templateOffset = Align(CallbackArrayOffset + (sizeof(ulong) * (CallbackCount(template) + 1)), DataAlignment);
         int importOffset = Align(templateOffset + template.RawData.Length, DataAlignment);
         var imports = new ImportTableBuilder();
         imports.Add(ImportModule, ImportSymbol);
@@ -129,7 +169,7 @@ internal static class TlsHostBuilder
         BinaryPrimitives.WriteUInt64LittleEndian(directory[TlsFormat.EndAddressOfRawDataOffset..], start + (uint)template.RawData.Length);
         BinaryPrimitives.WriteUInt64LittleEndian(directory[TlsFormat.AddressOfIndexOffset..], PreferredBase + DataRva + HostIndexOffset);
         BinaryPrimitives.WriteUInt64LittleEndian(directory[TlsFormat.AddressOfCallBacksOffset..], PreferredBase + DataRva + CallbackArrayOffset);
-        BinaryPrimitives.WriteUInt32LittleEndian(directory[TlsFormat.SizeOfZeroFillOffset..], template.ZeroFill);
+        BinaryPrimitives.WriteUInt32LittleEndian(directory[TlsFormat.SizeOfZeroFillOffset..], ZeroFill(template));
         BinaryPrimitives.WriteUInt32LittleEndian(directory[TlsFormat.CharacteristicsOffset..], template.Characteristics);
 
         relocations.AddDir64(DataRva + DirectoryOffset + TlsFormat.StartAddressOfRawDataOffset);

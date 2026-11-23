@@ -31,10 +31,31 @@ internal static unsafe class NativeStack
 
     public static List<StackFrame> Walk(ImageTable images, int depth)
     {
-        var frames = new List<StackFrame>();
         byte* raw = stackalloc byte[ContextSize + ContextAlignment];
-        byte* context = (byte*)(((ulong)raw + ContextAlignment - 1) & ~(ulong)(ContextAlignment - 1));
+        byte* context = Align(raw);
         Ntdll.RtlCaptureContext(context);
+
+        return WalkContext(images, context, depth);
+    }
+
+    /// <summary>Walks from a CONTEXT, such as the one of an exception; the CONTEXT is copied, not changed.</summary>
+    public static List<StackFrame> WalkFrom(ImageTable images, byte* start, int depth)
+    {
+        byte* raw = stackalloc byte[ContextSize + ContextAlignment];
+        byte* context = Align(raw);
+        Buffer.MemoryCopy(start, context, ContextSize, ContextSize);
+
+        return WalkContext(images, context, depth);
+    }
+
+    private static byte* Align(byte* raw)
+    {
+        return (byte*)(((ulong)raw + ContextAlignment - 1) & ~(ulong)(ContextAlignment - 1));
+    }
+
+    private static List<StackFrame> WalkContext(ImageTable images, byte* context, int depth)
+    {
+        var frames = new List<StackFrame>();
 
         for (int i = 0; i < depth; i++)
         {
@@ -48,7 +69,21 @@ internal static unsafe class NativeStack
             ulong imageBase = 0;
             nint function = Ntdll.RtlLookupFunctionEntry(pc, &imageBase, 0);
             frames.Add(new StackFrame(pc, Describe(images, pc), function != 0));
+            ulong rsp = *(ulong*)(context + RspOffset);
+
+            // Only the innermost frame may be a leaf; past it, a frame without unwind data ends the walk, as does a
+            // stack pointer that cannot be read (a fault report must not fault).
+            if ((function == 0 && i > 0) || !IsReadable(rsp))
+            {
+                break;
+            }
+
             Unwind(context, pc, imageBase, function);
+
+            if (*(ulong*)(context + RspOffset) <= rsp)
+            {
+                break;
+            }
         }
 
         return frames;
@@ -83,6 +118,20 @@ internal static unsafe class NativeStack
         }
 
         return where;
+    }
+
+    private static bool IsReadable(ulong address)
+    {
+        MemoryBasicInformation info;
+
+        if (address == 0 || Kernel32.VirtualQueryEx(Kernel32.GetCurrentProcess(), (nint)address, &info, (nuint)sizeof(MemoryBasicInformation)) == 0)
+        {
+            return false;
+        }
+
+        bool blocked = (info.Protect & (Win32Constants.PageNoAccess | Win32Constants.PageGuard)) != 0;
+
+        return info.State == Win32Constants.MemCommit && !blocked;
     }
 
     private static void Unwind(byte* context, ulong pc, ulong imageBase, nint function)

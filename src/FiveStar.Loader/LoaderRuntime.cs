@@ -33,8 +33,10 @@ internal sealed class LoaderRuntime : IDisposable
         Images = new ImageTable();
         VirtualModules = new VirtualModules(log);
         Patcher = new ImagePatcher(Shims, log);
+        Trace = new CallTrace(CodeHeap);
+        Faults = new FaultReporter(Images, Trace, log);
 
-        Loader = new ImageLoader(options, Shims, Stubs, Images, CodeHeap, new TlsHostAttacher(options.WorkDirectory, options.ProcessId, log), Patcher, log);
+        Loader = new ImageLoader(options, Shims, Stubs, Images, CodeHeap, new TlsHostAttacher(options.WorkDirectory, options.ProcessId, log), Patcher, Trace, log);
         Router = new RuntimeLibraryRouter(Loader, VirtualModules, Shims, Images, log);
         Identity = new ProcessIdentity(log);
         ModuleIdentity = new ModuleIdentity(Loader, Router, Images, VirtualModules, Shims, Stubs, LastError, Counters, log, environment.SystemDirectory);
@@ -76,6 +78,12 @@ internal sealed class LoaderRuntime : IDisposable
     public VirtualModules VirtualModules { get; }
 
     public ImageLoader Loader { get; }
+
+    /// <summary>The ring of recent calls through shims and unresolved stubs, when enabled.</summary>
+    public CallTrace Trace { get; }
+
+    /// <summary>The vectored exception handler that reports faults in mapped code.</summary>
+    public FaultReporter Faults { get; }
 
     /// <summary>The code patches applied to images as they are mapped.</summary>
     public ImagePatcher Patcher { get; }

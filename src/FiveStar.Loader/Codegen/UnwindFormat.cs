@@ -22,4 +22,7 @@ internal static class UnwindFormat
 
     /// <summary>RUNTIME_FUNCTION: BeginAddress, EndAddress, UnwindInfoAddress.</summary>
     public const int RuntimeFunctionSize = 12;
+
+    /// <summary>RUNTIME_FUNCTION as 32-bit fields.</summary>
+    public const int RuntimeFunctionFields = RuntimeFunctionSize / sizeof(uint);
 }
