@@ -183,6 +183,7 @@ internal sealed unsafe class ImportResolver
     {
         bool traced = record.Source is ResolutionSource.Shim or ResolutionSource.Unresolved;
         traced |= _trace.IncludesSystem && record.Source == ResolutionSource.System;
+        traced |= record.Source == ResolutionSource.Image && _trace.TracedModules.Contains(record.Module);
 
         if (!_trace.Enabled || !traced)
         {

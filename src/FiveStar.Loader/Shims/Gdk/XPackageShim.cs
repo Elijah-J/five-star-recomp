@@ -194,7 +194,10 @@ internal static unsafe class XPackageShim
     [UnmanagedCallersOnly]
     private static int XPackageRegisterInstallationProgressChanged(nint monitor, nint context, nint callback, ulong* token)
     {
-        return ShimContext.Runtime.Gdk.Packages.RegisterProgressChanged(token);
+        var runtime = ShimContext.Runtime;
+        runtime.Log.Info($"  [gdk] XPackageRegisterInstallationProgressChanged(monitor 0x{monitor:x}, callback {runtime.Images.Describe(callback)}, context 0x{context:x}): never called back");
+
+        return runtime.Gdk.Packages.RegisterProgressChanged(token);
     }
 
     /// <summary>bool XPackageUnregisterInstallationProgressChanged(monitor, XTaskQueueRegistrationToken token, bool wait).</summary>

@@ -43,6 +43,15 @@ internal static unsafe class Kernel32
     [DllImport(Library, SetLastError = true)]
     public static extern uint SuspendThread(nint thread);
 
+    [DllImport(Library, SetLastError = true)]
+    public static extern uint ResumeThread(nint thread);
+
+    [DllImport(Library)]
+    public static extern void OutputDebugStringA(byte* text);
+
+    [DllImport(Library)]
+    public static extern void OutputDebugStringW(char* text);
+
     /// <summary>GetThreadContext: <paramref name="context"/> is a 16-byte aligned CONTEXT with ContextFlags set.</summary>
     [DllImport(Library, SetLastError = true)]
     public static extern int GetThreadContext(nint thread, byte* context);

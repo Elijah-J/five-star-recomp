@@ -17,6 +17,12 @@ internal static class HostUsage
                                  last calls through shims and stubs
           --run-timeout <s>      with --run: after s seconds report the main thread's stack and exit (code 3)
           --trace-system         with --run: the call trace also records System32 imports
+          --input-script <file>  timed key presses ("<s> <key> [hold <s>] [repeat <n> every <s>]" per line)
+                                 added to the desktop keys, so the keyboard and the virtual gamepad see them
+          --profile-threads      with --sample-threads: also log the main image's busiest functions on running threads
+          --trace-module <dll>   with --run: the call trace also records calls into this mapped image
+          --sample-threads <s>   with --run: every s seconds log the calls per shim since the last sample,
+                                 DirectStorage totals and every thread's stack
           --main <name>          image that plays the process exe for GetModuleHandle(NULL)/GetModuleFileName(NULL)
                                  (default: first mapped exe, else the first --load)
           --patch-peb            also point PEB.ImageBaseAddress at the main image (off by default)

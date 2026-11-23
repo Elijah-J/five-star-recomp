@@ -26,6 +26,9 @@ internal sealed unsafe class StorageQueue : IDisposable
     private long _enqueued;
     private long _submitted;
     private long _taken;
+    private long _requestsRun;
+    private long _requestsFailed;
+    private long _bytesDelivered;
     private int _closed;
     private int _batchResult;
     private QueueItem _lookahead;
@@ -39,6 +42,20 @@ internal sealed unsafe class StorageQueue : IDisposable
     }
 
     public QueueSettings Settings { get; }
+
+    /// <summary>Entries enqueued so far (requests, status entries and signals).</summary>
+    public long Enqueued => Volatile.Read(ref _enqueued);
+
+    /// <summary>Entries handed to the worker by Submit so far.</summary>
+    public long Submitted => Volatile.Read(ref _submitted);
+
+    /// <summary>Requests the worker ran, and how many of them failed.</summary>
+    public long RequestsRun => Volatile.Read(ref _requestsRun);
+
+    public long RequestsFailed => Volatile.Read(ref _requestsFailed);
+
+    /// <summary>Destination bytes of the requests that succeeded.</summary>
+    public long BytesDelivered => Volatile.Read(ref _bytesDelivered);
 
     /// <summary>Starts the worker thread.</summary>
     public void Start()
@@ -242,10 +259,16 @@ internal sealed unsafe class StorageQueue : IDisposable
         }
 
         int result = _executor.Complete(item.Sequence, item.Request);
+        Interlocked.Increment(ref _requestsRun);
 
         if (HResult.Failed(result))
         {
             Interlocked.CompareExchange(ref _batchResult, result, HResult.Ok);
+            Interlocked.Increment(ref _requestsFailed);
+        }
+        else
+        {
+            Interlocked.Add(ref _bytesDelivered, item.Request.DestinationSize);
         }
 
         ReleaseSource(item.Request);
