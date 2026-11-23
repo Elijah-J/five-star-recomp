@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Runtime.InteropServices;
+using FiveStar.Formats.Platform;
 using FiveStar.Loader.Codegen;
 using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Loading;
@@ -166,6 +167,25 @@ internal sealed unsafe class GameRuntimeService
         }
 
         _log.Info($"  [gdk] loaded {count} XGameRuntime ABI entries from {path}");
+
+        return count;
+    }
+
+    /// <summary>Registers the named thunks read from a GDK library; returns the number of entries.</summary>
+    public int LoadAbiLibrary(IReadOnlyList<GdkThunk> thunks, string source)
+    {
+        int count = 0;
+
+        foreach (var thunk in thunks)
+        {
+            if (thunk.Name is not null && thunk.Slot >= FirstMethodSlot)
+            {
+                RegisterAbi(thunk.Clsid, thunk.Iid, thunk.Slot, thunk.Name);
+                count++;
+            }
+        }
+
+        _log.Info($"  [gdk] loaded {count} XGameRuntime ABI entries from {source}");
 
         return count;
     }
