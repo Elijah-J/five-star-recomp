@@ -358,7 +358,8 @@ entry point (the CRT startup, the static initializers, then `main`) runs on a th
   and address of an access violation), the image RVA, the `.pdata` function around it, 16 code bytes, the registers,
   the stack and the last 24 traced calls; after 3 such records one line per fault, at most 64. It always continues the
   search, so the game's own handlers still run. Its native entry skips threads without a TLS array (exiting ones):
-  managed code cannot run there.
+  managed code cannot run there. Faults it cannot see (inside coreclr or the heap manager) need `fivestar-dbg`
+  ([debugging.md](debugging.md)).
 
 `--run-timeout <s>` suspends the main thread if the entry point has not returned after s seconds, logs the same
 record for it and ends the process with code 3 (TerminateProcess, no cleanup: the game's threads still use the shims,

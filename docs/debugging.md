@@ -1,0 +1,80 @@
+# Debugging
+
+Three tools find faults. Each one sees a different set of them.
+
+| Tool | Sees | Use it for |
+|---|---|---|
+| The loader's fault reporter (`fivestar-loader --run`, [loader.md](loader.md#running-the-executable)) | hardware exceptions whose first 12 frames include a mapped image, from inside the process: image RVA, `.pdata` function, code bytes, registers, the last traced shim calls | faults in game code. It is the first thing to read. |
+| `fivestar-dbg` (`src/FiveStar.Debugger`) | every exception in the process, from outside it, at first and second chance: module loads, debug output, symbolised stacks, minidumps, the page heap | faults inside coreclr, ntdll's heap manager, a driver or the fault reporter itself, heap corruption, and crashes that leave no log |
+| `--d3d12-debug`, `--d3d12-gpu-validation` ([d3d12x-shim.md](d3d12x-shim.md#debug-layer)) | D3D12 API misuse and GPU faults: debug-layer messages and the DRED report after a device removal | `DXGI_ERROR_DEVICE_REMOVED`, hangs on the GPU, wrong descriptors or barriers |
+
+## fivestar-dbg
+
+```powershell
+fivestar-dbg [options] [--] <program> [args...]
+fivestar-dbg --debug-heap --break-on AccessViolation --dump-on-crash crash.dmp `
+  --symbols "srv*C:\symbols*https://msdl.microsoft.com/download/symbols" `
+  -- fivestar-loader --load $dump\game.exe --run --log run.log
+```
+
+| Option | Meaning |
+|---|---|
+| `--debug-heap` | ntdll's debug heap and the full page heap, for this process only (below) |
+| `--break-on <code,...>` | a full record (registers, stack) already at first chance; hex codes or names (`AccessViolation`, `HeapCorruption`, `StackOverflow`, ...) |
+| `--symbols <path>` | folders and `srv*<cache>*<url>` entries; default `_NT_SYMBOL_PATH`, else exports only |
+| `--dump-on-crash <file>`, `--full-dump` | a minidump at the first second-chance or `--break-on` exception; with all process memory |
+| `--log <file>` | a copy of the output |
+| `--loader-log <file>` | the fivestar-loader log; default the program's own `--log` value |
+| `--children` | also debug the processes the program starts (`DEBUG_PROCESS`) |
+| `--timeout <s>` | end the program after s seconds (exit code 124) |
+
+The exit code is the program's. The tool builds for NativeAOT (`IsAotCompatible`); it calls kernel32, ntdll and
+System32's dbghelp through `LibraryImport`.
+
+### Behaviour
+
+- **Exceptions.** Each first-chance exception is one line: chance, code and name, address, `module+offset`, symbol, and
+  for an access violation the access and address. After 20 of one code they are only counted; the totals come at the
+  end. First-chance exceptions go back to the program (`DBG_EXCEPTION_NOT_HANDLED`). A second-chance exception gets a
+  full record with every thread's stack.
+- **Breakpoints.** ntdll's startup breakpoint passes silently. Any later one (a heap check, a verifier stop, an
+  `__debugbreak`) gets a full record and is stepped over, as a debugger's `g` does.
+- **.NET hosts.** An unhandled exception in a .NET process (the loader is one) ends it through the runtime's fail-fast
+  without a second chance, so `--break-on` is what gets the stack and the dump.
+- **Stacks.** `StackWalk64` unwinds through the `.pdata` of every image dbghelp knows. JIT code has no image; the walk
+  stops at the first frame outside an image.
+- **Images the loader maps.** The OS never reports them. At each report the tool reads the new lines of the loader log
+  (`== loading <path>`, `mapped <name> @ 0x<base> (size 0x<size>`, `unloaded <name>`), registers those images with
+  dbghelp and names addresses in them as `game.exe RVA 0x1234 (mapped)`.
+- **Symbols.** A name dbghelp takes from the export table is marked `(export)`: it is the nearest export, possibly a
+  different function. System32 has no `symsrv.dll`, so for `srv*` entries the tool reads the image's CodeView record
+  and downloads `<pdb>/<GUID><age>/<pdb>` into the cache (symstore layout) the first time a module appears in a report.
+
+### Debug heap
+
+Nothing system-wide changes, and no registry key is written:
+
+| Mode | How | Catches |
+|---|---|---|
+| default | `_NO_DEBUG_HEAP=1` in the program's environment, which turns off the debug heap ntdll enables for every process started under a debugger | nothing extra: the heap behaves as in a normal run |
+| `--debug-heap` | no `_NO_DEBUG_HEAP`, so tail checking, free checking and parameter validation stay on; and at the create-process event, before any user-mode code runs, `FLG_HEAP_PAGE_ALLOCS` (0x02000000) is set in the debuggee's `PEB.NtGlobalFlag` (offset 0xBC). ntdll then loads verifier.dll and logs `page heap enabled with flags 0x2` (full page heap) | an overrun of a block whose size is a multiple of 16 faults on the writing instruction (guard page); other overruns and writes after free are reported as a verifier stop at the free |
+
+The full page heap costs at least two pages per allocation; a long game run under it needs memory to match.
+
+### Output
+
+```text
+[   0.025] 40756 page heap on
+[   0.027] 40756/54844 debug: Page heap: pid 0x9F34: page heap enabled with flags 0x2.
+[  12.435] 40756/54844 first-chance c0000005 AccessViolation at 0x7ff975a9ca06 ntdll.dll+0x16ca06 ntdll!_memset_spec_avx_ermsb+0xc6 (write at 0x2f9a4767000)
+[  12.437] 40756 exited with 0xc0000005 (c0000005 AccessViolation)
+```
+
+Tests (`tests/FiveStar.Debugger.Tests`, Windows): the test assembly is also the debuggee. An access violation in ntdll
+is reported with module, symbolised frame and a minidump; a one-byte heap overrun passes unnoticed on the normal heap
+and faults on the write under `--debug-heap`.
+
+## Unknown
+
+- Whether ntdll keeps honouring `PEB.NtGlobalFlag` set at the create-process event in later Windows releases (checked
+  on Windows 11 build 26200).
