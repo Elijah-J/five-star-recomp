@@ -35,7 +35,7 @@ The [wiki](../../wiki) has the details, research notes and the current progress 
 
 You need the .NET 10 SDK. Shader work also needs the DirectX shader compiler (`dxc`, part of the Windows SDK). The tools
 disassemble RDNA code in-process; LLVM 18 or newer with the AMDGPU target (`llvm-mc`, `llvm-objdump`) is needed only
-for the tests and `fivestar shader decode-check`.
+to change a shader test program and for `fivestar shader decode-check`.
 
 ```
 dotnet build FiveStar.slnx

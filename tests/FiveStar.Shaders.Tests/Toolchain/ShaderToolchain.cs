@@ -6,10 +6,10 @@ using FiveStar.Shaders.Disassembly;
 namespace FiveStar.Shaders.Tests.Toolchain;
 
 /// <summary>
-/// The external tools of the translator tests: llvm-mc (assembles the test programs) and llvm-objdump (the decoder
-/// comparison) from FIVESTAR_LLVM (default D:\Tools\llvm\bin),
-/// dxc from FIVESTAR_DXC (default: the Windows SDK), and D3D12 WARP. <see cref="MissingReason"/> says why the tests
-/// cannot run, or is null.
+/// The external tools of the translator tests: dxc from FIVESTAR_DXC (default: the Windows SDK) and D3D12 WARP, which
+/// every WARP test needs (<see cref="MissingReason"/>), and llvm-mc / llvm-objdump from FIVESTAR_LLVM (default
+/// D:\Tools\llvm\bin), which only assemble a changed test program and run the decoder comparison
+/// (<see cref="MissingLlvmReason"/>).
 /// </summary>
 public sealed record ShaderToolchain(LlvmToolPaths Llvm, string Dxc)
 {
@@ -48,11 +48,6 @@ public sealed record ShaderToolchain(LlvmToolPaths Llvm, string Dxc)
 
         var tools = Find();
 
-        if (!File.Exists(tools.Llvm.Assembler) || !File.Exists(tools.Llvm.Objdump))
-        {
-            return $"llvm-mc / llvm-objdump not found (set {LlvmVariable} to the LLVM bin folder)";
-        }
-
         if (!File.Exists(tools.Dxc))
         {
             return $"dxc not found (set {DxcVariable} to dxc.exe)";
@@ -61,6 +56,19 @@ public sealed record ShaderToolchain(LlvmToolPaths Llvm, string Dxc)
         if (!File.Exists(Path.Combine(Environment.SystemDirectory, WarpLibrary)))
         {
             return $"D3D12 WARP ({WarpLibrary}) not installed";
+        }
+
+        return null;
+    }
+
+    /// <summary>Why llvm-mc / llvm-objdump cannot be used here, or null when they can.</summary>
+    public static string? MissingLlvmReason()
+    {
+        var tools = Find();
+
+        if (!File.Exists(tools.Llvm.Assembler) || !File.Exists(tools.Llvm.Objdump))
+        {
+            return $"llvm-mc / llvm-objdump not found (set {LlvmVariable} to the LLVM bin folder)";
         }
 
         return null;

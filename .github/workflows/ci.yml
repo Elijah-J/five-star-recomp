@@ -26,10 +26,6 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    env:
-      # The official LLVM build that ships llvm-mc and llvm-objdump with the AMDGPU target; only those two are kept.
-      LLVM_VERSION: 18.1.8
-      LLVM_SHA256: 22c5907db053026cc2a8ff96d21c0f642a90d24d66c23c6d28ee7b1d572b82e8
     steps:
       - uses: actions/checkout@v4
 
@@ -44,41 +40,9 @@ jobs:
           key: nuget-${{ runner.os }}-${{ hashFiles('global.json', 'Directory.Packages.props', '**/*.csproj') }}
           restore-keys: nuget-${{ runner.os }}-
 
-      - name: Cache LLVM tools
-        id: llvm-cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ runner.temp }}/llvm
-          key: llvm-${{ env.LLVM_VERSION }}-mc-objdump
-
-      - name: Download LLVM tools
-        if: steps.llvm-cache.outputs.cache-hit != 'true'
-        env:
-          LLVM_DIR: ${{ runner.temp }}/llvm
+      # The shader test programs come assembled (tests/FiveStar.Shaders.Tests/Assembled), so CI needs no LLVM.
+      - name: Locate dxc
         run: |
-          $name = "clang+llvm-$env:LLVM_VERSION-x86_64-pc-windows-msvc"
-          $archive = Join-Path $env:RUNNER_TEMP 'llvm.tar.xz'
-          Invoke-WebRequest "https://github.com/llvm/llvm-project/releases/download/llvmorg-$env:LLVM_VERSION/$name.tar.xz" -OutFile $archive
-          $hash = (Get-FileHash $archive -Algorithm SHA256).Hash
-
-          if ($hash -ne $env:LLVM_SHA256) {
-            throw "LLVM archive hash $hash does not match $env:LLVM_SHA256"
-          }
-
-          New-Item -ItemType Directory -Force $env:LLVM_DIR | Out-Null
-          & "$env:SystemRoot\System32\tar.exe" -xf $archive -C $env:LLVM_DIR --strip-components=2 "$name/bin/llvm-mc.exe" "$name/bin/llvm-objdump.exe"
-
-          if ($LASTEXITCODE -ne 0) {
-            throw "tar failed with exit code $LASTEXITCODE"
-          }
-
-          Remove-Item $archive
-
-      - name: Locate shader toolchain
-        env:
-          LLVM_DIR: ${{ runner.temp }}/llvm
-        run: |
-          Add-Content $env:GITHUB_ENV "FIVESTAR_LLVM=$env:LLVM_DIR"
           $kits = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'
           $dxc = Get-ChildItem $kits -Directory -Filter '10.*' |
             Sort-Object { [version]$_.Name } -Descending |
@@ -93,8 +57,6 @@ jobs:
           Write-Output "Windows: $([Environment]::OSVersion.Version)"
           Write-Output "dxc: $dxc"
           Write-Output "WARP: $(Test-Path "$env:SystemRoot\System32\d3d10warp.dll")"
-          $version = & "$env:LLVM_DIR\llvm-mc.exe" --version
-          Write-Output "llvm-mc: $($version[1].Trim())"
 
       - name: Restore
         run: dotnet restore FiveStar.slnx

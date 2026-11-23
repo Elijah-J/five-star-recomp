@@ -53,7 +53,7 @@ public sealed class RdnaDecoderTests
     }
 
     /// <summary>The smallest programs of each stage of the dump decode exactly as with llvm-mc/llvm-objdump.</summary>
-    [RealProgramTheory]
+    [LlvmProgramTheory]
     [InlineData(8)]
     public void Real_programs_decode_as_with_llvm(int perStage)
     {

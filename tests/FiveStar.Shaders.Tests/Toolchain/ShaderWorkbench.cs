@@ -9,7 +9,7 @@ using FiveStar.Shaders.Translation;
 namespace FiveStar.Shaders.Tests.Toolchain;
 
 /// <summary>
-/// The build steps of a translator test in one work folder: llvm-mc assembly, translation, dxc (shader model 6.7,
+/// The build steps of a translator test in one work folder: the assembled program, translation, dxc (shader model 6.7,
 /// HLSL 2021, the runtime headers next to the source) and the helper shaders embedded in this assembly.
 /// </summary>
 public sealed class ShaderWorkbench
@@ -25,7 +25,7 @@ public sealed class ShaderWorkbench
     public ShaderWorkbench(ShaderToolchain tools, string folder)
     {
         _folder = folder;
-        _assembler = new RdnaAssembler(tools.Llvm, folder);
+        _assembler = new RdnaAssembler(tools.Llvm, folder, AssembledCodeStore.InRepository());
         _compiler = new DxcCompiler(DxcOptions.Defaults(tools.Dxc, retry: false));
         _dxc = tools.Dxc;
         RuntimeIncludes.WriteTo(folder);

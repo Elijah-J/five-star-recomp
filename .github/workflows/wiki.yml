@@ -25,7 +25,12 @@ jobs:
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git" wiki
+          # The wiki repository exists once the Wiki tab is on and its first page was created (private repositories
+          # have a wiki only on paid plans); until then there is nothing to publish to.
+          if ! git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git" wiki; then
+            echo "::notice::No wiki repository yet: turn on the Wiki tab and create its first page, then run this again."
+            exit 0
+          fi
           find wiki -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
           cp -r docs/wiki/. wiki/
           find wiki -name '*.md' -exec sed -i -E 's/\]\(([A-Za-z0-9_-]+)\.md(#[^)]*)?\)/](\1\2)/g' {} +

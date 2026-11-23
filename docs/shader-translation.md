@@ -478,8 +478,9 @@ resume rules of `pso`. A cache shader that matches several programs (same code) 
 
 ## Testing
 
-`tests/FiveStar.Shaders.Tests` assembles handwritten gfx1013 programs with llvm-mc (the tests and `decode-check` are
-the only users of LLVM), decodes them with `RdnaDecoder`, translates them (structured form), compiles them with dxc and
+`tests/FiveStar.Shaders.Tests` takes handwritten gfx1013 programs, assembled by llvm-mc and kept in `Assembled/` as
+`<name>.<key>.bin` (the key hashes the source, wave size and CPU, so a changed program is assembled again on the next
+run with LLVM and its new file must be committed), decodes them with `RdnaDecoder`, translates them (structured form), compiles them with dxc and
 runs them on D3D12 WARP. Results are compared with a reference model of the ISA (`Reference/`), never with the
 translator's output. Covered: pixel shaders (VALU, SALU, packed f16, cross-lane, EXEC, helper lanes, control flow,
 memory, exports), compute (ids, LDS, wave32/wave64 wave operations, buffer and global memory, atomics), ray
@@ -487,7 +488,7 @@ intersection, the mesh path and its fallback (including overflow), vertex fetch,
 VoxelizeGeneric GS programs.
 
 Run `dotnet test tests/FiveStar.Shaders.Tests`. `FIVESTAR_LLVM` (LLVM bin folder) and `FIVESTAR_DXC` (dxc path) override
-the default tool locations; the real-GS tests and the decoder comparison on real programs need `FIVESTAR_DUMP` and
+the default tool locations; the decoder comparison on real programs needs LLVM; the real-GS tests and it need `FIVESTAR_DUMP` and
 `FIVESTAR_SHADER_DIR` (folder of extracted `.fssm`, containers in `../dxbc`). A test skips with the reason when a tool
 or WARP is missing. WARP runs 4-lane waves only (a pipeline with any other `[WaveSize]` fails to create), so cases
 that need a full 32/64-lane wave are skipped, and `v_fma_f32` is compared unfused (see FMA above). The wave emulation

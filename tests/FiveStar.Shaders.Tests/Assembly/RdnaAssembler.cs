@@ -7,8 +7,9 @@ using FiveStar.Shaders.Tooling;
 namespace FiveStar.Shaders.Tests.Assembly;
 
 /// <summary>
-/// Assembles a handwritten gfx1013 program (llvm-mc syntax) to code bytes, then disassembles them with the same
-/// <see cref="RdnaDecoder"/> the real pipeline uses, so the translator sees exactly what it sees for a dump.
+/// Turns a handwritten gfx1013 program (llvm-mc syntax) into code bytes, then disassembles them with the same
+/// <see cref="RdnaDecoder"/> the real pipeline uses, so the translator sees exactly what it sees for a dump. The bytes
+/// come from the <see cref="AssembledCodeStore"/>; a program it does not hold yet is assembled with llvm-mc and added.
 /// </summary>
 public sealed class RdnaAssembler
 {
@@ -16,11 +17,13 @@ public sealed class RdnaAssembler
 
     private readonly LlvmToolPaths _tools;
     private readonly string _folder;
+    private readonly AssembledCodeStore _store;
 
-    public RdnaAssembler(LlvmToolPaths tools, string folder)
+    public RdnaAssembler(LlvmToolPaths tools, string folder, AssembledCodeStore store)
     {
         _tools = tools;
         _folder = folder;
+        _store = store;
     }
 
     public AssembledProgram Assemble(string name, string source, int waveSize)
@@ -31,6 +34,28 @@ public sealed class RdnaAssembler
     }
 
     private byte[] Code(string name, string source, int waveSize)
+    {
+        var path = _store.PathOf(name, source, waveSize, _tools.Cpu);
+        var stored = AssembledCodeStore.Read(path);
+
+        if (stored is not null)
+        {
+            return stored;
+        }
+
+        if (!File.Exists(_tools.Assembler))
+        {
+            throw new InvalidOperationException(
+                $"{name} has no assembled code ({Path.GetFileName(path)}): run the tests once with llvm-mc (FIVESTAR_LLVM) to create it");
+        }
+
+        var code = RunAssembler(name, source, waveSize);
+        _store.Write(path, code);
+
+        return code;
+    }
+
+    private byte[] RunAssembler(string name, string source, int waveSize)
     {
         var sourcePath = Path.Combine(_folder, name + ".s");
         var objectPath = Path.Combine(_folder, name + ".o");
