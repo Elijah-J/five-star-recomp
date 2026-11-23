@@ -50,7 +50,10 @@ flowchart TD
   exp -->|"no"| unres
   img -->|"no"| sys{"LoadLibraryExW from System32<br/>and the export found?"}
   sys -->|"yes"| bsys["the System32 export"]
-  sys -->|"no"| unres
+  sys -->|"not in System32"| pkg{"DLL in the search directories?"}
+  pkg -->|"yes"| exp
+  pkg -->|"no"| unres
+  sys -->|"export missing"| unres
 ```
 
 1. **Shim.** Matched on (module, symbol), then through a module alias, then on ("*", symbol). A module declared
@@ -62,6 +65,8 @@ flowchart TD
    `msvcp140*`, `vcruntime140*`, `concrt140`, `vccorlib140`, `vcomp140`. Forwarders resolve through the same order.
 3. **System32.** `LoadLibraryExW(name, LOAD_LIBRARY_SEARCH_SYSTEM32)`, so API sets resolve and a same-named DLL in
    the game folder is never picked up.
+4. **Packaged DLL.** A module System32 does not have is mapped from the search directories, so the DLLs shipped next
+   to the executable (`XboxBvhBuilder.dll`, `Bink2Scarlett.dll`, `libHttpClient.GDK.dll`, ...) load as dependencies.
 
 The shipped `vcruntime140.dll` is mapped by default because `_CxxThrowException` calls `RtlPcToFileHeader`, which
 ntdll answers only for OS-loaded modules; mapping it lets the loader bind that import to its own shim. With
@@ -74,6 +79,7 @@ ntdll answers only for OS-loaded modules; mapping it lets the loader bind that i
 | `xmem.dll` | `XMemAlloc`: requests of 64 KiB or more, or with a PageSize attribute, from `VirtualAlloc`; others from the aligned native heap, alignment from the attribute bits 24..28 (code n is 2^(n-1), at least 16). `XMemFree` releases what `XMemAlloc` returned and ignores other pointers. `XMemVirtualQuery` fills `MEMORY_BASIC_INFORMATION` and zeroes the 16-byte tail. `XMemGetWorkingSetStatistics` writes peak and current working set |
 | `d3d12_xs.dll` | `D3D12SerializeRootSignature`, `D3D12SerializeVersionedRootSignature`, `D3D12Create[Versioned]RootSignatureDeserializer` forwarded to the PC `d3d12.dll`; everything else unresolved |
 | `RtlPcToFileHeader` (any module) | the mapped image containing the address, else the real ntdll function |
+| `AddVectoredExceptionHandler` (any module) | registered as asked; the fault reporter of `--run` then moves back in front |
 | `terminate` (any module) | logs the native stack, then calls `ucrtbase!terminate` |
 | `GetModuleHandle{A,W}`, `GetModuleHandleEx{A,W}`, `GetModuleFileName{A,W}` (any module) | NULL means the main image (`--main`; else the first mapped executable, else the first `--load`); names, handles and addresses of mapped images answer with the mapping; truncation follows Windows (size-1 characters, result size, `ERROR_INSUFFICIENT_BUFFER`); everything else goes to kernel32 |
 | `LoadLibrary{A,W,ExA,ExW}` (any module) | a mapped image: its base, reference counted; an Xbox-only module: a read-only page with a minimal PE header (a virtual module); a manual module or a DLL in the search directories, by name or by a path inside one: mapped now; data-file loads and the rest: the OS |
@@ -275,6 +281,7 @@ fivestar-loader --load $dump\XboxBvhBuilder.dll --load $dump\Bink2Scarlett.dll -
 | Option | Meaning |
 |---|---|
 | `--load <dll>` | map an image (repeatable) |
+| `--run`, `--run-timeout <s>` | run the main executable's entry point (below) |
 | `--call <export>` / `--call all` | call an export that was disassembled first (`--list-safe-calls` lists them); others are refused |
 | `--main <name>` | the image that plays the process executable |
 | `--patch-peb` | also point `PEB.ImageBaseAddress` at the main image (restored at exit) |
@@ -293,6 +300,26 @@ fivestar-loader --load $dump\XboxBvhBuilder.dll --load $dump\Bink2Scarlett.dll -
 The output lists the images, an import table per image and module, the totals and the exports. Tests:
 `dotnet test tests/FiveStar.Loader.Tests`; with `FIVESTAR_DUMP` set to the dump folder they also load the six Xbox
 DLLs (825 imports, none unresolved), run the inspected exports and read the package identity.
+
+## Running the executable
+
+`--run` runs the main executable after loading: its TLS callbacks already ran when its TLS host loaded, then the
+entry point (the CRT startup, the static initializers, then `main`) runs on a thread with the image's
+`SizeOfStackReserve`. Before anything is loaded it turns on two diagnostics:
+
+- **Call trace.** Imports bound to a shim or an unresolved stub go through a thunk that adds the import's id to a
+  256-entry ring (`lock xadd`, only r10 and r11 touched) and jumps on.
+- **Fault reporter.** A first vectored exception handler. For a hardware exception (NTSTATUS severity error, not a
+  customer code) or a breakpoint whose first 12 stack frames include a mapped image, it logs the code (and the access
+  and address of an access violation), the image RVA, the `.pdata` function around it, 16 code bytes, the registers,
+  the stack and the last 24 traced calls; after 3 such records one line per fault, at most 64. It always continues the
+  search, so the game's own handlers still run.
+
+`--run-timeout <s>` suspends the main thread if the entry point has not returned after s seconds, logs the same
+record for it and exits with code 3. Run boots in a child process: the CRT ends the process through `exit`.
+
+The loader is built with `<CETCompat>false</CETCompat>`: with CET shadow stacks, SEH resuming inside mapped code
+fail-fasts (0x30).
 
 ## Call cost
 

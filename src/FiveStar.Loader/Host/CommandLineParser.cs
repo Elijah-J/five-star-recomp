@@ -100,6 +100,12 @@ internal sealed class CommandLineParser
                 return SetClassifyInput();
             case "--classify-out":
                 return SetClassifyOutput();
+            case "--run":
+                return SetRunMain();
+            case "--run-timeout":
+                return SetRunTimeout();
+            case "--trace-system":
+                return SetTraceSystem();
             default:
                 throw new CommandLineException($"unknown argument {option}");
         }
@@ -242,6 +248,27 @@ internal sealed class CommandLineParser
     private bool SetInputConfig()
     {
         _options.InputConfig = Path.GetFullPath(Next());
+
+        return true;
+    }
+
+    private bool SetRunMain()
+    {
+        _options.RunMain = true;
+
+        return true;
+    }
+
+    private bool SetRunTimeout()
+    {
+        _options.RunTimeout = TimeSpan.FromSeconds(double.Parse(Next(), CultureInfo.InvariantCulture));
+
+        return true;
+    }
+
+    private bool SetTraceSystem()
+    {
+        _options.TraceSystemCalls = true;
 
         return true;
     }

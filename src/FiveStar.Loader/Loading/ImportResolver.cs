@@ -25,15 +25,17 @@ internal sealed unsafe class ImportResolver
     private readonly UnresolvedStubs _stubs;
     private readonly LoaderOptions _options;
     private readonly ImageLoader _loader;
+    private readonly CallTrace _trace;
     private readonly LoaderLog _log;
     private readonly Dictionary<string, nint> _system = new(StringComparer.OrdinalIgnoreCase);
 
-    public ImportResolver(ShimTable shims, UnresolvedStubs stubs, LoaderOptions options, ImageLoader loader, LoaderLog log)
+    public ImportResolver(ShimTable shims, UnresolvedStubs stubs, LoaderOptions options, ImageLoader loader, CallTrace trace, LoaderLog log)
     {
         _shims = shims;
         _stubs = stubs;
         _options = options;
         _loader = loader;
+        _trace = trace;
         _log = log;
     }
 
@@ -168,11 +170,25 @@ internal sealed unsafe class ImportResolver
             }
 
             var record = Resolve(module, symbol, ordinal, delay, 0);
-            iat[i] = (ulong)record.Address;
+            iat[i] = (ulong)TraceTarget(record);
             image.Imports.Add(record);
             string prefix = delay ? "delay " : string.Empty;
             _log.Detail($"    {prefix}{module}!{record.Symbol.PadRight(SymbolColumnWidth)} -> {record.Source.ToString().PadRight(SourceColumnWidth)} {record.Detail}");
         }
+    }
+
+    /// <summary>The address the IAT receives: a recording thunk for shims and stubs (and System32) while the call trace is on.</summary>
+    private nint TraceTarget(ImportRecord record)
+    {
+        bool traced = record.Source is ResolutionSource.Shim or ResolutionSource.Unresolved;
+        traced |= _trace.IncludesSystem && record.Source == ResolutionSource.System;
+
+        if (!_trace.Enabled || !traced)
+        {
+            return record.Address;
+        }
+
+        return _trace.Wrap(record.Address, $"{record.Module}!{record.Symbol}");
     }
 
     private nint ModuleHandleFor(string module)
@@ -274,7 +290,9 @@ internal sealed unsafe class ImportResolver
 
             if (handle == 0)
             {
-                return Unresolved(module, symbol, delay, $"LoadLibrary failed (error {Marshal.GetLastPInvokeError()})", 0);
+                int error = Marshal.GetLastPInvokeError();
+
+                return ResolvePackaged(module, key, name, ordinal, delay) ?? Unresolved(module, symbol, delay, $"LoadLibrary failed (error {error})", 0);
             }
         }
 
@@ -286,6 +304,21 @@ internal sealed unsafe class ImportResolver
         }
 
         return new ImportRecord(module, symbol, ResolutionSource.System, SystemModules.Describe(address), address, delay);
+    }
+
+    /// <summary>A DLL System32 does not have, shipped next to an image (the search directories): mapped by this loader.</summary>
+    private ImportRecord? ResolvePackaged(string module, string key, string? name, uint ordinal, bool delay)
+    {
+        string? file = _loader.FindModuleFile(key);
+
+        if (file is null)
+        {
+            return null;
+        }
+
+        _loader.Load(file, false);
+
+        return ResolveImage(module, key, name, ordinal, delay, 0);
     }
 
     private nint LoadSystemModule(string key)

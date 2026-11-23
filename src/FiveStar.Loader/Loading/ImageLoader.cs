@@ -28,7 +28,7 @@ internal sealed class ImageLoader
     private readonly Dictionary<string, LoadedImage> _images = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<LoadedImage> _initOrder = [];
 
-    public ImageLoader(LoaderOptions options, ShimTable shims, UnresolvedStubs stubs, ImageTable table, CodeHeap heap, TlsHostAttacher tls, ImagePatcher patcher, LoaderLog log)
+    public ImageLoader(LoaderOptions options, ShimTable shims, UnresolvedStubs stubs, ImageTable table, CodeHeap heap, TlsHostAttacher tls, ImagePatcher patcher, CallTrace trace, LoaderLog log)
     {
         _options = options;
         _table = table;
@@ -38,7 +38,7 @@ internal sealed class ImageLoader
         _log = log;
 
         _searchDirectories = [.. options.SearchDirectories];
-        _resolver = new ImportResolver(shims, stubs, options, this, log);
+        _resolver = new ImportResolver(shims, stubs, options, this, trace, log);
     }
 
     /// <summary>Reentrant (DllMain may call LoadLibrary); plays the OS loader lock for the mapped images.</summary>

@@ -52,6 +52,15 @@ internal sealed record HostOptions
 
     public string? InputConfig { get; set; }
 
+    /// <summary>Run the main executable's entry point after loading, with the call trace and fault reporter on.</summary>
+    public bool RunMain { get; set; }
+
+    /// <summary>How long --run lets the entry point run before reporting the main thread and exiting; null waits.</summary>
+    public TimeSpan? RunTimeout { get; set; }
+
+    /// <summary>With --run, also trace calls to System32 imports.</summary>
+    public bool TraceSystemCalls { get; set; }
+
     public bool Verbose { get; set; }
 
     public bool ListSafeCalls { get; set; }

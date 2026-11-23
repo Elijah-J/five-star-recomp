@@ -28,6 +28,26 @@ internal static unsafe class Kernel32
     [DllImport(Library)]
     public static extern nint GetCurrentProcess();
 
+    [DllImport(Library)]
+    public static extern uint GetCurrentThreadId();
+
+    [DllImport(Library)]
+    public static extern uint RemoveVectoredExceptionHandler(nint handle);
+
+    [DllImport(Library, SetLastError = true)]
+    public static extern nint OpenThread(uint access, int inherit, uint threadId);
+
+    [DllImport(Library, SetLastError = true)]
+    public static extern uint SuspendThread(nint thread);
+
+    /// <summary>GetThreadContext: <paramref name="context"/> is a 16-byte aligned CONTEXT with ContextFlags set.</summary>
+    [DllImport(Library, SetLastError = true)]
+    public static extern int GetThreadContext(nint thread, byte* context);
+
+    /// <summary>AddVectoredExceptionHandler: <paramref name="handler"/> is a PVECTORED_EXCEPTION_HANDLER.</summary>
+    [DllImport(Library)]
+    public static extern nint AddVectoredExceptionHandler(uint first, nint handler);
+
     [DllImport(Library, EntryPoint = "LoadLibraryExW", SetLastError = true)]
     public static extern nint LoadLibraryExW(char* name, nint file, uint flags);
 
