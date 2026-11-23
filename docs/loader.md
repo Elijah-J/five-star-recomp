@@ -237,11 +237,18 @@ the `RKTR` prefix and hits an `int3` (RVA `0x3dda76b`).
 
 | Interface | Implemented | Behaviour |
 |---|---|---|
-| IGameInput | QueryInterface, AddRef, Release, GetCurrentTimestamp, GetCurrentReading, GetNextReading, GetPreviousReading, RegisterDeviceCallback, StopCallback, UnregisterCallback | timestamps in microseconds; readings filtered by kind (any bit in common, 0 matches all) and device; no match: `GAMEINPUT_E_READING_NOT_FOUND` |
+| IGameInput | QueryInterface, AddRef, Release, GetCurrentTimestamp, GetCurrentReading, GetNextReading, GetPreviousReading, RegisterDeviceCallback, StopCallback, UnregisterCallback, FindDeviceFromId | timestamps in microseconds; readings filtered by kind (any bit in common, 0 matches all) and device; no match: `GAMEINPUT_E_READING_NOT_FOUND`; FindDeviceFromId finds connected devices only, else `GAMEINPUT_E_DEVICE_NOT_FOUND` |
 | IGameInputReading | QueryInterface, AddRef, Release, GetInputKind, GetSequenceNumber, GetTimestamp, GetDevice, GetRawReport (false), GetKeyCount, GetKeyState, GetMouseState, GetGamepadState | the state is copied out of the reading object |
 | IGameInputDevice | QueryInterface, AddRef, Release, GetDeviceInfo, GetDeviceStatus, GetBatteryState (unknown), SetRumbleState (low and high motors) | |
 
 Every other slot logs its first call and returns E_NOTIMPL, or 0 for a method that does not return an HRESULT.
+
+The executable uses the v0 layout: `GameInputCreate(IGameInput**)` through one cached getter, IGameInput slots 4
+(GetCurrentReading), 5 (GetNextReading), 6 (GetPreviousReading), 9 (RegisterDeviceCallback with blocking enumeration),
+13 (UnregisterCallback with a timeout) and 16 (FindDeviceFromId); reading slots 14, 15 (keys) and 22 (gamepad);
+device slot 3, from whose info it copies the id at +0x20. It asks only for the Gamepad (0x40000) and Keyboard (0x10)
+kinds, never Mouse, so the mouse reaches it through the keyboard-and-mouse gamepad.
+
 QueryInterface answers IUnknown and the object's own interface id; any other id gets E_NOINTERFACE, logged once.
 
 | Device | Source | Kind |
@@ -384,7 +391,6 @@ Most of the thunk path is `QueryApiImpl`'s lookup of the (clsid, iid) object und
 - D3D12.X beyond the device ([d3d12x-shim.md](d3d12x-shim.md)), and whether its root-signature versions and flags match the PC ones.
 - Overrides of files inside `.rpf` archives: the archive file table is encrypted, so the overlay works on whole files
   only. Which functions the game executable opens its files with.
-- GameInput on the console: the API version (v0 IIDs and vtables here; later versions change IIDs, slots and
-  structures); the console's `GameInputDeviceInfo`, `GameInputKind` values and reading semantics (kind filter, the
-  history depth, when readings are added); whether the game calls methods left as E_NOTIMPL (reading callbacks,
-  dispatchers, aggregate devices, controller axis/button state).
+- GameInput on the console: the reading semantics (kind filter, the history depth, when readings are added) and
+  whether FindDeviceFromId also finds disconnected devices. The slots, kinds, key and gamepad state sizes and the
+  device id offset the executable uses match v0.

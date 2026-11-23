@@ -122,6 +122,28 @@ internal sealed unsafe class GameInputSession : IDisposable
         return HResult.Ok;
     }
 
+    /// <summary>FindDeviceFromId: the connected device with that APP_LOCAL_DEVICE_ID, with one more reference.</summary>
+    public int FindDevice(byte* id, nint* result)
+    {
+        if (id == null || result == null)
+        {
+            return HResult.Pointer;
+        }
+
+        _poller.Poll(Timestamp());
+        DeviceObject* device = _devices.FindConnected(new ReadOnlySpan<byte>(id, GameInputLayout.DeviceIdSize));
+        *result = (nint)device;
+
+        if (device == null)
+        {
+            return GameInputLayout.DeviceNotFound;
+        }
+
+        Interlocked.Increment(ref device->Header.References);
+
+        return HResult.Ok;
+    }
+
     public bool Unregister(ulong token)
     {
         return _callbacks.Remove(token);

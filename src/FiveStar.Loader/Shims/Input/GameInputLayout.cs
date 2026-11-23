@@ -96,6 +96,7 @@ internal static class GameInputLayout
     public const int InputRegisterDeviceCallback = 9;
     public const int InputStopCallback = 12;
     public const int InputUnregisterCallback = 13;
+    public const int InputFindDeviceFromId = 16;
 
     // IGameInputReading vtable.
     public const int ReadingGetInputKind = 3;
