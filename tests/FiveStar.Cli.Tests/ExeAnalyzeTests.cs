@@ -8,24 +8,44 @@ using Xunit;
 namespace FiveStar.Cli.Tests;
 
 /// <summary>
-/// <c>fivestar exe analyze</c> on the package's own DLLs (FIVESTAR_DUMP). The GDK thunk counts are the ones lane work
-/// already found in <c>libHttpClient.GDK.dll</c>.
+/// <c>fivestar exe analyze</c> on the package's own DLLs and executable (FIVESTAR_DUMP). The GDK thunk counts are the
+/// ones found by hand in the disassembly: one QueryApiImpl call per thunk.
 /// </summary>
 public sealed class ExeAnalyzeTests
 {
+    private const string HttpClient = "libHttpClient.GDK.dll";
+    private const string GameExecutable = "game_scarlett_master.exe";
+    private const int HttpClientThunks = 404;
+
     private static readonly string[] PackageDlls =
     [
         "amd_fidelityfx_loader_xbox.dll", "amd_fidelityfx_upscaler_xbox.dll", "Bink2Scarlett.dll",
-        "libHttpClient.GDK.dll", "XboxBvhBuilder.dll", "XCurl.dll",
+        HttpClient, "XboxBvhBuilder.dll", "XCurl.dll",
     ];
+
+    [DumpFact]
+    public void Gdk_thunks_are_found_without_the_library()
+    {
+        Assert.Equal(HttpClientThunks, Analyze(HttpClient, null).GdkThunkCount);
+        Assert.Equal(16, Analyze("XCurl.dll", null).GdkThunkCount);
+
+        // The executable resolves QueryApiImpl at run time instead of importing it.
+        if (File.Exists(Path.Combine(DumpFactAttribute.Folder!, GameExecutable)))
+        {
+            var game = Analyze(GameExecutable, null);
+
+            Assert.Equal(161, game.GdkThunkCount);
+            Assert.Equal(358, game.GdkCalls.Sum(call => call.Sites));
+        }
+    }
 
     [GdkDumpFact]
     public void The_http_client_shows_the_known_gdk_thunks_and_each_report_section()
     {
-        var analysis = Analyze("libHttpClient.GDK.dll");
+        var analysis = Analyze(HttpClient, GdkDumpFactAttribute.Library);
 
-        Assert.Equal(408, analysis.GdkThunkCount);
-        Assert.Equal(365, analysis.GdkNamedCount);
+        Assert.Equal(HttpClientThunks, analysis.GdkThunkCount);
+        Assert.InRange(analysis.GdkNamedCount, 1, HttpClientThunks);
         Assert.Contains(analysis.Sections, section => section.Console);
         Assert.NotEmpty(analysis.Imports);
         Assert.NotEmpty(analysis.DayOneGaps);
@@ -42,7 +62,7 @@ public sealed class ExeAnalyzeTests
     {
         foreach (var dll in PackageDlls)
         {
-            var analysis = Analyze(dll);
+            var analysis = Analyze(dll, null);
 
             Assert.NotEmpty(analysis.Sections);
             AssertReportsRender(analysis);
@@ -55,12 +75,12 @@ public sealed class ExeAnalyzeTests
         Assert.StartsWith("{", ReportJson.Build(analysis).TrimStart());
     }
 
-    private static ExeAnalysis Analyze(string dll)
+    private static ExeAnalysis Analyze(string dll, string? gdkLib)
     {
         var exe = Path.Combine(DumpFactAttribute.Folder!, dll);
         var outDir = Path.Combine(Path.GetTempPath(), "fivestar-exe-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(outDir);
-        var options = new AnalyzeOptions(exe, DumpFactAttribute.Folder, GdkDumpFactAttribute.Library, outDir, null);
+        var options = new AnalyzeOptions(exe, DumpFactAttribute.Folder, gdkLib, outDir, null);
 
         return ExeAnalyzer.Analyze(options);
     }

@@ -8,5 +8,6 @@ namespace FiveStar.Cli.Exe;
 /// <param name="Clsid">The class id.</param>
 /// <param name="Iid">The interface id.</param>
 /// <param name="Slot">The vtable slot.</param>
-/// <param name="Sites">Call-site count.</param>
-public sealed record GdkThunkTally(string? Name, Guid Clsid, Guid Iid, int Slot, int Sites);
+/// <param name="Thunk">RVA of the (first) thunk function.</param>
+/// <param name="Sites">Direct calls into the thunk functions.</param>
+public sealed record GdkThunkTally(string? Name, Guid Clsid, Guid Iid, int Slot, uint Thunk, int Sites);

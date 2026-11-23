@@ -100,6 +100,7 @@ internal static class ReportJson
                 ("clsid", call.Clsid),
                 ("iid", call.Iid),
                 ("slot", call.Slot),
+                ("thunk", call.Thunk),
                 ("sites", call.Sites),
                 ("shimmed", call.Shimmed)));
         }

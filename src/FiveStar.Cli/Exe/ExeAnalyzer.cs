@@ -42,9 +42,10 @@ internal static class ExeAnalyzer
 
     private static IReadOnlyList<GdkThunkTally> ScanGdk(PeImage image, string? gdkLib)
     {
+        // The thunks are found without the library; the library only names them.
         if (gdkLib is null)
         {
-            return [];
+            return GdkAudit.Scan(image, null);
         }
 
         return GdkAudit.Scan(image, File.ReadAllBytes(gdkLib));

@@ -6,9 +6,9 @@ using FiveStar.Formats.Platform;
 namespace FiveStar.Cli.Exe;
 
 /// <summary>
-/// Finds the GDK thunks the game calls, with the user's PC <c>xgameruntime.lib</c> to name them, and counts the call
-/// sites of each. Reuses <see cref="GdkThunkScanner"/> and <see cref="GdkThunkLibrary"/>; it does not re-derive the
-/// thunk layout.
+/// Finds the GDK thunks the game calls and counts the direct call sites of each; the user's PC
+/// <c>xgameruntime.lib</c>, when given, names them. Reuses <see cref="GdkThunkScanner"/> and
+/// <see cref="GdkThunkLibrary"/>; it does not re-derive the thunk layout.
 /// </summary>
 internal static class GdkAudit
 {
@@ -16,17 +16,29 @@ internal static class GdkAudit
     private const string GdkModule = "xgameruntime.dll";
     private const string ShimKind = "Shim";
 
-    public static IReadOnlyList<GdkThunkTally> Scan(PeImage image, byte[] libraryBytes)
+    public static IReadOnlyList<GdkThunkTally> Scan(PeImage image, byte[]? libraryBytes)
     {
-        var library = GdkThunkLibrary.Read(libraryBytes);
-        var names = NamesByKey(library);
-        var classes = library.Select(thunk => thunk.Clsid).ToHashSet();
-        var sites = GdkThunkScanner.ScanSites(image, classes);
+        var names = new Dictionary<(Guid, Guid, int), string?>();
+
+        if (libraryBytes is not null)
+        {
+            names = NamesByKey(GdkThunkLibrary.Read(libraryBytes));
+        }
+
+        var thunks = new List<(GdkThunk Thunk, uint Function)>();
+
+        foreach (var site in GdkThunkScanner.ScanSites(image))
+        {
+            thunks.Add((site.Thunk, PeFunctionTable.FunctionStart(image, site.Rva) ?? site.Rva));
+        }
+
+        var callers = DirectCallCounter.Count(image, thunks.Select(thunk => thunk.Function).ToHashSet());
         var tallies = new List<GdkThunkTally>();
 
-        foreach (var group in sites.GroupBy(site => Key(site.Thunk)))
+        foreach (var group in thunks.GroupBy(thunk => Key(thunk.Thunk)))
         {
-            tallies.Add(ToTally(group.Key, names, group.Count()));
+            var functions = group.Select(thunk => thunk.Function).Distinct().ToList();
+            tallies.Add(ToTally(group.Key, names, functions.Min(), functions.Sum(function => callers[function])));
         }
 
         tallies.Sort(BySites);
@@ -57,7 +69,7 @@ internal static class GdkAudit
         foreach (var tally in tallies)
         {
             var shimmed = Shimmed(tally, verdicts);
-            calls.Add(new GdkCall(tally.Name, tally.Clsid.ToString(), tally.Iid.ToString(), tally.Slot, tally.Sites, shimmed));
+            calls.Add(new GdkCall(tally.Name, tally.Clsid.ToString(), tally.Iid.ToString(), tally.Slot, tally.Thunk, tally.Sites, shimmed));
         }
 
         return calls;
@@ -78,11 +90,11 @@ internal static class GdkAudit
         return string.Equals(verdict.Kind, ShimKind, StringComparison.Ordinal);
     }
 
-    private static GdkThunkTally ToTally((Guid Clsid, Guid Iid, int Slot) key, IReadOnlyDictionary<(Guid, Guid, int), string?> names, int sites)
+    private static GdkThunkTally ToTally((Guid Clsid, Guid Iid, int Slot) key, IReadOnlyDictionary<(Guid, Guid, int), string?> names, uint thunk, int sites)
     {
         var name = names.GetValueOrDefault((key.Clsid, key.Iid, key.Slot));
 
-        return new GdkThunkTally(name, key.Clsid, key.Iid, key.Slot, sites);
+        return new GdkThunkTally(name, key.Clsid, key.Iid, key.Slot, thunk, sites);
     }
 
     private static Dictionary<(Guid, Guid, int), string?> NamesByKey(IReadOnlyList<GdkThunk> library)

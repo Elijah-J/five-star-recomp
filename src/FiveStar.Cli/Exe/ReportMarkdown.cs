@@ -82,18 +82,22 @@ internal static class ReportMarkdown
     {
         text.Append("## GDK call sites\n\n");
 
+        var unshimmed = analysis.GdkCalls.Count(call => call.Shimmed == false);
+        var sites = analysis.GdkCalls.Sum(call => call.Sites);
+        text.Append(analysis.GdkThunkCount.ToString(CultureInfo.InvariantCulture)).Append(" distinct thunks, ").Append(sites.ToString(CultureInfo.InvariantCulture)).Append(" direct call sites, ");
+
         if (analysis.GdkLibName is null)
         {
-            text.Append("No `--gdk-lib` given; pass the PC `xgameruntime.lib` to name the thunks.\n\n");
-
-            return;
+            text.Append("unnamed: pass the PC `xgameruntime.lib` with `--gdk-lib` to name them.\n\n");
+        }
+        else
+        {
+            text.Append(analysis.GdkNamedCount.ToString(CultureInfo.InvariantCulture)).Append(" named by ").Append(analysis.GdkLibName).Append(", ");
+            text.Append(unshimmed.ToString(CultureInfo.InvariantCulture)).Append(" without a shim.\n\n");
         }
 
-        var unshimmed = analysis.GdkCalls.Count(call => call.Shimmed == false);
-        text.Append(analysis.GdkThunkCount.ToString(CultureInfo.InvariantCulture)).Append(" distinct thunks, ").Append(analysis.GdkNamedCount.ToString(CultureInfo.InvariantCulture));
-        text.Append(" named by ").Append(analysis.GdkLibName).Append(", ").Append(unshimmed.ToString(CultureInfo.InvariantCulture)).Append(" without a shim.\n\n");
-        text.Append("| Function | Slot | Sites | Shim |\n");
-        text.Append("|---|---|---|---|\n");
+        text.Append("| Function | Slot | Thunk | Sites | Shim |\n");
+        text.Append("|---|---|---|---|---|\n");
 
         foreach (var call in analysis.GdkCalls.Take(TopImports))
         {
@@ -105,8 +109,9 @@ internal static class ReportMarkdown
 
     private static void GdkRow(StringBuilder text, GdkCall call)
     {
-        var name = call.Name ?? "(" + call.Clsid + ")";
-        text.Append("| ").Append(name).Append(" | ").Append(call.Slot.ToString(CultureInfo.InvariantCulture)).Append(" | ").Append(call.Sites.ToString(CultureInfo.InvariantCulture));
+        var name = call.Name ?? "(" + call.Clsid + " / " + call.Iid + ")";
+        text.Append("| ").Append(name).Append(" | ").Append(call.Slot.ToString(CultureInfo.InvariantCulture)).Append(" | ").Append(Hex(call.Thunk));
+        text.Append(" | ").Append(call.Sites.ToString(CultureInfo.InvariantCulture));
         text.Append(" | ").Append(ShimText(call.Shimmed)).Append(" |\n");
     }
 

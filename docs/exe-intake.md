@@ -10,7 +10,8 @@ fivestar exe analyze <exe> [--dump <folder>] [--gdk-lib <xgameruntime.lib>] [--o
 
 - `<exe>` is the executable to read.
 - `--dump` is your dump folder; its `*.rpf` names seed the archive-reference search. Defaults to `FIVESTAR_DUMP`.
-- `--gdk-lib` is the PC GDK `xgameruntime.lib` (`windows\lib\x64`); it names the GDK thunks. Defaults to `FIVESTAR_GDK_LIB`.
+- `--gdk-lib` is the PC GDK `xgameruntime.lib` (`windows\lib\x64`); it names the GDK thunks, which are found and counted
+  without it. Defaults to `FIVESTAR_GDK_LIB`.
 - `--out` is where the report goes (default `fivestar-exe-report` in the current directory).
 - `--loader` points at `fivestar-loader`; by default it is found next to this tool's build output, or through `FIVESTAR_LOADER`.
 
@@ -23,7 +24,7 @@ run produces stays in that folder.
 |---|---|
 | PE basics | sections (with entropy, so a packed or encrypted section stands out), entry point, TLS callbacks, `.pdata` function count, exports, and any non-standard or console section such as `.xbld` |
 | Imports against the loader | every imported function, how the loader resolves it (a shim, an Xbox-only stub, or the PC host), and how many call sites reach it. Gaps first, by call sites |
-| GDK call sites | the GDK functions the game calls through the `QueryApiImpl` thunks, how many call sites each has, and the ones without a shim. Needs `--gdk-lib` to put names to the thunks |
+| GDK call sites | the GDK functions the game calls through the `QueryApiImpl` thunks: (clsid, iid, slot), the thunk's RVA, its direct call sites, and the ones without a shim. Needs `--gdk-lib` to put names to the thunks |
 | D3D12.X and graphics | imports from `d3d12*`/`dxgi`, the D3D12.X (`d3d12_xs.dll`) entry points, and how the loader resolves them |
 | Archive file tables | where the executable uses the `RPF9` magic (0x39465052) and the archive names, as a pointer into the archive-parsing code |
 | Shader linkage | references to `shaders.rpf` (the shader container and the pipeline cache entry it holds) |
@@ -35,9 +36,9 @@ agree. If the loader cannot be found the report still prints, with the import cl
 
 ## Why the loader library
 
-The GDK counts match the loader work already done: with the October 2025 PC GDK library, `libHttpClient.GDK.dll` shows
-408 distinct thunks, 365 of them named. The same scan on the executable lists which GDK functions the game itself calls
-and flags the ones the loader does not yet shim.
+The thunks are found without the library (see [platform.md](platform.md), "GDK thunk ABI"): `libHttpClient.GDK.dll`
+shows 404 distinct thunks and `game_scarlett_master.exe` 161, reached from 358 direct call sites. The library puts
+names to them, so the report can flag the ones the loader does not yet shim.
 
 ## Archive file tables
 

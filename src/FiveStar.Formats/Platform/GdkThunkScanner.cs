@@ -7,24 +7,69 @@ namespace FiveStar.Formats.Platform;
 
 /// <summary>
 /// Finds the GDK thunks compiled into a module: a <c>call</c> preceded by <c>lea rcx, [clsid]</c> and
-/// <c>lea rdx, [iid]</c> (or <c>mov rdx, rcx</c>), followed by a vtable call. Only class ids from the library count,
-/// which keeps byte matches inside other instructions out.
+/// <c>lea rdx, [iid]</c> (or <c>mov rdx, rcx</c>), followed by a vtable call. The call goes to QueryApiImpl, either
+/// through an import or through a function pointer the module resolves at run time.
 /// </summary>
 public static class GdkThunkScanner
 {
     private const string CodeSectionPrefix = ".text";
+    private const string ConstantSection = ".rdata";
     private const byte CallRel32 = 0xE8;
     private const int CallLength = 5;
+    private const int CallDisplacement = 1;
     private const int GuidSize = 16;
 
     // The GUID loads sit within a few instructions of the query call; the vtable call follows within ~40 instructions.
     private const int LookBack = 40;
     private const int LookAhead = 192;
 
-    /// <summary>The distinct (clsid, iid, slot) thunks of a module, unnamed.</summary>
+    // A module that uses the GDK has many thunks; a target reached by fewer thunk-shaped calls is not QueryApiImpl.
+    private const int MinimumQuerySites = 2;
+
+    /// <summary>The distinct (clsid, iid, slot) thunks of a module whose class is in <paramref name="knownClasses"/>, unnamed.</summary>
     public static IReadOnlyList<GdkThunk> Scan(PeImage image, IReadOnlySet<Guid> knownClasses)
     {
-        var found = new HashSet<GdkThunk>();
+        return [.. Candidates(image).Where(candidate => knownClasses.Contains(candidate.Thunk.Clsid)).Select(candidate => candidate.Thunk).Distinct()];
+    }
+
+    /// <summary>
+    /// Every thunk's call to QueryApiImpl, with no library needed: QueryApiImpl is the one target most thunk-shaped
+    /// calls with constant GUIDs reach. Calls through a vtable that only look like a thunk go elsewhere and drop out.
+    /// </summary>
+    public static IReadOnlyList<GdkThunkSite> ScanSites(PeImage image)
+    {
+        var candidates = Candidates(image).Where(candidate => candidate.ConstantGuids).ToList();
+        var query = QueryTarget(candidates);
+
+        if (query is null)
+        {
+            return [];
+        }
+
+        return [.. candidates.Where(candidate => candidate.Target == query.Value).Select(candidate => new GdkThunkSite(candidate.Thunk, candidate.Rva))];
+    }
+
+    /// <summary>The RVA of the module's QueryApiImpl (or of the function that forwards to it), or null when none.</summary>
+    public static uint? QueryFunction(PeImage image)
+    {
+        return QueryTarget(Candidates(image).Where(candidate => candidate.ConstantGuids).ToList());
+    }
+
+    private static uint? QueryTarget(IReadOnlyList<GdkThunkCandidate> candidates)
+    {
+        var busiest = candidates.GroupBy(candidate => candidate.Target).MaxBy(group => group.Count());
+
+        if (busiest is null || busiest.Count() < MinimumQuerySites)
+        {
+            return null;
+        }
+
+        return busiest.Key;
+    }
+
+    private static List<GdkThunkCandidate> Candidates(PeImage image)
+    {
+        var candidates = new List<GdkThunkCandidate>();
 
         foreach (var section in image.Sections.Where(section => section.Name.StartsWith(CodeSectionPrefix, StringComparison.Ordinal)))
         {
@@ -39,57 +84,22 @@ public static class GdkThunkScanner
                     continue;
                 }
 
-                var thunk = ThunkAt(image, section, code, at, knownClasses);
+                var candidate = CandidateAt(image, section, code, at);
 
-                if (thunk is not null)
+                if (candidate is not null)
                 {
-                    found.Add(thunk);
+                    candidates.Add(candidate);
                 }
             }
         }
 
-        return [.. found];
+        return candidates;
     }
 
-    /// <summary>Every accepted call site, with duplicates, so callers can count how often each thunk is reached.</summary>
-    public static IReadOnlyList<GdkThunkSite> ScanSites(PeImage image, IReadOnlySet<Guid> knownClasses)
+    private static GdkThunkCandidate? CandidateAt(PeImage image, PeSection section, ReadOnlySpan<byte> code, int call)
     {
-        var sites = new List<GdkThunkSite>();
-
-        foreach (var section in image.Sections.Where(section => section.Name.StartsWith(CodeSectionPrefix, StringComparison.Ordinal)))
-        {
-            ScanSectionSites(image, section, knownClasses, sites);
-        }
-
-        return sites;
-    }
-
-    private static void ScanSectionSites(PeImage image, PeSection section, IReadOnlySet<Guid> knownClasses, List<GdkThunkSite> sites)
-    {
-        var start = (int)image.RawStart(section);
-        var length = (int)Math.Min(section.RawSize, section.VirtualSize);
-        var code = image.Data.AsSpan(start, Math.Min(length, image.Data.Length - start));
-
-        for (var at = 0; at + CallLength <= code.Length; at++)
-        {
-            if (code[at] != CallRel32)
-            {
-                continue;
-            }
-
-            var thunk = ThunkAt(image, section, code, at, knownClasses);
-
-            if (thunk is not null)
-            {
-                sites.Add(new GdkThunkSite(thunk, (uint)(section.VirtualAddress + at)));
-            }
-        }
-    }
-
-    private static GdkThunk? ThunkAt(PeImage image, PeSection section, ReadOnlySpan<byte> code, int call, IReadOnlySet<Guid> knownClasses)
-    {
-        Guid? clsid = null;
-        Guid? iid = null;
+        uint? clsid = null;
+        uint? iid = null;
         var first = call;
 
         // Nearest lea per register, walking back from the call.
@@ -99,16 +109,16 @@ public static class GdkThunkScanner
 
             if (target == GdkRegister.Rcx && clsid is null)
             {
-                clsid = GuidAt(image, section, code, lea);
+                clsid = LeaRva(section, code, lea);
                 first = lea;
             }
             else if (target == GdkRegister.Rdx && iid is null)
             {
-                iid = GuidAt(image, section, code, lea);
+                iid = LeaRva(section, code, lea);
             }
         }
 
-        if (clsid is null || !knownClasses.Contains(clsid.Value))
+        if (clsid is null)
         {
             return null;
         }
@@ -119,19 +129,36 @@ public static class GdkThunkScanner
         }
 
         var slot = GdkThunkCode.FirstApiSlot(code, call + CallLength, call + CallLength + LookAhead);
+        var clsidGuid = GuidAt(image, clsid.Value);
+        Guid? iidGuid = null;
 
-        if (iid is null || slot is null)
+        if (iid is not null)
+        {
+            iidGuid = GuidAt(image, iid.Value);
+        }
+
+        if (clsidGuid is null || iidGuid is null || slot is null)
         {
             return null;
         }
 
-        return new GdkThunk(clsid.Value, iid.Value, slot.Value, null);
+        var thunk = new GdkThunk(clsidGuid.Value, iidGuid.Value, slot.Value, null);
+        var rva = (uint)(section.VirtualAddress + call);
+        var callTarget = (uint)(rva + CallLength + BinaryPrimitives.ReadInt32LittleEndian(code[(call + CallDisplacement)..]));
+        var constant = InConstants(image, clsid.Value) && InConstants(image, iid!.Value);
+
+        return new GdkThunkCandidate(thunk, rva, callTarget, constant);
     }
 
-    private static Guid? GuidAt(PeImage image, PeSection section, ReadOnlySpan<byte> code, int lea)
+    private static uint LeaRva(PeSection section, ReadOnlySpan<byte> code, int lea)
     {
         var displacement = BinaryPrimitives.ReadInt32LittleEndian(code[(lea + GdkThunkCode.LeaDisplacement)..]);
-        var rva = (uint)(section.VirtualAddress + lea + GdkThunkCode.LeaLength + displacement);
+
+        return (uint)(section.VirtualAddress + lea + GdkThunkCode.LeaLength + displacement);
+    }
+
+    private static Guid? GuidAt(PeImage image, uint rva)
+    {
         var offset = image.Offset(rva);
 
         if (offset is null || offset.Value + GuidSize > image.Data.Length)
@@ -140,5 +167,18 @@ public static class GdkThunkScanner
         }
 
         return new Guid(image.Data.AsSpan((int)offset.Value, GuidSize));
+    }
+
+    private static bool InConstants(PeImage image, uint rva)
+    {
+        foreach (var section in image.Sections)
+        {
+            if (rva >= section.VirtualAddress && rva + GuidSize <= section.VirtualAddress + section.VirtualSize)
+            {
+                return string.Equals(section.Name, ConstantSection, StringComparison.Ordinal);
+            }
+        }
+
+        return false;
     }
 }

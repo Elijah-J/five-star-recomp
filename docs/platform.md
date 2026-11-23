@@ -70,11 +70,21 @@ same functions, so the public PC GDK names the console thunks.
 | Source | How the thunks are found |
 |---|---|
 | `xgameruntime.lib` (PC GDK, `windows\lib\x64`) | each COFF function with a REL32 relocation to `QueryApiImpl`; the GUIDs from the `_GUID_xxxxxxxx_xxxx_...` symbols its `lea rcx/rdx, [rip+...]` refer to (`mov rdx, rcx` when both are equal); the slot from the first `mov rax, [rax+disp]` after the query with disp / 8 ≥ 3 |
-| a console module | the same instruction pattern around a `call`, accepted only for class ids that the library uses |
+| a console module (`gdk-abi`) | the same instruction pattern around a `call`, accepted only for class ids that the library uses |
+| a console module (`exe analyze`, no library) | the same pattern with both GUIDs in `.rdata`, accepted only when the `call` goes to the module's query function: the one target most such calls reach |
+
+A module reaches `QueryApiImpl` in one of two ways. The DLLs import it from `xgameruntime.dll`. The game executable
+does not import `xgameruntime.dll` at all: it loads it at run time and fetches `QueryApiImpl`, `InitializeApiImpl`,
+`InitializeApiImplEx`, `InitializeApiImplEx2` and `XErrorReport` with `GetProcAddress`, and every thunk calls one
+in-image function that forwards through the stored pointer (`0x55de048` in `game_scarlett_master.exe`). The thunk
+shape is the same in both; the vtable call goes through the control-flow-guard dispatch function. The thunks are
+ordinary functions (not inlined), so the game's call sites are the direct calls into them.
 
 The October 2025 PC GDK (2510) has 418 named thunks. `libHttpClient.GDK.dll` (built with the October 2025 GRDK) has 408
-distinct thunks; 365 match by (clsid, iid, slot). The other 43 are console-only, most of them XUser through interface
-id `26f3c674-a2fe-44fa-b6c4-a323bc94ff53`.
+distinct thunks by the class-id filter; 365 match by (clsid, iid, slot). The other 43 are console-only, most of them
+XUser through interface id `26f3c674-a2fe-44fa-b6c4-a323bc94ff53`. The query-function scan finds 404: the class-id
+filter also accepts some of the vtable calls that follow a query. `game_scarlett_master.exe` has 161 thunks (17 class ids) reached
+from 358 direct call sites; `XCurl.dll` has 16.
 
 ## Commands
 

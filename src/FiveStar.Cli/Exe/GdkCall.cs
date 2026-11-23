@@ -8,6 +8,7 @@ namespace FiveStar.Cli.Exe;
 /// <param name="Clsid">The class id of the thunk.</param>
 /// <param name="Iid">The interface id of the thunk.</param>
 /// <param name="Slot">The vtable slot.</param>
-/// <param name="Sites">Number of call sites.</param>
+/// <param name="Thunk">RVA of the thunk function.</param>
+/// <param name="Sites">Number of direct call sites.</param>
 /// <param name="Shimmed">True when the loader has a shim for the function; null when it was not classified.</param>
-public sealed record GdkCall(string? Name, string Clsid, string Iid, int Slot, int Sites, bool? Shimmed);
+public sealed record GdkCall(string? Name, string Clsid, string Iid, int Slot, uint Thunk, int Sites, bool? Shimmed);
