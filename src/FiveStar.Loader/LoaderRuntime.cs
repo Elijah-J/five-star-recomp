@@ -11,6 +11,7 @@ using FiveStar.Loader.Shims.Apu;
 using FiveStar.Loader.Shims.Gdk;
 using FiveStar.Loader.Shims.Input;
 using FiveStar.Loader.Shims.Storage;
+using FiveStar.Loader.Shims.Xg;
 
 namespace FiveStar.Loader;
 
@@ -42,6 +43,7 @@ internal sealed class LoaderRuntime : IDisposable
         XMemPhysical = new XMemPhysicalMemory(log);
         Apu = new ApuHeap(log);
         Storage = new DStorageFactoryStub(Stubs, CodeHeap, log);
+        Xg = new XgComputers(Stubs, CodeHeap);
 
         D3D12 = new D3D12Forwarder(log);
         Gdk = CreateGdk(gdk, environment.Time);
@@ -96,6 +98,9 @@ internal sealed class LoaderRuntime : IDisposable
     /// <summary>The DirectStorage factory XCRDAPI.dll hands out.</summary>
     public DStorageFactoryStub Storage { get; }
 
+    /// <summary>The texture address computers xg_xs.dll hands out.</summary>
+    public XgComputers Xg { get; }
+
     public D3D12Forwarder D3D12 { get; }
 
     public GdkServices Gdk { get; }
@@ -109,6 +114,8 @@ internal sealed class LoaderRuntime : IDisposable
         Gdk.Dispose();
         Input.Dispose();
         Storage.Dispose();
+        Xg.Dispose();
+
         Apu.Dispose();
         LastError.Dispose();
     }

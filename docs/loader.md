@@ -78,7 +78,7 @@ ntdll answers only for OS-loaded modules; mapping it lets the loader bind that i
 | `d3d12_xs.dll` | `D3D12SerializeRootSignature`, `D3D12SerializeVersionedRootSignature`, `D3D12Create[Versioned]RootSignatureDeserializer` forwarded to the PC `d3d12.dll`; everything else E_NOTIMPL (`D3D12XboxCreateDevice` is tested for failure) |
 | `acphal.dll` | APU heap: `ApuCreateHeap` commits one region for both parts; `ApuAlloc` hands out zeroed, aligned blocks of it (first fit); an APU address is the offset plus 0x10000; `ApuFree`, `ApuIsVirtualAddressValid`, `ApuMapVirtualAddress`, `ApuMapApuAddress` follow. `AcpHalCreate` and `AcpHalAllocateShapeContexts` return E_NOTIMPL (no SHAPE hardware), so audio start-up fails cleanly |
 | `chad.dll`, `xapu.dll` | XDsp and XApu connect, activate, submit, enqueue and dequeue return E_NOTIMPL; `XApuGetResultCount` 0; disconnect and deactivate 0 |
-| `xg_xs.dll` | `XGCreateTextureComputer`, `XGSuggestSwizzleMode` return E_NOTIMPL (console tiling not implemented) |
+| `xg_xs.dll` | `XGCreateTextureComputer` returns a texture address computer over the console tiling: layout, tiling, copies in and out ([xg.md](xg.md)); `XGSuggestSwizzleMode` writes 0x100 + a 4 KB or 64 KB mode |
 | `xcrdapi.dll` `DStorageGetFactory` | one stub factory: IUnknown, slot 8 (the staging buffer size set at start-up) S_OK, every other slot E_NOTIMPL logged once |
 | `RtlPcToFileHeader` (any module) | the mapped image containing the address, else the real ntdll function |
 | `terminate` (any module) | logs the native stack, then calls `ucrtbase!terminate` |
@@ -328,7 +328,7 @@ Most of the thunk path is `QueryApiImpl`'s lookup of the (clsid, iid) object und
   console-only interface id), and the API-set names the game imports GDK functions from (the alias is a pattern).
 - Signatures inferred from call sites: `InitializeApiImpl*`, `QueryApiImpl`, `XErrorReport`, `XMemVirtualQuery`,
   `XMemGetWorkingSetStatistics`, `XMemVirtualAlloc`, the physical page functions, every `acphal.dll`, `chad.dll` and
-  `xapu.dll` function, `XGSuggestSwizzleMode`; the meaning of the `XMemVirtualQuery` tail (+0x30); the XALLOC
+  `xapu.dll` function, both `xg_xs.dll` functions and the texture computer's slots; the meaning of the `XMemVirtualQuery` tail (+0x30); the XALLOC
   attribute layout; the console protection and allocation-type bits `XMemVirtualAlloc` drops; the second argument
   of `ApuIsVirtualAddressValid`.
 - Physical page aliasing (one page mapped at two addresses) and contents following a remapped page are not emulated.

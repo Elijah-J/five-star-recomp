@@ -55,7 +55,8 @@ At `align(0x18 + 8 * (n - 1), 0x100)`; in some files it overlaps the sentinel sl
 ## Memory layout
 
 A texture's span runs from its address to the next texture's address (the last one to the end of the last page).
-Mips are stored smallest first, so mip 0 is the last tile-padded block of the span.
+Mips are stored smallest first, so mip 0 is the last tile-padded block of the span. The whole chain, mip tail
+included, follows the layout in [xg.md](xg.md).
 
 Swizzle patterns give each bit of an element's index inside a tile, least significant first, as the next x or y bit
 of its position. An element is a 4x4 block for BC formats and a pixel otherwise. Tiles are laid out row-major.
