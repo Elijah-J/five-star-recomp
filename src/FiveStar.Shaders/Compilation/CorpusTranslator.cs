@@ -18,8 +18,15 @@ public sealed partial class CorpusTranslator
     /// <summary>The file suffix of the wave32 variant of a wave64-pinned compute program.</summary>
     public const string GroupWaveSuffix = ".w32.hlsl";
 
+    /// <summary>The reason of a wave64-pinned compute program whose wave32 variant compiled.</summary>
+    public const string GroupWaveReady = GroupWaveNote + " ok";
+
+    /// <summary>The reason of a mesh program whose fallback also compiled (<see cref="CorpusOptions.MeshFallbacks"/>).</summary>
+    public const string MeshFallbackReady = MeshFallbackNote + " ok";
+
     private const string Wave64Pin = "[WaveSize(64)]";
     private const string GroupWaveNote = "wave32 variant";
+    private const string MeshFallbackNote = "fallback";
 
     private const int ShortReasonLength = 40;
     private const int CrashReasonLength = 80;
@@ -140,7 +147,23 @@ public sealed partial class CorpusTranslator
             reason = CompileGroupWave(_compiler, variantPath, translated, translated.GroupWave);
         }
 
+        if (status == ProgramStatus.Ok && translated.Stage == ShaderStage.Mesh && options.MeshFallbacks && _fallback is not null)
+        {
+            reason = MeshFallbackReason(_fallback.Compile(hlslPath, translated.Hlsl, translated.Hlsl.Length > _compiler.Options.LargeSourceLength));
+        }
+
         return new ProgramResult(translated.Name, stageName, status, reason);
+    }
+
+    /// <summary>The reason of an ok mesh program whose fallback was also compiled: <c>fallback ok</c> or why it failed.</summary>
+    private static string MeshFallbackReason(string? error)
+    {
+        if (error is null)
+        {
+            return MeshFallbackReady;
+        }
+
+        return Cut($"{MeshFallbackNote}: {error}", CompileReasonLength);
     }
 
     /// <summary>The translation from the cache when it has one; otherwise a new one, kept when it is final.</summary>
@@ -246,7 +269,7 @@ public sealed partial class CorpusTranslator
 
         if (status == ProgramStatus.Ok)
         {
-            return $"{GroupWaveNote} ok";
+            return GroupWaveReady;
         }
 
         return Cut($"{GroupWaveNote}: {status} {reason}", CompileReasonLength);

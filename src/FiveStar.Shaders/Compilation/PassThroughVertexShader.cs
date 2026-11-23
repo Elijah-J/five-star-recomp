@@ -14,14 +14,6 @@ namespace FiveStar.Shaders.Compilation;
 /// </summary>
 public static class PassThroughVertexShader
 {
-    // HLSL modifier per DXIL::InterpolationMode (0 undefined, 1 constant, 2 linear, 3 centroid, 4 noperspective,
-    // 5 noperspective centroid, 6 sample, 7 noperspective sample).
-    private static readonly string[] InterpolationModifiers =
-    [
-        string.Empty, "nointerpolation ", string.Empty, "centroid ", "noperspective ", "noperspective centroid ", "sample ",
-        "noperspective sample ",
-    ];
-
     // HLSL scalar type per DXIL signature component type (1 uint, 2 int, 3 float, 4..6 their 16-bit forms).
     private static readonly string[] ScalarTypes = [string.Empty, "uint", "int", "float", "min16uint", "min16int", "min16float"];
 
@@ -75,7 +67,7 @@ public static class PassThroughVertexShader
 
         if (element.SemanticKind == PsvSemanticKind.Arbitrary)
         {
-            modifier = InterpolationModifiers[element.InterpolationMode];
+            modifier = InterpolationModes.Prefix(element.InterpolationMode);
         }
         else if (Passed.TryGetValue(element.SemanticKind, out var systemName))
         {

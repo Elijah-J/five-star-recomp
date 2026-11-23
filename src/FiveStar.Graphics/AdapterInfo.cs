@@ -14,4 +14,10 @@ public sealed record AdapterInfo(
     string? ShaderModel,
     int WaveLaneCountMin,
     int WaveLaneCountMax,
-    string? MeshShaderTier);
+    string? MeshShaderTier)
+{
+    private const string NoMeshShaders = "NotSupported";
+
+    /// <summary>Whether the adapter runs mesh shaders (D3D12_OPTIONS7 mesh-shader tier 1 or above).</summary>
+    public bool MeshShaders => MeshShaderTier is not null && MeshShaderTier != NoMeshShaders;
+}

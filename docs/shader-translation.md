@@ -122,6 +122,21 @@ declares its params in number order, then the unpacked halves; a PS declares eve
 not, then `ATTRLO<k>`/`ATTRHI<k>` pairs from 0 up to the highest half it reads. A pair compiled together by the game
 then links. A VS that does not export every param of its signature still shifts the later registers.
 
+Translated on its own, a producer does not link with every PS it runs with. The runtime compares semantics,
+registers and masks (not interpolation modes), and on the console cache's pairs it fails three ways: dxc never packs
+elements of different interpolation modes into one register, and a PS gives its inputs modes (`nointerpolation` for
+flat and integer reads) the producer lacks, so two outputs sharing a register sit in two in the PS; the PS declares
+`SV_Position` after its halves while a VS declares it before; and a PS declares inputs the producer does not export
+(signature registers it never writes, f16 halves of a producer with too many params).
+
+**Pair-time linking** (`StageLinker.Link(producerHlsl, psInputs)`) rewrites the producer's `Out` struct (VS, MS or
+mesh-fallback VS) from the PS's PSV0 input elements: the members the PS reads come first, in the PS's order and with
+its modes, then the producer's other outputs. dxc packs a prefix the same way in both stages, so every input lands in
+the PS's register; the PS's own layout stays as described above. A PS input the producer lacks is added: an
+`ATTRLO<k>`/`ATTRHI<k>` half is computed from the members of param k (where the producer fills `o`, or at each export
+of a mesh shader that writes its outputs directly), anything else is 0. `fivestar shader link` applies it to the pairs
+of the console pipeline cache (see Commands).
+
 **Mesh shaders (NGG).** `s_sendmsg(MSG_GS_ALLOC_REQ)` (M0 = primitives << 12 | vertices) records the output counts.
 When every export follows a barrier that follows the allocation, the program runs in two phases: phase 1 without
 output writes until that barrier, then `SetMeshOutputCounts` at top level, then phase 2 resumes and writes `verts`,
@@ -202,9 +217,27 @@ with `InterlockedOr`), so it is right on any hardware wave. A barrier needs ever
 because each branch condition is itself such an operation and so is the same on every thread; a program that calls
 one under a per-lane condition (`if (active)`, `&&`, `||`, `?:` before the call) gets no variant. The variant is built
 from the structured form, since WARP's shader compiler crashes on barriers inside the dispatch `switch`. The result's
-reason says `wave32 variant ok` or why there is none. A runtime picks the native DXIL when the adapter's
-`WaveLaneCountMax` is 64 or more and the variant otherwise. Groups of several console waves (more than 64 threads)
+reason says `wave32 variant ok` or why there is none. Groups of several console waves (more than 64 threads)
 need a GPU with 64-lane waves: their waves branch apart, so a group barrier cannot stand in for a wave.
+
+**Variant selection** (`FiveStar.Graphics.Programs.VariantSelector`). `fivestar shader translate` writes
+`<out>/variants.json` (`ShaderManifest`): per compiled program its stage, native DXIL, console wave, floor, pinned
+wave size, wave32 variant and mesh fallback, so a runtime picks the DXIL without reading HLSL. For an adapter
+(`AdapterInfo`):
+
+| Program | Runs | Outcome |
+|---|---|---|
+| any, adapter below shader model 6.7 | nothing | incorrect |
+| cs, not pinned or pin within `WaveLaneCountMin`-`Max` | native | ok |
+| cs, pin outside, with a wave32 variant | `<name>.w32.dxil` | variant |
+| cs, pin outside, no variant | native (fails to load) | incorrect |
+| ms, adapter with mesh shaders | native, or the fallback when only that compiled | ok / fallback |
+| ms, adapter without mesh shaders | the fallback (`--mesh-fallbacks`), else native (fails) | fallback / incorrect |
+| ps, vs, gs, ms with a floor above `WaveLaneCountMin` | as above | incorrect |
+
+The driver picks a graphics wave anywhere between `WaveLaneCountMin` and `Max`, so a floor counts only as met when
+`WaveLaneCountMin` reaches it. `fivestar shader plan` prints the counts per adapter and `fivestar shader pso` creates
+the form each program runs on its adapter.
 
 Corpus (lane-indexed programs, by floor):
 
@@ -242,7 +275,7 @@ to the generated HLSL.
 ```
 fivestar shader translate <program.fssm | folder> <out> [--cache <dir>] [--retry results.json]
                           [--stages ps,vs,cs,ms,gs] [--jobs N] [--limit N] [--step K] [--no-compile] [--structured]
-                          [--native-waves] [--llvm-disassembler] [--llvm <folder>] [--dxc <path>]
+                          [--native-waves] [--mesh-fallbacks] [--llvm-disassembler] [--llvm <folder>] [--dxc <path>]
 ```
 
 Translates every `*.fssm` (in name order; `--step K` takes every K-th, `--limit N` the first N), writes
@@ -250,7 +283,9 @@ Translates every `*.fssm` (in name order; `--step K` takes every K-th, `--limit 
 DXIL between runs (see Cache). `--retry` re-runs only programs whose status in that file is not final and merges the
 results. `--no-compile` skips dxc. `--structured` emits the structured control-flow form (see Control flow).
 `--native-waves` turns wave emulation off (see Wave size). A compute program pinned to 64 lanes also gets
-`<name>.w32.hlsl`/`.dxil` where possible; its reason in results.json says so. `--llvm-disassembler` disassembles with
+`<name>.w32.hlsl`/`.dxil` where possible; its reason in results.json says so. `--mesh-fallbacks` also compiles the
+mesh fallback of every mesh program that compiles (reason `fallback ok`), for GPUs without mesh shaders. A compiling
+run ends by writing `variants.json` (see Variant selection). `--llvm-disassembler` disassembles with
 llvm-mc/llvm-objdump instead of `RdnaDecoder` (see Disassembly). Every 10 seconds the command prints programs done,
 elapsed time, estimated time left and finish time, and the cache counts.
 
@@ -311,13 +346,15 @@ fivestar shader pso --list-adapters
 ```
 
 Creates a D3D12 pipeline state for every `ok` and `ok-msfb` program of `<out>/results.json` on one adapter (default:
-the first hardware adapter) and records whether the runtime and driver accept it. This finds programs dxc compiles
-but a driver refuses, such as a `[WaveSize(64)]` compute program on a GPU without 64-lane waves. `--list-adapters`
+the first hardware adapter) and records whether the runtime and driver accept it. Each program is built in the form
+the adapter runs (see Variant selection): a pinned compute program the adapter cannot run as its wave32 variant
+(kind `cs_w32`), a mesh program on an adapter without mesh shaders as its fallback. This finds programs dxc compiles
+but a driver refuses, such as a `[WaveSize(64)]` compute program without a variant on a GPU without 64-lane waves. `--list-adapters`
 prints each adapter's shader model, `WaveLaneCountMin`-`Max` (D3D12_OPTIONS1) and mesh-shader tier.
 
 | Kind | Pipeline |
 |---|---|
-| `cs`, `msfb_cs` | compute |
+| `cs`, `cs_w32`, `msfb_cs` | compute |
 | `vs`, `msfb_vs` | VS only; input layout from ISG1 (slot 0, 32-bit formats of the element's type and width) |
 | `ps` | generated pass-through VS + PS; targets from the SV_Target outputs as RGBA32 of their type (RGBA16 for min-precision), D32_FLOAT with SV_Depth, D32_FLOAT_S8X24_UINT with SV_StencilRef |
 | `gs` | generated pass-through VS + GS, topology type from the GS input primitive |
@@ -365,6 +402,27 @@ mode; a warning is printed otherwise), since tens of thousands of one-off pipeli
 ends with the peak private memory, counts per kind and result, the pinned compute programs per wave size and the
 largest error groups (numbers in messages replaced by `#`).
 
+```
+fivestar shader plan <out> [--adapter <index | name part>]
+```
+
+Prints, for every adapter with a D3D12 device (or the chosen one), how many compiled programs run natively (`ok`), as
+a wave32 variant, through the mesh fallback or incorrectly, and the most common reasons. It reads `variants.json` and
+builds it from `results.json` when that is newer.
+
+```
+fivestar shader link <out> <shaders.rpf | cache blob> [--programs <fssm folder>] [--adapter <index | name part>]
+                     [--limit N] [--step K] [--jobs N] [--timeout S] [--max-memory GB] [--debug-layer] [--unlinked]
+                     [--recheck]
+```
+
+Takes the distinct VS+PS and MS+PS pairs of the console pipeline cache ([pipeline-cache.md](pipeline-cache.md))
+whose programs compiled in `<out>`, links each producer to its PS (see Linkage) and creates the pipeline on the
+adapter: `vs+ps`, `ms+ps`, or `msfb_vs+ps` where the adapter runs the mesh fallback. A producer the link changes is
+compiled once into `<out>/linked/<name>.<hash>.dxil`. `--unlinked` creates the pairs with the producers as translated,
+for comparison. Results go to `<out>/link-<adapter>.jsonl` (`unlinked-<adapter>.jsonl`) with the fields, limits and
+resume rules of `pso`. A cache shader that matches several programs (same code) stands for the first compiled one.
+
 ## Testing
 
 `tests/FiveStar.Shaders.Tests` assembles handwritten gfx1013 programs with llvm-mc (the tests and `decode-check` are
@@ -382,7 +440,9 @@ or WARP is missing. WARP runs 4-lane waves only (a pipeline with any other `[Wav
 that need a full 32/64-lane wave are skipped, and `v_fma_f32` is compared unfused (see FMA above). The wave emulation
 is checked there with test-sized program waves of 2, 4, 16 and 64 lanes (wider, equal and narrower hardware waves), by
 the mesh program, which reads lanes by console number, and by running every wave64 compute case as its group-wave
-variant with full-wave expectations (including the two full-wave cases WARP otherwise skips). Test
+variant with full-wave expectations (including the two full-wave cases WARP otherwise skips). Pair-time linking is
+checked with a VS whose two float2 outputs share a register while the PS reads one of them flat: unlinked the
+pipeline fails, linked it draws the flat value of the provoking vertex. Test
 classes run one at a time (`xunit.runner.json`): WARP crashes the test host when they run in parallel.
 
 ## Unknown
@@ -391,4 +451,5 @@ classes run one at a time (`xunit.runner.json`): WARP crashes the test host when
 - PA_CL_VS_OUT_CNTL: a misc pos export (point size, layer, viewport) is passed as a plain `POSEXP<n>` interpolant.
 - Typed views: one heap slot has one view type, but integer formats and image atomics need `uint` views.
 - POPS ordering beyond what rasterizer-ordered views provide.
-- Pipeline-time VS/PS linkage beyond register layout: producer outputs are emitted without the consumer's interpolation modes.
+- Which interpolation modes a producer needs when no pipeline of the cache names its PS: without a pair it is emitted
+  without modes.

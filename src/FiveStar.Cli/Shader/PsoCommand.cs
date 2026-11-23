@@ -50,7 +50,7 @@ internal static class PsoCommand
             jobs = arguments.IntegerOption("jobs") ?? 1;
         }
 
-        var targets = PsoTargets.Read(folder, arguments);
+        var targets = PsoTargets.Read(folder, arguments, adapter);
         using var log = new PsoLog(Path.Combine(folder, $"pso-{Slug(adapter.Name)}.jsonl"));
         var done = log.Load();
         var pending = targets.Where(target => !IsDone(done, target, arguments.Flag(RecheckFlag))).ToList();
@@ -73,7 +73,8 @@ internal static class PsoCommand
         return Success;
     }
 
-    private static bool Sweep(AdapterInfo adapter, bool debug, int jobs, string folder, CommandArguments arguments, PsoLog log, List<PsoTarget> pending)
+    /// <summary>Creates the pending pipelines on the adapter within the limits of the arguments; false when the device was removed.</summary>
+    internal static bool Sweep(AdapterInfo adapter, bool debug, int jobs, string folder, CommandArguments arguments, PsoLog log, List<PsoTarget> pending)
     {
         using var device = new GpuDevice(adapter.Index, debug);
         using var root = BindlessRootSignature.Create(device.Device);
@@ -151,7 +152,7 @@ internal static class PsoCommand
     }
 
     /// <summary>The adapter name in lower case with runs of other characters as one dash: nvidia-geforce-rtx-4090.</summary>
-    private static string Slug(string name)
+    internal static string Slug(string name)
     {
         var slug = new StringBuilder();
 

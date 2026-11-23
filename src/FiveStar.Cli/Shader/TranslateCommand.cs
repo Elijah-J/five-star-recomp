@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Globalization;
+using FiveStar.Graphics.Programs;
 using FiveStar.Shaders.Compilation;
 using FiveStar.Shaders.Disassembly;
 using FiveStar.Shaders.Translation;
@@ -20,15 +21,16 @@ internal static class TranslateCommand
     private const string NoCompileFlag = "no-compile";
     private const string StructuredFlag = "structured";
     private const string NativeWavesFlag = "native-waves";
+    private const string MeshFallbacksFlag = "mesh-fallbacks";
 
     public static int Run(IReadOnlyList<string> args)
     {
-        var arguments = new CommandArguments(args, new HashSet<string> { NoCompileFlag, StructuredFlag, NativeWavesFlag, ShaderTools.LlvmDisassemblerFlag });
+        var arguments = new CommandArguments(args, new HashSet<string> { NoCompileFlag, StructuredFlag, NativeWavesFlag, MeshFallbacksFlag, ShaderTools.LlvmDisassemblerFlag });
 
         if (arguments.Positional.Count != TwoPaths)
         {
             throw new ArgumentException(
-                "translate <fssm-or-folder> <out> [--cache <dir>] [--retry results.json] [--stages ps,vs,cs,ms,gs] [--jobs N] [--structured] [--native-waves] [--llvm-disassembler]");
+                "translate <fssm-or-folder> <out> [--cache <dir>] [--retry results.json] [--stages ps,vs,cs,ms,gs] [--jobs N] [--structured] [--native-waves] [--mesh-fallbacks] [--llvm-disassembler]");
         }
 
         var programs = Programs(arguments);
@@ -37,6 +39,7 @@ internal static class TranslateCommand
         var options = new CorpusOptions(arguments.Positional[1], Stages(arguments), arguments.IntegerOption("jobs") ?? Environment.ProcessorCount, retry)
         {
             Translation = new TranslationOptions(arguments.Flag(StructuredFlag), PinWaveSize: true, EmulateWaveSize: !arguments.Flag(NativeWavesFlag)),
+            MeshFallbacks = arguments.Flag(MeshFallbacksFlag),
         };
 
         var dxc = Compiler(arguments, retry is not null);
@@ -57,6 +60,12 @@ internal static class TranslateCommand
         var loader = new ProgramLoader(disassembler);
         var results = new CorpusTranslator(loader, compiler, fallback, translations, progress).Run(programs, options);
         Report(results);
+
+        if (compiler is not null)
+        {
+            var manifest = ManifestBuilder.Write(options.OutputFolder);
+            Console.WriteLine($"manifest {Path.Combine(options.OutputFolder, ShaderManifest.FileName)}: {manifest.Programs.Count} programs");
+        }
 
         if (cache is not null)
         {

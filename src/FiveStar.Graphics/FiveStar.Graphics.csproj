@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- D3D12 runtime core: adapters, devices, the root-signature layout of translated programs and pipeline states. -->
+  <!-- D3D12 runtime core: adapters, devices, the root-signature layout of translated programs, the DXIL form each
+       adapter runs and pipeline states. -->
   <PropertyGroup>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>

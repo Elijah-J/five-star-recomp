@@ -53,15 +53,8 @@ public static partial class WaveUsageAnalyzer
     public static WaveUsageEntry Classify(ProgramResult result, int waveSize, string hlsl)
     {
         var data = DataOperations(hlsl);
-        var floor = FloorPattern().Match(hlsl);
-        int? lanes = null;
 
-        if (floor.Success)
-        {
-            lanes = int.Parse(floor.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
-        }
-
-        return new WaveUsageEntry(result.Name, result.Stage, waveSize, Dependence(hlsl), data.ToHashSet(), lanes);
+        return new WaveUsageEntry(result.Name, result.Stage, waveSize, Dependence(hlsl), data.ToHashSet(), WaveFacts.Read(hlsl).Floor);
     }
 
     /// <summary>How the code after the entry point depends on the wave size.</summary>
@@ -144,8 +137,4 @@ public static partial class WaveUsageAnalyzer
 
     [GeneratedRegex(@"\b(WaveActiveBallot|WaveActiveCountBits|WaveActiveAnyTrue|WaveActiveAllTrue|WaveGetLaneIndex|lane_bit|WaveIsFirstLane|vw_ballot|vw_count|vw_any|vw_lane)\s*\(")]
     private static partial Regex BookkeepingPattern();
-
-    // The line WaveOps.FloorLine writes.
-    [GeneratedRegex(@"^// program wave \d+; console results on hardware waves >= (\d+) lanes", RegexOptions.Multiline)]
-    private static partial Regex FloorPattern();
 }

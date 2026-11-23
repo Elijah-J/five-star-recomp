@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using FiveStar.Cli.Shader;
+using FiveStar.Graphics.Programs;
 using FiveStar.Shaders.Compilation;
 using FiveStar.Shaders.Translation;
 
@@ -10,7 +11,8 @@ namespace FiveStar.Cli.Setup;
 
 /// <summary>
 /// Translates every extracted program to HLSL and compiles it with dxc through the shader cache: runs
-/// <c>fivestar shader translate</c> into <c>&lt;work&gt;/shaders/hlsl</c> with <c>--cache &lt;work&gt;/shader-cache</c>. An
+/// <c>fivestar shader translate --mesh-fallbacks</c> into <c>&lt;work&gt;/shaders/hlsl</c> with <c>--cache &lt;work&gt;/shader-cache</c>,
+/// which also writes the variant manifest <c>variants.json</c> there. An
 /// interrupted run keeps every finished translation and compile in the cache, so the next run resumes where it stopped.
 /// </summary>
 internal sealed class ShaderTranslateStep : ISetupStep
@@ -62,7 +64,8 @@ internal sealed class ShaderTranslateStep : ISetupStep
         return new StepFingerprint(Fingerprints.Combine(Fingerprints.OfContent(context.ManifestPath), context.Sample), _tool);
     }
 
-    public bool HasOutputs(SetupContext context) => File.Exists(ResultsPath(context));
+    public bool HasOutputs(SetupContext context) =>
+        File.Exists(ResultsPath(context)) && File.Exists(Path.Combine(context.TranslationFolder, ShaderManifest.FileName));
 
     public long RequiredBytes(SetupContext context)
     {
@@ -128,7 +131,7 @@ internal sealed class ShaderTranslateStep : ISetupStep
     private static List<string> Arguments(SetupContext context)
     {
         var jobs = context.Jobs.ToString(CultureInfo.InvariantCulture);
-        var arguments = new List<string> { context.ProgramFolder, context.TranslationFolder, "--cache", context.CacheFolder, "--jobs", jobs };
+        var arguments = new List<string> { context.ProgramFolder, context.TranslationFolder, "--cache", context.CacheFolder, "--jobs", jobs, "--mesh-fallbacks" };
 
         if (context.Limit is not null)
         {

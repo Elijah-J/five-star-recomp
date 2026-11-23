@@ -157,7 +157,7 @@ public static partial class MeshComputeFallback
             layout.StructText,
             "ByteAddressBuffer g_msfb_vtx_r : register(t0, space9);",
             "Out main(uint vid : SV_VertexID) {",
-            $"  Out o; uint a = vid * {layout.Stride}u;",
+            $"  Out o = (Out)0; uint a = vid * {layout.Stride}u;",
         };
 
         foreach (var member in layout.Members)
@@ -196,7 +196,7 @@ public static partial class MeshComputeFallback
     [GeneratedRegex(@"^struct Out \{\n(.*?)\n\};", RegexOptions.Singleline | RegexOptions.Multiline)]
     private static partial Regex OutStructPattern();
 
-    [GeneratedRegex(@"^\s*(?:nointerpolation\s+)?(float|uint|int)(?<width>[1-4]?)\s+(?<name>\w+)\s*:")]
+    [GeneratedRegex(@"^\s*(?:(?:nointerpolation|linear|noperspective|centroid|sample)\s+)*(float|uint|int)(?<width>[1-4]?)\s+(?<name>\w+)\s*:")]
     private static partial Regex MemberPattern();
 
     [GeneratedRegex(@"\[numthreads\((?<threads>\d+), 1, 1\)\]\n\[outputtopology\(""triangle""\)\]\nvoid main\(uint3 in_gid : SV_GroupID, uint in_gi : SV_GroupIndex, out vertices Out verts\[(?<verts>\d+)\], out indices uint3 tris\[(?<prims>\d+)\], out primitives MSPrim prims\[\d+\]\) \{\n")]

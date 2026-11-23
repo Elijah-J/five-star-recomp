@@ -29,12 +29,16 @@ internal static class ShaderCommands
         "        [--jobs N] [--limit N] [--step K]",
         "  translate <fssm-or-folder> <out>       translate to HLSL and compile with dxc, write <out>/results.json",
         "        [--cache <dir>] [--retry results.json] [--stages ps,vs,cs,ms,gs] [--jobs N] [--limit N] [--step K] [--no-compile] [--structured]",
+        "        [--mesh-fallbacks]; also writes <out>/variants.json (the forms and wave floors of every compiled program)",
         "  disasm and translate decode in-process; --llvm-disassembler uses llvm-mc/llvm-objdump instead",
         "  waves <out> <fssm-folder>              classify translated programs by wave-size dependence",
         "  pso <out> [--adapter <index|name>]     create a D3D12 pipeline state per compiled program, write <out>/pso-<adapter>.jsonl",
         "        [--stages ...] [--limit N] [--step K] [--jobs N] [--timeout S] [--max-memory GB]",
         "        [--debug-layer] [--recheck]",
         "  pso --list-adapters                    list the adapters with wave lane counts, shader model and mesh tier",
+        "  plan <out> [--adapter <index|name>]    count the programs each adapter runs natively, as a variant, through a fallback or incorrectly",
+        "  link <out> <shaders.rpf | blob>        link the console's VS+PS and MS+PS pairs (interpolation modes) and create each pipeline",
+        "        [--programs <fssm folder>] [--adapter ...] [--limit N] [--step K] [--jobs N] [--debug-layer] [--unlinked] [--recheck]",
         "  unwrap <in.dxbc> <out.dxbc>            rewrite a container whose XDAT holds bitcode as standard DXBC",
         "  psocache <shaders.rpf | blob>          summarise the driver pipeline cache and match its shaders to programs",
         "        [--programs <fssm folder>] [--out <dir>]   (programs default to FIVESTAR_SHADER_DIR; --out writes code/ and pipelines.json)",
@@ -68,6 +72,10 @@ internal static class ShaderCommands
                     return WaveReport.Run(rest);
                 case "pso":
                     return PsoCommand.Run(rest);
+                case "plan":
+                    return PlanCommand.Run(rest);
+                case "link":
+                    return LinkCommand.Run(rest);
                 case "unwrap":
                     return Unwrap(rest);
                 case "psocache":

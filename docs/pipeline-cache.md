@@ -200,6 +200,8 @@ Prints the header, the slot patterns, input-layout and binding statistics and, w
 `code/<shader index>.bin` (the raw code blocks) and `pipelines.json`: every graphics pipeline (fixed-function state,
 input layout, slots with shader index and program names), every compute pipeline (numthreads, shader) and every shader (program names, 0x41 and 0x42 entries).
 A blob cut short (such as the `bin` entry `archive carve` writes) reads up to its end; shaders past it are skipped.
+`fivestar shader link` reads the VS+PS and MS+PS pairs of the same cache to link translated producers to their pixel
+shaders ([shader-translation.md](shader-translation.md#stages), Linkage).
 
 ## Unknown
 

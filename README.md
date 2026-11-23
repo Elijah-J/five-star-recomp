@@ -63,6 +63,7 @@ fivestar audio export <audio.rpf> <out-folder>        export sounds as Ogg Opus 
 fivestar texture extract <file.ttpf> <out-folder>     export textures as DDS
 fivestar shader extract <shaders.rpf> <out-folder>    extract the GPU programs
 fivestar shader translate <programs> <out-folder>     translate them to HLSL and compile
+fivestar shader plan <out-folder>                     which DXIL each of your GPUs runs, and what it cannot run correctly
 ```
 
 The loader is a separate program, `fivestar-loader`; see [docs/loader.md](docs/loader.md).
@@ -74,7 +75,7 @@ The loader is a separate program, `fivestar-loader`; see [docs/loader.md](docs/l
 | `src/FiveStar.Formats` | archive, texture, metadata and platform file readers |
 | `src/FiveStar.Shaders` | shader containers and the RDNA to HLSL translator |
 | `src/FiveStar.Loader` | the module loader and the console runtime replacements |
-| `src/FiveStar.Graphics` | D3D12 devices, the root signature of translated programs, pipelines and rendering |
+| `src/FiveStar.Graphics` | D3D12 devices, the root signature of translated programs, shader variant selection, pipelines and rendering |
 | `src/FiveStar.Cli` | the `fivestar` command |
 | `tests/` | tests per project, plus the code-rule checks |
 | `docs/` | one page per format and tool |

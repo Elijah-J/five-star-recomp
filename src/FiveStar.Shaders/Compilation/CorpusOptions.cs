@@ -13,4 +13,10 @@ public sealed record CorpusOptions(string OutputFolder, IReadOnlySet<ShaderStage
 {
     /// <summary>The translator choices (the dispatch form with pinned wave sizes unless set).</summary>
     public TranslationOptions Translation { get; init; } = new(StructuredControlFlow: false, PinWaveSize: true, EmulateWaveSize: true);
+
+    /// <summary>
+    /// Whether a mesh program that compiles also gets the compute + vertex-pulling fallback, for GPUs without mesh
+    /// shaders (a program over the PC output limits always gets it).
+    /// </summary>
+    public bool MeshFallbacks { get; init; }
 }
