@@ -30,6 +30,7 @@ internal static class HostUsage
           --d3d12-debug          D3D12 debug layer and DRED; their messages and the removal report go to the log
                                  (needs the Graphics Tools optional feature)
           --d3d12-gpu-validation --d3d12-debug plus GPU-based validation (slow)
+          --present-test         present moving color bars instead of the game's frame (checks the swap chain)
           --package-root <dir>  package root for XPackage / MicrosoftGame.config (default: main image directory)
           --device-type <n>      XSystemGetDeviceType result (default 7 = XboxScarlettAnaconda)
           --patches <path>       code patch file, or folder of *.fspatch files (repeatable, applied in order)

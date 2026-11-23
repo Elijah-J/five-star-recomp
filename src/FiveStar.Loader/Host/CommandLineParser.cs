@@ -116,6 +116,8 @@ internal sealed class CommandLineParser
                 return SetD3D12Debug(false);
             case "--d3d12-gpu-validation":
                 return SetD3D12Debug(true);
+            case "--present-test":
+                return SetPresentTest();
             default:
                 throw new CommandLineException($"unknown argument {option}");
         }
@@ -309,6 +311,13 @@ internal sealed class CommandLineParser
     {
         _options.D3D12Debug = true;
         _options.D3D12GpuValidation |= gpuValidation;
+
+        return true;
+    }
+
+    private bool SetPresentTest()
+    {
+        _options.PresentTest = true;
 
         return true;
     }

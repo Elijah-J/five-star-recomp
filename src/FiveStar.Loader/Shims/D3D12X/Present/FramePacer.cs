@@ -1,0 +1,164 @@
+// Copyright (c) 2026 Five Star Recomp contributors.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+using System.Diagnostics;
+using FiveStar.Loader.Native;
+
+namespace FiveStar.Loader.Shims.D3D12X.Present;
+
+/// <summary>
+/// The console's frame events on a timer: device slot 78 sets the interval, slot 79 places an event type at an offset
+/// from each origin, slot 80 waits for one. A token counts origins (1 = the first after the interval was set); waiting
+/// for the origin returns the next token, a token-in wait for another type returns once that frame's event passed.
+/// </summary>
+internal sealed unsafe class FramePacer
+{
+    /// <summary>Event type 0: the frame origin, the only type the game waits for without a token.</summary>
+    public const uint OriginEvent = 0;
+
+    /// <summary>Flag 2 with timeout 0 (0x142482440): the current token, no wait (*inferred*).</summary>
+    public const uint NoWaitFlag = 2;
+
+    /// <summary>60 Hz, one refresh: the first entry of the game's interval table (0x1461ece60).</summary>
+    private const uint DefaultMicroseconds = 16667;
+
+    private const uint DefaultPeriod = 3;
+
+    /// <summary>Event types 0 to 3; the game schedules 0 and 2.</summary>
+    private const int EventTypes = 4;
+
+    private const long MicrosecondsPerSecond = 1_000_000;
+
+    /// <summary>HRESULT_FROM_WIN32(WAIT_TIMEOUT).</summary>
+    private const int WaitTimeout = unchecked((int)0x80070102);
+
+    private const long MillisecondsPerSecond = 1000;
+
+    private readonly long[] _offsets = new long[EventTypes];
+    private FrameGrid _grid;
+
+    public FramePacer()
+    {
+        _grid = Create(DefaultMicroseconds, DefaultPeriod);
+    }
+
+    /// <summary>The current origins.</summary>
+    public FrameGrid Grid => Volatile.Read(ref _grid);
+
+    /// <summary>Slot 78: a new interval restarts the origins now; the same interval keeps them.</summary>
+    public void SetInterval(uint microseconds, uint period)
+    {
+        var current = Grid;
+
+        if (microseconds == 0 || (current.Microseconds == microseconds && current.Period == period))
+        {
+            return;
+        }
+
+        Volatile.Write(ref _grid, Create(microseconds, period));
+    }
+
+    /// <summary>Slot 79: event <paramref name="type"/> falls <paramref name="microseconds"/> after each origin.</summary>
+    public void Schedule(uint type, uint microseconds)
+    {
+        if (type >= EventTypes)
+        {
+            return;
+        }
+
+        Volatile.Write(ref _offsets[type], microseconds * Stopwatch.Frequency / MicrosecondsPerSecond);
+    }
+
+    /// <summary>Slot 80: (type, timeout in ms, flags, token in/out).</summary>
+    [HotPath]
+    public int Wait(uint type, uint timeout, uint flags, ulong* token)
+    {
+        var grid = Grid;
+        long offset = 0;
+
+        if (type < EventTypes)
+        {
+            offset = Volatile.Read(ref _offsets[type]);
+        }
+
+        long now = Stopwatch.GetTimestamp();
+        ulong reached = Reached(grid, offset, now);
+        ulong target = reached + 1;
+
+        if (type == OriginEvent && ((flags & NoWaitFlag) != 0 || timeout == 0))
+        {
+            Store(token, target - 1);
+
+            return HResult.Ok;
+        }
+
+        if (type != OriginEvent && token != null && *token != 0)
+        {
+            target = *token;
+        }
+
+        return WaitFor(grid, offset, target, now, timeout, token);
+    }
+
+    [HotPath]
+    private static int WaitFor(FrameGrid grid, long offset, ulong target, long now, uint timeout, ulong* token)
+    {
+        long due = grid.Origin + offset + ((long)target - 1) * grid.Interval;
+
+        if (timeout != PresentNative.Infinite)
+        {
+            long limit = now + timeout * Stopwatch.Frequency / MillisecondsPerSecond;
+
+            if (due > limit)
+            {
+                PreciseWait.Until(limit);
+
+                return WaitTimeout;
+            }
+        }
+
+        PreciseWait.Until(due);
+        Store(token, target);
+
+        return HResult.Ok;
+    }
+
+    /// <summary>How many events of this type have happened.</summary>
+    [HotPath]
+    private static ulong Reached(FrameGrid grid, long offset, long now)
+    {
+        long first = grid.Origin + offset;
+
+        if (now < first)
+        {
+            return 0;
+        }
+
+        return (ulong)((now - first) / grid.Interval) + 1;
+    }
+
+    [HotPath]
+    private static void Store(ulong* token, ulong value)
+    {
+        if (token == null)
+        {
+            return;
+        }
+
+        if (value == 0)
+        {
+            *token = 1;
+
+            return;
+        }
+
+        *token = value;
+    }
+
+    private static FrameGrid Create(uint microseconds, uint period)
+    {
+        long interval = microseconds * Stopwatch.Frequency / MicrosecondsPerSecond;
+
+        return new FrameGrid(Stopwatch.GetTimestamp(), interval, microseconds, period);
+    }
+}
