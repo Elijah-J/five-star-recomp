@@ -157,10 +157,10 @@ flowchart LR
 | Shader stage | from the program's hardware stage: VS, PS, GS, NGG as mesh shader (no input assembler then) |
 | Root signature | `BindlessRootSignature`, created once per device; the game's root signature is kept in the description for binding translation |
 | Input layout | element n of a cache layout becomes `ATTR` n; a stream element becomes `ATTR` p, p its position among the non-system ISG1 inputs of the VS; elements the VS does not read become `UNUSED` k |
-| Blend, rasterizer, depth-stencil, sample mask, formats, sample desc | passed through (stream); decoded from the context registers (cache) with 0 values replaced by the D3D12 default |
+| Blend, rasterizer, depth-stencil | passed through (stream); decoded from the context registers (cache) with 0 values replaced by the D3D12 default |
 | Topology type | 1 to 4 pass; 0, the console type 19 and other values become `TRIANGLE` (stream and cache) |
-| Depth format (cache) | not stored: D32_FLOAT, or D32_FLOAT_S8X24_UINT with stencil (*inferred*) |
-| Derive | the base pipeline's description (kept per created pipeline) with the overrides applied, created anew |
+| Render-target and depth formats, sample mask and count (cache) | the record's 0x0C entry ([pipeline-cache.md](pipeline-cache.md#pipeline-outputs-and-vertex-input-layout)); the console's D16_UNORM_S8_UINT (118) becomes D32_FLOAT_S8X24_UINT (`DepthFormats`). Only without that entry are they guessed from the registers |
+| Derive | the base pipeline's description (kept per created pipeline) with the overrides applied, created anew; the formats are the base's, which the game found by a pipeline hash over them |
 
 `TranslatedProgramLibrary` reads DXIL from the output of `fivestar shader translate`, finding names through a
 `ProgramIndex` of the extracted programs. A description that cannot be read is logged once and answered with
@@ -195,7 +195,8 @@ unwrapped, so slot 55 receives the desktop pointer it registered.
 - Override kind 5, and whether kinds 3 and 4 exist.
 - The meaning of the shader flags beyond the mesh bits, and of the second stored bytecode (+0x10, size +0x2C) that
   0x14086f8e0 reads when its last argument is set (the pipeline paths pass 0).
-- Render-target formats of cache pipelines are the cache's guesses; the stream path carries the real ones.
+- Whether the depth view of a D16_UNORM_S8_UINT target gets the same desktop format as the pipeline
+  (D32_FLOAT_S8X24_UINT); no such target has been created yet.
 - Running the mesh fallback (and linked VS forms) through pipelines, for adapters without mesh shaders.
 - What console topology type 19 and topology 6 are exactly (rectangle list and triangle fan are guesses).
 - Which pipelines' programs read graphics user SGPRs 0 to 7 as their own; the command list fills them with SGPRs 8

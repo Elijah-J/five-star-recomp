@@ -6,6 +6,7 @@ using FiveStar.Graphics.Programs;
 using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Shims.D3D12X.Pipelines;
 using FiveStar.Loader.Tests.Support;
+using FiveStar.Shaders.Cache;
 using Xunit;
 
 namespace FiveStar.Loader.Tests;
@@ -78,6 +79,28 @@ public sealed unsafe class D3D12XPipelineTests
         Assert.Equal(3, PipelineStreamParser.Parse(stream, 0x2B0).TopologyType);
         int[] types = [0, 1, 2, 4];
         Assert.Equal([3, 1, 2, 4], types.Select(TopologyTypes.Desktop));
+    }
+
+    [Fact]
+    public void A_cached_pipeline_takes_its_records_output_formats_over_the_register_guess()
+    {
+        // Reverse-Z depth with stencil on, one exported target the registers read as R8G8B8A8_UNORM.
+        uint[] blend = [0x80000000, 0x80000000, 0x80000000, 0x80000000, 0x80000000, 0x80000000, 0x80000000, 0x80000000];
+        var registers = new GraphicsStateRegisters(
+            0x4005D808, false, 2, 0x4, 0xF, 0, 0x00201A42, 0f, 0f, 0f, 0x007007E7, 0x00030030,
+            0x01FFFF00, 0x01FFFF00, 0xF, blend, 0x5, 0x1, 0, 0x00100000);
+        var state = FixedFunctionDecoder.Decode(registers);
+
+        var guessed = CachedStateMapping.Describe(state, null, 0, [], []);
+        var stored = CachedStateMapping.Describe(state, new PipelineTargets([29, 10], 118, 3, 1, uint.MaxValue), 0, [], []);
+        var depthOnly = CachedStateMapping.Describe(state, new PipelineTargets([], 55, 3, 1, uint.MaxValue), 0, [], []);
+
+        Assert.Equal([28], guessed.RenderTargetFormats);
+        Assert.Equal([29, 10], stored.RenderTargetFormats);
+        Assert.Empty(depthOnly.RenderTargetFormats);
+
+        // The console's D16_UNORM_S8_UINT (118) becomes D32_FLOAT_S8X24_UINT; a stored D16_UNORM stays.
+        Assert.Equal((20, 20, 55), (guessed.DepthStencilFormat, stored.DepthStencilFormat, depthOnly.DepthStencilFormat));
     }
 
     [Fact]
