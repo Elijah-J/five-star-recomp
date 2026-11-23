@@ -137,11 +137,13 @@ method follows from the arguments and from the inline packet written instead:
 | 12, 13 | 12, 13 | DrawInstanced, DrawIndexedInstanced | 4 and 5 counts; limit +0x28 |
 | 20 to 24 | 20 to 24 | IASetPrimitiveTopology, RSSetViewports, RSSetScissorRects, OMSetBlendFactor, OMSetStencilRef | (1, rects), float*, one dword |
 | 25 | 25 | SetPipelineState | PSO; caches PSO state at +0x544 |
-| 29, 30 | | X | (pointer, dword, dword); 30 has 7 arguments |
+| 29, 30 | | X | (pointer, dword, dword) at 0x142482b99; 30 has 7 arguments (0x1424843b0); not reached in boot |
+| 32 | 28 | SetDescriptorHeaps | (2, {main view heap, sampler heap}) at 0x144e4cac2, when a context takes a new list |
 | 33, 34 | 29, 30 | SetCompute/GraphicsRootSignature | root signature from the PSO (+0x80) |
 | 35, 36 | 31, 32 | SetCompute/GraphicsRootDescriptorTable | (index, GPU handle); inline dword + low dword |
 | 37, 38 | 33, 34 | SetCompute/GraphicsRoot32BitConstant (*inferred*: between 36 and 39) | |
 | 39, 40 | 35, 36 | SetCompute/GraphicsRoot32BitConstants | (index, count, data, 0) |
+| 41, 42 | 37, 38 | SetCompute/Graphics root CBV (*inferred*: between 40 and 43) | |
 | 43 to 46 | 39 to 42 | SetCompute/Graphics root SRV and UAV | (index, GPU address); inline dword + qword |
 | 47, 48 | 43, 44 | IASetIndexBuffer, IASetVertexBuffers | view* or null; (0, count, views) |
 | 50 | 46 | OMSetRenderTargets | (count, handles, FALSE, DSV*) |
@@ -151,8 +153,12 @@ method follows from the arguments and from the inline packet written instead:
 | 70 | 62 | OMSetDepthBounds | floats in xmm1, xmm2 |
 | 72, 75, 126 to 128, 142 | | X | one site each |
 
-Slot 32 is SetDescriptorHeaps (two heaps, call at 0x144e4cac2), so ResourceBarrier and ExecuteBundle are among slots
-26 to 31 with X slots (*inferred*); between 52 and 61 two desktop methods are missing.
+Slots 32 to 52 are the desktop slot + 4, so ResourceBarrier and ExecuteBundle are among slots 26 to 31 with X slots
+(*inferred*; none of 26 to 31 is called in boot); between 52 and 61 two desktop methods are missing. The inline form
+of a descriptor table is (dword from the root signature's register table at list +0x144 + index * 4, low dword of the
+GPU handle): the table reaches the program as a 32-bit address in one user SGPR. The game derives a GPU handle as its
+CPU handle + (GPU start - CPU start) (0x1400321d8; heap record at 0x1475e7378: +0x18 heap, +0x20 CPU start, +0x30
+increment, +0x38 GPU start - CPU start).
 
 ### Descriptor heaps
 
@@ -191,14 +197,15 @@ wrapper.
 | Device | 1 to 43 | desktop order; 25, 26, 43 swap; views (18 to 21), 31, 42 unwrap |
 | Command queue | 13 to 20 | desktop slot + 2; Signal and Wait unwrap the fence; 20 (GetDesc) swaps |
 | Command allocator | 8 | desktop (*inferred*) |
-| Command list | 8 to 25, 33 to 40, 50 to 52, 70, 139 | as in the table above; 139 is Reset with a third argument (0x142474cce); Reset, ClearState, copies and SetPipelineState unwrap |
+| Command list | 8 to 25, 50 to 52, 70 | as in the table above; 139 is Reset with a third argument (0x142474cce); Reset, ClearState, copies and SetPipelineState unwrap |
 | Resource | 8 to 14 | desktop |
 | Heap, descriptor heap | 8 | GetDesc, swaps |
 | Fence | 8 to 10 | desktop (*inferred*); 12 is a handler |
 | Query heap, command signature | none past the base slots | |
 
 The command-list wrapper is 4 KiB and zeroed: write pointer and limits stay 0, so every inline command calls its
-slot. Slots taking GPU addresses (41 to 48) stay stubs until console addresses are translated.
+slot. Reset (10, 139), draws and dispatches (12 to 14, 61) and slots 32 to 46 are binding handlers
+([Binding](#binding)); 47 and 48 (index and vertex buffers) stay stubs until console addresses are translated.
 
 ### Handlers
 
@@ -219,7 +226,9 @@ slot. Slots taking GPU addresses (41 to 48) stay stubs until console addresses a
 | Resource | 2 | Release that also frees a slot-127 resource's title memory |
 | Resource | 11 | the console address for a slot-133 resource, else the desktop GPU address |
 | Fence | 2, 12 | 12 returns a cell holding the completed value, which the game polls (0x144fb0ad0); a mirror thread keeps every such cell current (SetEventOnCompletion(value + 1) on a shared event) |
-| Descriptor heap | 9, 10 | heap start handles returned in rax; 9 returns the title memory when the heap has some |
+| Descriptor heap | 9, 10 | heap start handles returned in rax; 9 returns the title memory when the heap has some, 10 the GPU handle of the first descriptor the game owns |
+| Device | 16 | CreateRootSignature; the parameter layout is kept ([Binding](#binding)) |
+| Command list | 10, 12 to 14, 32 to 46, 61, 139 | [Binding](#binding) |
 
 ### Game memory on the GPU
 
@@ -263,10 +272,52 @@ passes 0x3000000) and logs the serializer's message when it still fails.
 throws when that fails. Its seven exports bind to shims: prebuild sizes from the desktop's
 GetRaytracingAccelerationStructurePrebuildInfo, builds, copies and rehydration logged once and skipped.
 
-Descriptor heaps (`XboxDescriptorHeaps`): a shader-visible heap takes title memory from the game's hook (allocator
-id 128, object type 4); slot 9 returns it and `Handles` maps it onto the desktop heap's CPU handles, which slots 17
-to 24 translate. The GPU start stays the desktop one, so the GPU handles the game derives are desktop handles. A
-heap above 1,000,000 descriptors (the tier-2 limit) is created at the limit, with a warning.
+### Binding
+
+Every list runs `BindlessRootSignature` (the one the pipelines use); the game's root arguments become the user data
+of the translated programs (`Shims/D3D12X/Binding`).
+
+```mermaid
+flowchart LR
+  rs["device 16: game root signature"] --> layout["RootLayout: SGPR offset and size per parameter"]
+  args["list 35 to 46: tables, constants, root CBV/SRV/UAV"] --> ud["user SGPRs of the list (wrapper +0x800)"]
+  layout --> ud
+  table["table GPU handle"] --> window["DescriptorWindow pointer"] --> ud
+  draw["list 12 to 14, 61"] --> ring["UserDataRing block"]
+  ud --> ring --> cbv["root parameter 0: cbuffer UserData"]
+```
+
+- **Heaps** (`XboxDescriptorHeaps`). A shader-visible heap takes title memory from the game's hook (allocator id
+  128, object type 4) and `Handles` maps it onto desktop CPU handles, which slots 17 to 24 translate. The view heap
+  gets 262 more descriptors, capped at 1,000,000 (the tier-2 limit): desktop index 0 is a raw SRV over the
+  descriptor window (`GPU_MEM_HEAP`), 1 a raw UAV over it, 2 to 5 null descriptors for the mesh fallback table (root
+  parameter 1), 6 to 261 a sink. Game descriptor i is desktop index 262 + i; slot 9 returns the title memory (desktop
+  index 262 without it) and slot 10 the GPU handle of index 262, so the game's GPU handles are desktop handles. The
+  last 245,446 of the main heap's 1,245,184 descriptors have no desktop descriptor: views written there land in the
+  sink and tables there read null descriptors (both warned once). The sampler heap gets 2048 samplers (the game asks
+  for 128); 2032 to 2047 (`STATIC_SAMPLER_BASE`) hold a trilinear wrapping sampler for the programs' literal S#s.
+- **SetDescriptorHeaps (32)** binds the desktop heaps behind the wrappers. A root signature set before any heap
+  binds the main heaps first; a heap change sets the bindless root signature again.
+- **Root signatures (16, 33, 34).** Device slot 16 reads the RTS0 part of the blob into a `RootLayout`: parameters
+  packed into user SGPRs in order, a table one, root constants one per value, a root CBV/SRV/UAV two, from s8 for
+  graphics and s4 for compute ([pipeline-cache.md](pipeline-cache.md#bindings)). List slots 33 and 34 keep the
+  layout and set the bindless root signature and the fallback table.
+- **Root arguments (35 to 46)** write user SGPRs: a table its window pointer, constants their values, a root
+  descriptor the console GPU address as passed. Graphics SGPRs 8 to 15 are also written to dwords 0 to 7, where mesh
+  and geometry programs read them (`user_sgpr(n - 8)`).
+- **Draws and dispatches (12 to 14, 61)** upload the bind point's 128 dwords when they changed (a 64 MiB upload ring
+  of 512-byte blocks, a block reused after 131,072 others) and point root parameter 0 at them; ExecuteIndirect
+  unwraps its signature and buffers. Reset (10, 139) clears the list's binding state.
+- **Descriptor window.** A 32,032,768-byte buffer (custom heap, write-combined system memory, UAV): one 32-byte
+  record per desktop view index (a T#; buffers and CBVs use the first 16 bytes), then one 16-byte record per sampler
+  from 32,000,000, each with dword 0 = its own index. A table's user SGPR is the window offset of its first record
+  ((handle - heap GPU start) / increment × record size), so a program's `MemLoad(table + k * 32)` reads the heap index
+  of the table's k-th descriptor. Records never change: view creation and copies keep the desktop index.
+
+The window covers only descriptors of the console's 32-bit pointer space: pointers into game memory (root
+descriptors, constants loaded through pointers) read the window, not game memory. Buffer views stay typed or
+structured desktop views, while programs read every V# as a `ByteAddressBuffer`; V# dwords 1 and 3 (stride, format
+code) stay 0.
 
 ### Present
 
@@ -351,22 +402,26 @@ console compute pipelines, command-signature argument type 0x69, slot 74 (0x141e
 slot-133 textures, list slot 139 (0x142474ce1), resource GetDesc register order, the first ExecuteCommandLists,
 WaitFrameEventX (device 80) and the first present (queue 32: the game's window shows the plane, black so far, or
 the test pattern), then texture formats refused as UAVs, fence
-slot 12 (0x144fb0b03) and unaligned CBVs. The frame loop then records graphics work: with the pipeline slots
-stubbed (no `--shader-dir`), descriptor heaps never bound on lists (list slots 26 to 28 unknown) and descriptor
-handles the game derives itself, the driver faults in SetGraphicsRootDescriptorTable (list slot 36, call at
-0x1400321ff).
+slot 12 (0x144fb0b03) and unaligned CBVs. With binding, the frame loop records graphics work with pipelines
+created; after the first present the GPU hangs (DXGI_ERROR_DEVICE_HUNG): every list submitted after it stops before
+its first command (DRED: BEGIN_COMMAND_LIST not completed; a ClearRenderTargetView list, a present copy). The hang
+stays with every draw, dispatch and ExecuteIndirect skipped and without pipelines; the debug layer reports
+ClearRenderTargetView on a slot-127 render target in UNORDERED_ACCESS state just before. The game then breaks at
+0x142474606 (its fence wait, 0x144fb0e29).
 ## Unknown
 
 - Device slot 71; what slot 74's output is; whether list slot 139's third argument is flags. The open points of
   slots 61, 70 and 133 are in [gpu-resources.md](gpu-resources.md).
 - CBVs at addresses the desktop cannot express (16-byte aligned); the allocator's slot 9 (callback, context).
-- List slots 26 to 32, 53 to 60, 62 and above 70; the list slots that take wrapped resources inside structures
+- List slots 26 to 31, 53 to 60, 62 and above 70; the list slots that take wrapped resources inside structures
   (barriers, texture copies) and GPU addresses.
+- Whether root constants take one SGPR per value (they are always the last parameter, so the metadata cannot tell),
+  and what graphics s0 to s7 and compute s0 to s3 hold.
 - Device slots 44 to 133 apart from those named above; the meaning of the desc dwords of slots 48 and 73.
 - The slot maps marked *inferred*: allocator, resource and fence have no X call site in the census.
 - Present: what the plane dword at +0x28 and the parameter dword at +0x18 mean, how a second plane is placed and
   blended, which flags slot 80's flag 2 and slot 78's period stand for, and the layout the console expects the plane
   in; queue slot 31's arguments.
-- Descriptors the game writes into title memory itself instead of through slots 17 to 24, and descriptors past the
-  first 1,000,000 of the main heap.
+- Descriptors the game writes into title memory itself instead of through slots 17 to 24, and which descriptors of
+  the main heap past the desktop's 999,738 the game uses.
 - Parameter-block fields at 0x20, 0x24, 0x28 and 0x3C.

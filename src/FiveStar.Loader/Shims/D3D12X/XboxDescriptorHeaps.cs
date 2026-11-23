@@ -122,13 +122,16 @@ internal sealed unsafe class XboxDescriptorHeaps
         }
 
         nint memory = _hooks.Allocate((nuint)description->Count * increment, DescriptorAttributes);
+        nint desktopStart = DesktopCalls.HeapCpuStart(inner) + (nint)((ulong)first * increment);
 
         if (memory == 0)
         {
+            // No title hooks (no game image): the game's CPU start is the first desktop descriptor it owns.
+            heap->GameCpuStart = first == 0 ? 0 : desktopStart;
+
             return;
         }
 
-        nint desktopStart = DesktopCalls.HeapCpuStart(inner) + (nint)((ulong)first * increment);
         ulong backed = Math.Min(description->Count, desktopCount - first);
         heap->GameCpuStart = memory;
         Handles.Add(new AddressRange((ulong)memory, backed * increment, (ulong)desktopStart));
