@@ -31,6 +31,13 @@ internal static class HostUsage
           --save-dir <dir>       XGameSave / local storage root (default: %LOCALAPPDATA%\FiveStar\GdkData\<TitleId>)
           --shader-dir <dir>     extracted FSSM programs; with --translated-dir, D3D12.X pipeline creation is enabled
           --translated-dir <dir> translated DXIL programs (fivestar shader translate)
+          --pipeline-cache <dir> disk cache of built pipelines (default: <work-dir>\pipeline-cache)
+          --no-pipeline-cache    build every pipeline anew and store none
+          --warm-pipelines <shaders.rpf|blob>  no game: build every pipeline of the console pipeline cache into
+                                 the disk cache (with --shader-dir, --translated-dir), resuming where a run stopped
+          --warm-jobs <n>        pipelines the warm-up builds at once (default: half the logical processors)
+          --warm-step <k>        warm-up: every k-th pipeline only
+          --warm-match <text>    warm-up: only pipelines with a program whose name contains text (repeatable)
           --gdk-abi <file>       XGameRuntime thunk ABI table: "clsid iid slot FunctionName" per line;
                                  default: read from an installed PC GDK's xgameruntime.lib
           --input <file>         GameInput keyboard-and-mouse gamepad mapping ("setting value" per line)

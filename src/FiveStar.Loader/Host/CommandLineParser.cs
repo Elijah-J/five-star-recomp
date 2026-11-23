@@ -148,8 +148,65 @@ internal sealed class CommandLineParser
             case "--cpu":
                 return SetCpu();
             default:
+                return ApplyPipelineCache(option);
+        }
+    }
+
+    /// <summary>The pipeline-cache and warm-up options.</summary>
+    private bool ApplyPipelineCache(string option)
+    {
+        switch (option)
+        {
+            case "--pipeline-cache":
+                return SetPipelineCache();
+            case "--no-pipeline-cache":
+                return DisablePipelineCache();
+            case "--warm-pipelines":
+                return SetWarmSource();
+            case "--warm-jobs":
+                return SetWarmJobs();
+            case "--warm-step":
+                return SetWarmStep();
+            case "--warm-match":
+                return Add(_options.WarmMatches);
+            default:
                 throw new CommandLineException($"unknown argument {option}");
         }
+    }
+
+    private bool SetPipelineCache()
+    {
+        _options.PipelineCache = Path.GetFullPath(Next());
+
+        return true;
+    }
+
+    private bool DisablePipelineCache()
+    {
+        _options.NoPipelineCache = true;
+
+        return true;
+    }
+
+    private bool SetWarmSource()
+    {
+        _options.WarmSource = Path.GetFullPath(Next());
+
+        return true;
+    }
+
+    private bool SetWarmJobs()
+    {
+        _options.WarmJobs = int.Parse(Next(), CultureInfo.InvariantCulture);
+
+        return true;
+    }
+
+    private bool SetWarmStep()
+    {
+        _options.WarmStep = int.Parse(Next(), CultureInfo.InvariantCulture);
+
+        return true;
     }
 
     private string Next()

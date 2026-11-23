@@ -13,6 +13,22 @@ internal static unsafe class BindlessRoot
     /// <summary>ID3D12Device::CreateRootSignature with the serialized bindless layout.</summary>
     public static int Create(nint device, nint* rootSignature)
     {
+        var blob = Serialized();
+
+        if (blob is null)
+        {
+            return HResult.Fail;
+        }
+
+        fixed (byte* bytes = blob)
+        {
+            return DesktopDevice.CreateRootSignature(device, bytes, (nuint)blob.Length, rootSignature);
+        }
+    }
+
+    /// <summary>The serialized bindless layout, or null when the runtime refuses it.</summary>
+    public static byte[]? Serialized()
+    {
         var description = new VersionedRootSignatureDescription(BindlessRootSignature.Description());
         var error = D3D12.D3D12SerializeVersionedRootSignature(description, out var blob);
 
@@ -20,12 +36,12 @@ internal static unsafe class BindlessRoot
         {
             blob?.Dispose();
 
-            return HResult.Fail;
+            return null;
         }
 
         using (blob)
         {
-            return DesktopDevice.CreateRootSignature(device, (void*)blob.BufferPointer, blob.BufferSize, rootSignature);
+            return new ReadOnlySpan<byte>((void*)blob.BufferPointer, (int)(nuint)blob.BufferSize).ToArray();
         }
     }
 }

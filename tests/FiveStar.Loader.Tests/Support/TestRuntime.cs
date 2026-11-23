@@ -42,7 +42,7 @@ internal sealed class TestRuntime : IDisposable
         var options = new LoaderOptions([], manual, UnresolvedMode.Stub, true, Path.Combine(folder, "work"), null, Environment.ProcessId);
         var gdk = new GdkOptions(packageRoot, Path.Combine(folder, "saves"), Path.Combine(folder, "data"), folder, SystemService.XboxScarlettAnaconda, Environment.OSVersion.Version, network ?? NetworkOptions.Offline);
         var environment = new LoaderEnvironment(Environment.SystemDirectory, TimeProvider.System, Environment.FailFast);
-        var runtime = new LoaderRuntime(options, gdk, new PipelineFolders(null, null), environment, new LoaderLog(log ?? TextWriter.Null, null, false));
+        var runtime = new LoaderRuntime(options, gdk, new PipelineFolders(null, null, null), environment, new LoaderLog(log ?? TextWriter.Null, null, false));
 
         return new TestRuntime(runtime, folder);
     }

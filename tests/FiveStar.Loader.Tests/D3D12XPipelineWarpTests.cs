@@ -60,7 +60,7 @@ public sealed unsafe class D3D12XPipelineWarpTests(ITestOutputHelper output)
 
         var warnings = new OnceLog(new LoaderLog(log, null, false));
         var (device2, root) = DesktopObjects(device.Device.NativePointer);
-        var slots = new PipelineSlots(new PipelineFactory(device2, root, library, warnings, null, new StandInPipelines(PipelineSlots.CreationBudget, new PipelineBuildQueue(1), warnings)), warnings);
+        var slots = new PipelineSlots(new PipelineFactory(device2, root, library, warnings, null, new StandInPipelines(PipelineSlots.CreationBudget, new PipelineBuildQueue(1), warnings), null), warnings);
         var iid = DesktopDevice.PipelineStateIid;
         nint cached, streamed, derived;
 

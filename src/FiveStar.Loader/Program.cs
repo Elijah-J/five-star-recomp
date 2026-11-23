@@ -45,6 +45,11 @@ public static class Program
             return ClassifyCommand.Run(options);
         }
 
+        if (options.WarmSource is not null)
+        {
+            return Warm(options);
+        }
+
         if (options.Loads.Count == 0)
         {
             Console.WriteLine(HostUsage.Text);
@@ -77,6 +82,13 @@ public static class Program
         using var runtime = new LoaderRuntime(HostComposition.CreateLoaderOptions(options), HostComposition.CreateGdkOptions(options), HostComposition.CreatePipelineFolders(options), HostComposition.CreateEnvironment(), log);
 
         return new LoaderHost(options, runtime, log, Environment.ProcessId).Run();
+    }
+
+    private static int Warm(HostOptions options)
+    {
+        using var file = OpenLogFile(options.LogFile);
+
+        return WarmPipelinesCommand.Run(options, new LoaderLog(Console.Out, file, options.Verbose));
     }
 
     private static StreamWriter? OpenLogFile(string? path)

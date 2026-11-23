@@ -22,7 +22,11 @@ internal static unsafe class DesktopDevice
     private const int AddRefSlot = 1;
     private const int ReleaseSlot = 2;
     private const int CheckFeatureSupportSlot = 13;
+    /// <summary>IID_ID3D12PipelineLibrary1.</summary>
+    public static readonly Guid PipelineLibrary1Iid = new("80eabf42-2568-4e5e-bd82-c37f86961dc3");
+
     private const int CreateRootSignatureSlot = 16;
+    private const int CreatePipelineLibrarySlot = 44;
     private const int CreatePipelineStateSlot = 47;
 
     public static int QueryInterface(nint unknown, Guid* iid, nint* result)
@@ -61,6 +65,18 @@ internal static unsafe class DesktopDevice
         var target = (delegate* unmanaged<nint, void*, Guid*, nint*, int>)Method(device2, CreatePipelineStateSlot);
 
         return target(device2, streamDesc, iid, result);
+    }
+
+    /// <summary>
+    /// ID3D12Device1::CreatePipelineLibrary(const void* blob, SIZE_T size, REFIID, void**) for ID3D12PipelineLibrary1;
+    /// the blob (null and 0 for an empty library) must stay valid while the library lives.
+    /// </summary>
+    public static int CreatePipelineLibrary(nint device1, void* blob, nuint size, nint* result)
+    {
+        var target = (delegate* unmanaged<nint, void*, nuint, Guid*, nint*, int>)Method(device1, CreatePipelineLibrarySlot);
+        var iid = PipelineLibrary1Iid;
+
+        return target(device1, blob, size, &iid, result);
     }
 
     private static nint Method(nint unknown, int slot)

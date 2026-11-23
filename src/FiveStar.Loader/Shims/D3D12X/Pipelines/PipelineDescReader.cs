@@ -31,16 +31,7 @@ internal static unsafe class PipelineDescReader
     public static GraphicsPipelineDescription CachedGraphics(byte* desc)
     {
         var (stateAddress, stateSize) = GameMemory.Range(desc, PipelineLayout.CachedStateField);
-        var registers = GraphicsStateParser.Parse(GameMemory.Copy(stateAddress, stateSize));
-
-        if (registers is null)
-        {
-            throw new NotSupportedException($"pipeline-cache state of 0x{stateSize:x} bytes has an unknown layout");
-        }
-
         var (layoutAddress, layoutSize) = GameMemory.Range(desc, PipelineLayout.CachedInputLayoutField);
-        var layoutMeta = GameMemory.Copy(layoutAddress, layoutSize);
-        var layout = Elements(layoutMeta);
         var shaders = new List<ShaderSource>();
 
         for (var slot = 0; slot < PipelineLayout.CachedSlotCount; slot++)
@@ -53,9 +44,25 @@ internal static unsafe class PipelineDescReader
             }
         }
 
+        return CachedGraphics(GameMemory.Copy(stateAddress, stateSize), GameMemory.Copy(layoutAddress, layoutSize), shaders, *(nint*)desc);
+    }
+
+    /// <summary>
+    /// A pipeline-cache graphics record from its state metadata, its 0x0C metadata (formats and input layout) and the
+    /// code blocks of its slots in slot order: what slot 57 reads from game memory, and the warm-up from the cache blob.
+    /// </summary>
+    public static GraphicsPipelineDescription CachedGraphics(byte[] stateMeta, byte[] layoutMeta, IReadOnlyList<ShaderSource> shaders, nint gameRootSignature)
+    {
+        var registers = GraphicsStateParser.Parse(stateMeta);
+
+        if (registers is null)
+        {
+            throw new NotSupportedException($"pipeline-cache state of 0x{stateMeta.Length:x} bytes has an unknown layout");
+        }
+
         var state = FixedFunctionDecoder.Decode(registers);
 
-        return CachedStateMapping.Describe(state, Targets(layoutMeta), *(nint*)desc, shaders, layout);
+        return CachedStateMapping.Describe(state, Targets(layoutMeta), gameRootSignature, shaders, Elements(layoutMeta));
     }
 
     /// <summary>The formats the record's 0x0C entry stores ahead of the input layout; null when the entry is absent.</summary>
@@ -87,6 +94,12 @@ internal static unsafe class PipelineDescReader
         }
 
         return overrides;
+    }
+
+    /// <summary>A pipeline-cache code block as slots 57 and 67 keep it: its first <see cref="ProgramIndex.PrefixSize"/> bytes.</summary>
+    public static ShaderSource CacheCode(ReadOnlySpan<byte> code)
+    {
+        return new ShaderSource(ShaderSourceKind.CacheCode, code[..Math.Min(code.Length, ProgramIndex.PrefixSize)].ToArray());
     }
 
     private static ShaderSource Shader(ShaderSourceKind kind, nint address, long size)
