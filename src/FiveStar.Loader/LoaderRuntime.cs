@@ -28,9 +28,9 @@ internal sealed class LoaderRuntime : IDisposable
         CodeHeap = new CodeHeap();
         LastError = new LastErrorBridge(CodeHeap, log);
         Shims = new ShimTable(LastError, CodeHeap);
+
         Images = new ImageTable();
         Stubs = new UnresolvedStubs(CodeHeap, Images, options.Unresolved, log, environment.FailFast);
-
         VirtualModules = new VirtualModules(log);
         Patcher = new ImagePatcher(Shims, log);
         Trace = new CallTrace(CodeHeap);

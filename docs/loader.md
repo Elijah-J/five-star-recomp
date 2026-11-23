@@ -37,9 +37,10 @@ saves the thread's slot-0 pointer in 8 bytes added after the template and points
 last (process and thread detach) puts it back before ntdll frees the blocks. Threads that existed before the
 executable was mapped, other than the loading thread, keep the host's slot 0.
 
-**Unresolved imports.** Each gets a stub `mov rcx,id; mov rax,handler; jmp rax` in a code heap that is never writable
-and executable at once. `--unresolved stub` (default) logs the first call and returns 0 or the module's value; `trap`
-terminates on the call; `error` fails the load.
+**Unresolved imports.** Each gets a stub `mov rdx,[rsp]; mov rcx,id; mov rax,handler; jmp rax` in a code heap that is
+never writable and executable at once; rdx carries the caller's return address, so the first-call log line names the
+call site (`from game_scarlett_master.exe+0x...`). `--unresolved stub` (default) logs the first call and returns 0 or
+the module's value; `trap` terminates on the call; `error` fails the load.
 
 ## Import resolution
 

@@ -17,6 +17,27 @@ internal static class D3D12XLayout
     /// <summary>Slots 0 to 43 are IUnknown, ID3D12Object and ID3D12Device in desktop order (d3d12.h).</summary>
     public const int DesktopDeviceSlotCount = 44;
 
+    /// <summary>X-only device slot that creates the compute queues: (desc, REFIID, void**).</summary>
+    public const int CreateCommandQueueSlot = 48;
+
+    /// <summary>X-only device slot that creates command lists: (desc, allocator, PSO, REFIID, void**).</summary>
+    public const int CreateCommandListSlot = 73;
+
+    /// <summary>X-only device slot read as SetFrameIntervalX (*inferred*).</summary>
+    public const int SetFrameIntervalSlot = 78;
+
+    /// <summary>X-only device slot read as ScheduleFrameEventX (*inferred*).</summary>
+    public const int ScheduleFrameEventSlot = 79;
+
+    /// <summary>Command-list vtable slots the shim provides. The game calls slots up to 132; the rest is margin.</summary>
+    public const int CommandListSlotCount = 160;
+
+    /// <summary>Command-list slots known to match the desktop list: IUnknown, ID3D12Object, GetDevice, GetType, Close.</summary>
+    public const int CommandListForwardedSlots = 10;
+
+    /// <summary>IID_ID3D12GraphicsCommandList (d3d12.h).</summary>
+    public static readonly Guid GraphicsCommandListIid = new("5b160d0f-ac1b-4185-8ba8-b3ae42a5a455");
+
     /// <summary>Offset of the desktop device pointer in <see cref="XboxDeviceObject"/>.</summary>
     public const byte InnerOffset = 8;
 
