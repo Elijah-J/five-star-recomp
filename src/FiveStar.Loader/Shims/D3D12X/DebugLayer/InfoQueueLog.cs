@@ -19,10 +19,19 @@ internal sealed unsafe class InfoQueueLog
     private const int ClearStoredMessagesSlot = 4;
     private const int GetMessageSlot = 5;
     private const int GetNumStoredMessagesSlot = 8;
+    private const int AddStorageFilterEntriesSlot = 12;
     private const int RegisterMessageCallbackSlot = 38;
 
     /// <summary>D3D12_MESSAGE_CALLBACK_FLAG_NONE: the storage filter applies to the callback too.</summary>
     private const int CallbackFlags = 0;
+
+    /// <summary>
+    /// D3D12_MESSAGE_ID_CREATEINPUTLAYOUT_TYPE_MISMATCH (d3d12sdklayers.h): an element format whose type differs from
+    /// the shader input's. Translated vertex shaders declare every fetched attribute float4 and read its bits with
+    /// asuint, as the console's VGPRs hold them, so an integer element (R8G8B8A8_UINT blend indices) is meant to arrive
+    /// unconverted; the warning is denied rather than logged for each such pipeline.
+    /// </summary>
+    private const int InputLayoutTypeMismatch = 245;
 
     /// <summary>D3D12_MESSAGE_SEVERITY values (d3d12sdklayers.h): 0 corruption, 1 error, 2 warning, 3 info, 4 message.</summary>
     private const int WarningSeverity = 2;
@@ -55,6 +64,12 @@ internal sealed unsafe class InfoQueueLog
 
     /// <summary>Registers the message callback on the device's info queue, or keeps the queue for draining.</summary>
     public void Attach(nint device)
+    {
+        AttachQueue(device);
+        DenyExpected();
+    }
+
+    private void AttachQueue(nint device)
     {
         Guid iid1 = InfoQueue1Iid;
         nint queue1 = 0;
@@ -133,6 +148,20 @@ internal sealed unsafe class InfoQueueLog
     {
         string text = description == null ? string.Empty : Marshal.PtrToStringAnsi((nint)description) ?? string.Empty;
         ShimContext.Runtime.D3D12X.Debugging.Messages.Write(severity, id, text);
+    }
+
+    /// <summary>Keeps the messages that describe intended behaviour out of storage, and so out of the callback.</summary>
+    private void DenyExpected()
+    {
+        if (_queue == 0)
+        {
+            return;
+        }
+
+        int* ids = stackalloc int[] { InputLayoutTypeMismatch };
+        var filter = new InfoQueueFilter { DenyIdCount = 1, DenyIds = ids };
+        int hr = ((delegate* unmanaged<nint, InfoQueueFilter*, int>)ComObject.Slot(_queue, AddStorageFilterEntriesSlot))(_queue, &filter);
+        _log.Info($"  [d3d12-debug] message #{InputLayoutTypeMismatch} (input-layout type mismatch, intended) denied -> {HResult.Format(hr)}");
     }
 
     private static int QueryInterface(nint unknown, Guid* iid, nint* result)

@@ -56,6 +56,17 @@ another folder). The first run takes one to several hours, depending on the proc
 re-run skips finished steps, and a run that was stopped continues where it left off. `fivestar setup <dump> --status` shows what is done. See
 [docs/setup.md](docs/setup.md).
 
+### Running the game
+
+```
+fivestar doctor <your dump folder>
+fivestar run <your dump folder>
+```
+
+`doctor` checks what a run needs (the PC GDK, dxc, disk space, the loader). `run` finishes any setup step still to do,
+then starts the game under the loader and prints a summary when it exits. The game does not get past its first screens
+yet. See [docs/running.md](docs/running.md).
+
 ### Single tools
 
 The `fivestar` command holds all tools; `fivestar <group> help` lists a group's commands.

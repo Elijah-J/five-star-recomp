@@ -4,7 +4,7 @@ GTA VI does not run yet. Its main executable (`game_scarlett_master.exe`, built 
 23 November 2026. Under the loader it now starts: it runs from its entry point through the C runtime start-up, its
 memory set-up, opening its archives through DirectStorage, the whole D3D12.X device set-up, its GPU memory pools,
 descriptor heaps, render targets and pipelines, and into its frame loop: it now presents frames continuously to its own
-window through a swap chain (about 27,000 frames in a two-minute run). The frames are still black: its draws record
+window through a swap chain, at its own 30 frames per second and without crashing. The frames are still black: its draws record
 with real pipelines and bound descriptors, but rectangle lists, render-target states and many views are not right yet
 (see [Roadmap](Roadmap.md)).
 

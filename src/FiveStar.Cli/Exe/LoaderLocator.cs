@@ -4,8 +4,9 @@
 namespace FiveStar.Cli.Exe;
 
 /// <summary>
-/// Finds the <c>fivestar-loader</c> executable: the <c>--loader</c> path, then <c>FIVESTAR_LOADER</c>, then the
-/// sibling build output next to this CLI (both projects build under the same <c>artifacts/bin</c> tree).
+/// Finds the <c>fivestar-loader</c> executable: the <c>--loader</c> path, then <c>FIVESTAR_LOADER</c>, then the folder
+/// of this CLI (a published build), then the sibling build output (both projects build under the same
+/// <c>artifacts/bin</c> tree).
 /// </summary>
 internal static class LoaderLocator
 {
@@ -26,6 +27,13 @@ internal static class LoaderLocator
         if (fromEnvironment is not null)
         {
             return Existing(fromEnvironment);
+        }
+
+        var beside = Path.Combine(AppContext.BaseDirectory, LoaderExe);
+
+        if (File.Exists(beside))
+        {
+            return beside;
         }
 
         return Sibling();

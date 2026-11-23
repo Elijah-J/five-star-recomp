@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+using FiveStar.Loader.Shims.D3D12X;
 using FiveStar.Loader.Tests.Support;
 using Xunit;
 
@@ -22,6 +23,18 @@ public sealed unsafe class D3D12XDeviceTests
     private const int HeapTypeCustom = 4;
     private const int HeapPropertiesSize = 20;
     private const int NotImplemented = unchecked((int)0x80004001);
+    private const int IncrementSizeSlot = 15;
+    private const uint ViewHeapType = 0;
+    private const uint ConsoleOnlyHeapType = 4;
+
+    /// <summary>Desktop GetResourceAllocationInfo, DXGI_FORMAT_R8G8B8A8_TYPELESS and R32G8X24_TYPELESS, the last legacy DXGI format.</summary>
+    private const int AllocationInfoSlot = 25;
+    private const int Rgba8Typeless = 27;
+    private const int DepthStencilTypeless = 19;
+    private const int LastFormat = 115;
+    private const int Texture2D = 3;
+    private const uint TextureSize = 64;
+    private const int AllowUnorderedAccess = 0x4;
 
     [Fact]
     public void Device_forwards_desktop_slots_and_stubs_xbox_slots()
@@ -41,7 +54,10 @@ public sealed unsafe class D3D12XDeviceTests
         var custom = (delegate* unmanaged<byte*, nint, uint, int, byte*>)vtable[GetCustomHeapPropertiesSlot];
         custom(properties, device, 1, HeapTypeUpload);
         int xboxOnly = ((delegate* unmanaged<nint, int>)vtable[UnmappedXboxSlot])(device);
+        var increment = (delegate* unmanaged<nint, uint, uint>)vtable[IncrementSizeSlot];
 
+        Assert.NotEqual(0u, increment(device, ViewHeapType));
+        Assert.Equal(0u, increment(device, ConsoleOnlyHeapType));
         Assert.Equal(1u, nodes);
         Assert.Equal(HeapTypeCustom, *(int*)properties);
         Assert.Equal(NotImplemented, xboxOnly);
@@ -80,5 +96,51 @@ public sealed unsafe class D3D12XDeviceTests
         Assert.Equal(0, closed);
         Assert.NotEqual(0, queue);
         _ = ((delegate* unmanaged<nint, uint>)(*(nint**)queue)[ReleaseSlot])(queue);
+    }
+
+    [Fact]
+    public void A_uav_texture_desc_is_one_the_desktop_accepts_and_keeps_the_flag_where_its_format_family_allows()
+    {
+        using var test = TestRuntime.Create();
+        _ = new XboxDevice(test);
+        nint desktop = test.Runtime.D3D12X.Objects.DesktopDevice;
+        var descriptions = test.Runtime.D3D12X.Descriptions;
+
+        for (int format = 1; format <= LastFormat; format++)
+        {
+            var plain = Texture(format, 0);
+            var console = Texture(format, AllowUnorderedAccess);
+            var converted = descriptions.ToDesktop(desktop, &console);
+
+            // Formats the desktop refuses as textures at all say nothing about the flag.
+            if (Size(desktop, plain) != ulong.MaxValue)
+            {
+                Assert.True(Size(desktop, converted) != ulong.MaxValue, $"format {format}, flags 0x{converted.Flags:x}");
+            }
+        }
+
+        // A typeless texture keeps the flag through its UAV-capable members; the depth-stencil family has none.
+        var rgba = Texture(Rgba8Typeless, AllowUnorderedAccess);
+        var depth = Texture(DepthStencilTypeless, AllowUnorderedAccess);
+        Assert.Equal(AllowUnorderedAccess, descriptions.ToDesktop(desktop, &rgba).Flags);
+        Assert.Equal(0, descriptions.ToDesktop(desktop, &depth).Flags);
+    }
+
+    private static ResourceDescription Texture(int format, int flags)
+    {
+        return new ResourceDescription
+        {
+            Dimension = Texture2D, Width = TextureSize, Height = TextureSize, DepthOrArraySize = 1, MipLevels = 1, Format = format,
+            SampleCount = 1, Flags = flags,
+        };
+    }
+
+    private static ulong Size(nint device, ResourceDescription description)
+    {
+        ResourceAllocationInfo info;
+        var query = (delegate* unmanaged<nint, ResourceAllocationInfo*, uint, uint, ResourceDescription*, ResourceAllocationInfo*>)(*(nint**)device)[AllocationInfoSlot];
+        query(device, &info, 0, 1, &description);
+
+        return info.Size;
     }
 }
