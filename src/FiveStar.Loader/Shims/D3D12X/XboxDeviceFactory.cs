@@ -201,7 +201,6 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
 
     public void Dispose()
     {
-        _log.Info($"  [d3d12_xs] {ListSubmissions.Waits} submission(s) waited for the list's previous run");
         Presenter.Dispose();
         Fences.Dispose();
         Textures.Dispose();
