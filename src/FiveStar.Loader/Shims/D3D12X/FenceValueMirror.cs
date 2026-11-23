@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using FiveStar.Loader.Native;
 
@@ -20,6 +21,10 @@ internal sealed unsafe class FenceValueMirror : IDisposable
     private const int GetCompletedValueSlot = 8;
     private const int SetEventOnCompletionSlot = 9;
 
+    /// <summary>X queue slot 16 (Signal) is desktop ID3D12CommandQueue slot 14 (d3d12.h).</summary>
+    public const int QueueSignalSlot = 16;
+    private const int DesktopQueueSignalSlot = 14;
+
     /// <summary>A re-read even without a completion, in case an event registration was missed.</summary>
     private const int IdleMilliseconds = 16;
 
@@ -28,6 +33,7 @@ internal sealed unsafe class FenceValueMirror : IDisposable
     private readonly AutoResetEvent _changed = new(false);
     private Thread? _thread;
     private volatile bool _stopping;
+    private long _longestLatency;
 
     /// <summary>Adds the fence (once) and returns its cell, current as of now.</summary>
     public ulong* Track(XboxFenceObject* fence)
@@ -53,6 +59,24 @@ internal sealed unsafe class FenceValueMirror : IDisposable
         }
     }
 
+    /// <summary>Each tracked fence as "cell/completed", for logs.</summary>
+    public string Describe()
+    {
+        var text = new System.Text.StringBuilder();
+
+        lock (_gate)
+        {
+            foreach (nint fence in _fences)
+            {
+                nint inner = ((XboxFenceObject*)fence)->Header.Inner;
+                ulong completed = ((delegate* unmanaged<nint, ulong>)ComObject.Slot(inner, GetCompletedValueSlot))(inner);
+                text.Append(System.Globalization.CultureInfo.InvariantCulture, $" {Volatile.Read(ref ((XboxFenceObject*)fence)->CompletedValue)}/{completed}");
+            }
+        }
+
+        return text.ToString();
+    }
+
     public void Dispose()
     {
         _stopping = true;
@@ -66,6 +90,36 @@ internal sealed unsafe class FenceValueMirror : IDisposable
     public static ulong* CompletedValueAddress(XboxFenceObject* self)
     {
         return ShimContext.Runtime.D3D12X.Fences.Track(self);
+    }
+
+    /// <summary>The longest Signal-to-cell time (Stopwatch ticks) since the last call, then starts over.</summary>
+    public long TakeLongestLatency()
+    {
+        return Interlocked.Exchange(ref _longestLatency, 0);
+    }
+
+    /// <summary>Queue slot 16, Signal(fence, value): notes when the value was asked for, then forwards.</summary>
+    [HotPath]
+    [UnmanagedCallersOnly]
+    public static int QueueSignal(XboxObject* queue, nint fence, ulong value)
+    {
+        return Signal(queue, fence, value);
+    }
+
+    /// <summary>Notes the Signal on a wrapped fence and forwards it to the desktop queue.</summary>
+    [HotPath]
+    public static int Signal(XboxObject* queue, nint fence, ulong value)
+    {
+        nint inner = ShimContext.Runtime.D3D12X.Objects.Unwrap(fence);
+
+        if (inner != fence)
+        {
+            var wrapper = (XboxFenceObject*)fence;
+            Volatile.Write(ref wrapper->SignaledAt, Stopwatch.GetTimestamp());
+            Volatile.Write(ref wrapper->SignaledValue, value);
+        }
+
+        return ((delegate* unmanaged<nint, nint, ulong, int>)ComObject.Slot(queue->Inner, DesktopQueueSignalSlot))(queue->Inner, inner, value);
     }
 
     /// <summary>Fence slot 2: Release that drops the fence from the mirror with the last reference.</summary>
@@ -82,6 +136,23 @@ internal sealed unsafe class FenceValueMirror : IDisposable
         }
 
         return left;
+    }
+
+    private void NoteLatency(XboxFenceObject* fence, ulong value)
+    {
+        long at = Volatile.Read(ref fence->SignaledAt);
+
+        if (at == 0 || value == ulong.MaxValue || value < Volatile.Read(ref fence->SignaledValue))
+        {
+            return;
+        }
+
+        long latency = Stopwatch.GetTimestamp() - at;
+
+        if (latency > Volatile.Read(ref _longestLatency))
+        {
+            Volatile.Write(ref _longestLatency, latency);
+        }
     }
 
     private void EnsureThread()
@@ -123,6 +194,7 @@ internal sealed unsafe class FenceValueMirror : IDisposable
         }
 
         Volatile.Write(ref fence->CompletedValue, value);
+        NoteLatency(fence, value);
 
         if (value != ulong.MaxValue)
         {

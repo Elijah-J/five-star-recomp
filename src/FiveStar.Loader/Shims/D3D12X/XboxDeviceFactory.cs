@@ -338,6 +338,8 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
 
         delegate* unmanaged<XboxFenceObject*, ulong*> fenceValue = &FenceValueMirror.CompletedValueAddress;
         delegate* unmanaged<XboxFenceObject*, uint> releaseFence = &FenceValueMirror.ReleaseFence;
+        delegate* unmanaged<XboxObject*, nint, ulong, int> signal = &FenceValueMirror.QueueSignal;
+        Objects.SetHandler(XboxInterfaceKind.CommandQueue, FenceValueMirror.QueueSignalSlot, (nint)signal);
         Objects.SetHandler(XboxInterfaceKind.Fence, FenceValueMirror.CompletedValueAddressSlot, (nint)fenceValue);
         Objects.SetHandler(XboxInterfaceKind.Fence, ComObject.ReleaseSlot, (nint)releaseFence);
 

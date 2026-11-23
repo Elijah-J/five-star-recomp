@@ -42,6 +42,9 @@ internal sealed unsafe class FramePacer
     /// <summary>The last token a present carried on the current grid; 0 for none.</summary>
     private long _presented;
 
+    /// <summary>Stopwatch ticks spent in blocking slot-80 waits.</summary>
+    private long _waited;
+
     public FramePacer()
     {
         _grid = Create(DefaultMicroseconds, DefaultPeriod);
@@ -49,6 +52,9 @@ internal sealed unsafe class FramePacer
 
     /// <summary>The current origins.</summary>
     public FrameGrid Grid => Volatile.Read(ref _grid);
+
+    /// <summary>Stopwatch ticks the game spent in blocking slot-80 waits so far.</summary>
+    public long WaitedTicks => Interlocked.Read(ref _waited);
 
     /// <summary>Slot 78: a new interval restarts the origins now; the same interval keeps them.</summary>
     public void SetInterval(uint microseconds, uint period)
@@ -130,7 +136,10 @@ internal sealed unsafe class FramePacer
             target = *token;
         }
 
-        return WaitFor(grid, offset, target, now, timeout, token);
+        int result = WaitFor(grid, offset, target, now, timeout, token);
+        Interlocked.Add(ref _waited, Stopwatch.GetTimestamp() - now);
+
+        return result;
     }
 
     [HotPath]
