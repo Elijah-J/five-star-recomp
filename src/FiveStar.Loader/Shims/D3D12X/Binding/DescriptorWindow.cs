@@ -9,9 +9,9 @@ namespace FiveStar.Loader.Shims.D3D12X.Binding;
 /// The GPU-memory window of the translated programs (heap slots 0 and 1, docs/shader-translation.md, Resources) as far
 /// as descriptor tables need it. A program reads a table through a 32-bit pointer in a user SGPR: descriptor k of the
 /// table at pointer + k * 32 (T# size; buffers and samplers use the first 16 bytes), and dword 0 of that descriptor is
-/// the desktop heap index. The window holds one such 32-byte record per desktop view descriptor, then one 16-byte
-/// record per sampler, each with dword 0 set to its own index; a table's pointer is the window offset of its first
-/// record. Views keep their desktop index, so copies and view creation leave the window as it is.
+/// the desktop heap index. The window holds one 16-byte record per sampler of the game's sampler heap, a null table,
+/// then one 32-byte record per descriptor of the game's view heap, in game order; <see cref="ShaderVisibleHeap"/>
+/// keeps dword 0 of each record equal to the desktop index the game's descriptor stands for.
 /// </summary>
 internal sealed unsafe class DescriptorWindow
 {
@@ -23,23 +23,33 @@ internal sealed unsafe class DescriptorWindow
     public const uint ViewRecordBytes = 32;
     public const uint SamplerRecordBytes = 16;
 
+    /// <summary>
+    /// Records mirrored for a table of unbounded or unknown size: the game's per-draw tables place descriptors at
+    /// byte offsets below 0x8000 (the 0x7fe0 mask at 0x144d9f04f), 1024 records.
+    /// </summary>
+    public const uint MaxTableRecords = 1024;
+
     /// <summary>Heap slots the programs reach by constant: the window (rdna_prelude GPU_MEM_HEAP), its writable view, the mesh fallback table.</summary>
     public const uint WindowSlot = 0;
     public const uint WritableWindowSlot = 1;
     public const uint FallbackTableSlot = 2;
 
-    /// <summary>Descriptors written for game handles past the desktop heap (each lands at the sink start).</summary>
+    /// <summary>The fallback table's SRV, a null descriptor nothing rewrites: what a record naming no descriptor reads.</summary>
+    public const uint NullViewSlot = FallbackTableSlot + FallbackUavs;
+
+    /// <summary>Where views go that no desktop descriptor is left for.</summary>
     public const uint SinkSlot = FallbackTableSlot + FallbackTableSize;
-    public const uint SinkSize = 256;
 
     /// <summary>The first desktop index of the game's descriptors.</summary>
-    public const uint ReservedViews = SinkSlot + SinkSize;
+    public const uint ReservedViews = SinkSlot + 1;
 
     /// <summary>rdna_prelude STATIC_SAMPLER_BASE: samplers for the literal S#s of a program.</summary>
     public const uint StaticSamplerBase = 2032;
 
-    public const uint SamplerBase = MaxViews * ViewRecordBytes;
-    public const uint WindowBytes = SamplerBase + (MaxSamplers * SamplerRecordBytes);
+    /// <summary>Window layout: sampler records, a null table (for a table handle outside the heaps), view records.</summary>
+    public const uint SamplerBase = 0;
+    public const uint NullTableBase = SamplerBase + (MaxSamplers * SamplerRecordBytes);
+    public const uint ViewBase = NullTableBase + (MaxTableRecords * ViewRecordBytes);
 
     /// <summary>The mesh fallback table: u0..u2 then t0 (BindlessRootSignature).</summary>
     private const uint FallbackTableSize = 4;
@@ -49,10 +59,6 @@ internal sealed unsafe class DescriptorWindow
     private readonly LoaderLog _log;
     private ulong _viewGpuStart;
     private uint _viewIncrement;
-    private uint _viewCount;
-    private ulong _samplerGpuStart;
-    private uint _samplerIncrement;
-    private uint _samplerCount;
 
     public DescriptorWindow(LoaderLog log)
     {
@@ -71,14 +77,18 @@ internal sealed unsafe class DescriptorWindow
     /// <summary>The window buffer; 0 until the view heap exists.</summary>
     public nint Buffer { get; private set; }
 
+    /// <summary>The window's CPU mapping; null until the view heap exists.</summary>
+    public byte* Data { get; private set; }
+
     /// <summary>
-    /// Sets up the window for the game's shader-visible view heap: the window buffer (CPU-writable, GPU-readable and
-    /// writable), its two views, null fallback descriptors and one record per descriptor.
+    /// Sets up the window for the game's shader-visible view heap of <paramref name="views"/> descriptors: the window
+    /// buffer (CPU-writable, GPU-readable and writable), its two views, the null descriptors and the records.
     /// </summary>
-    public bool AttachViews(nint device, nint heap, uint count, uint increment)
+    public bool AttachViews(nint device, nint heap, uint views, uint increment)
     {
+        uint bytes = ViewBase + (views * ViewRecordBytes);
         var properties = new HeapProperties { Type = HeapProperties.Custom, CpuPageProperty = HeapProperties.WriteCombine, MemoryPool = HeapProperties.SystemPool };
-        nint buffer = DesktopCalls.CreateBuffer(device, properties, WindowBytes, DesktopCalls.UnorderedAccessFlag, CommonState);
+        nint buffer = DesktopCalls.CreateBuffer(device, properties, bytes, DesktopCalls.UnorderedAccessFlag, CommonState);
         byte* data = buffer == 0 ? null : DesktopCalls.Map(buffer);
 
         if (data == null)
@@ -88,16 +98,15 @@ internal sealed unsafe class DescriptorWindow
             return false;
         }
 
-        FillRecords(data);
-        nint cpu = DesktopCalls.HeapCpuStart(heap);
-        WriteReserved(device, buffer, cpu, increment);
+        FillRecords(data, bytes);
+        WriteReserved(device, buffer, bytes, DesktopCalls.HeapCpuStart(heap), increment);
 
         Buffer = buffer;
+        Data = data;
         ViewHeap = heap;
         _viewGpuStart = DesktopCalls.HeapGpuStart(heap);
         _viewIncrement = increment;
-        _viewCount = Math.Min(count, MaxViews);
-        _log.Detail($"  [d3d12_xs] descriptor window: 0x{WindowBytes:x} bytes, game views from desktop index {ReservedViews}");
+        _log.Detail($"  [d3d12_xs] descriptor window: 0x{bytes:x} bytes, view records from 0x{ViewBase:x}, game views from desktop index {ReservedViews}");
 
         return true;
     }
@@ -115,58 +124,44 @@ internal sealed unsafe class DescriptorWindow
         }
 
         SamplerHeap = heap;
-        _samplerGpuStart = DesktopCalls.HeapGpuStart(heap);
-        _samplerIncrement = increment;
-        _samplerCount = Math.Min(count, MaxSamplers);
     }
 
-    /// <summary>
-    /// The 32-bit window pointer of the table that starts at a desktop GPU descriptor handle, for the user SGPR of a
-    /// table parameter; null for a handle in neither heap.
-    /// </summary>
-    [HotPath]
-    public uint? TableAddress(ulong handle)
+    /// <summary>Window records of the game's view heap: game order from <see cref="ViewBase"/>.</summary>
+    public static HeapRecords ViewRecords(uint desktopCount)
     {
-        ulong viewOffset = handle - _viewGpuStart;
-
-        if (_viewIncrement != 0 && viewOffset < (ulong)_viewCount * _viewIncrement)
-        {
-            return (uint)(viewOffset / _viewIncrement) * ViewRecordBytes;
-        }
-
-        ulong samplerOffset = handle - _samplerGpuStart;
-
-        if (_samplerIncrement != 0 && samplerOffset < (ulong)_samplerCount * _samplerIncrement)
-        {
-            return SamplerBase + ((uint)(samplerOffset / _samplerIncrement) * SamplerRecordBytes);
-        }
-
-        return null;
+        return new HeapRecords(ViewBase, ViewRecordBytes, ReservedViews, desktopCount, NullViewSlot);
     }
 
-    private static void FillRecords(byte* data)
+    /// <summary>Window records of the game's sampler heap: the game's indices are the desktop ones.</summary>
+    public static HeapRecords SamplerRecords(uint desktopCount)
     {
-        new Span<byte>(data, (int)WindowBytes).Clear();
+        return new HeapRecords(SamplerBase, SamplerRecordBytes, 0, Math.Min(desktopCount, MaxSamplers), 0);
+    }
 
-        for (uint view = 0; view < MaxViews; view++)
-        {
-            *(uint*)(data + (view * ViewRecordBytes)) = view;
-        }
+    /// <summary>Null view records everywhere, sampler records naming their own index.</summary>
+    private static void FillRecords(byte* data, uint bytes)
+    {
+        new Span<byte>(data, (int)bytes).Clear();
 
         for (uint sampler = 0; sampler < MaxSamplers; sampler++)
         {
             *(uint*)(data + SamplerBase + (sampler * SamplerRecordBytes)) = sampler;
         }
+
+        for (uint offset = NullTableBase; offset < bytes; offset += ViewRecordBytes)
+        {
+            *(uint*)(data + offset) = NullViewSlot;
+        }
     }
 
-    private static void WriteReserved(nint device, nint buffer, nint cpu, uint increment)
+    private static void WriteReserved(nint device, nint buffer, uint bytes, nint cpu, uint increment)
     {
-        var read = BufferViewDescription.RawShaderResource(WindowBytes / sizeof(uint));
-        var write = BufferViewDescription.RawUnorderedAccess(WindowBytes / sizeof(uint));
+        var read = BufferViewDescription.RawShaderResource(bytes / sizeof(uint));
+        var write = BufferViewDescription.RawUnorderedAccess(bytes / sizeof(uint));
         DesktopCalls.ShaderResourceView(device, buffer, &read, cpu + (nint)(WindowSlot * increment));
         DesktopCalls.UnorderedAccessView(device, buffer, &write, cpu + (nint)(WritableWindowSlot * increment));
 
-        // Null descriptors: the fallback table the root signature asks for, and the sink for descriptors past the heap.
+        // Null descriptors: the fallback table the root signature asks for, and the sink.
         var nullWrite = BufferViewDescription.RawUnorderedAccess(0);
         var nullRead = BufferViewDescription.RawShaderResource(0);
 
@@ -175,7 +170,7 @@ internal sealed unsafe class DescriptorWindow
             DesktopCalls.UnorderedAccessView(device, 0, &nullWrite, cpu + (nint)(slot * increment));
         }
 
-        for (uint slot = FallbackTableSlot + FallbackUavs; slot < ReservedViews; slot++)
+        for (uint slot = NullViewSlot; slot < ReservedViews; slot++)
         {
             DesktopCalls.ShaderResourceView(device, 0, &nullRead, cpu + (nint)(slot * increment));
         }

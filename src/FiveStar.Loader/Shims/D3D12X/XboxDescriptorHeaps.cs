@@ -4,16 +4,16 @@
 using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Native;
 using FiveStar.Loader.Shims.D3D12X.Binding;
+using FiveStar.Loader.Shims.D3D12X.Pipelines;
 
 namespace FiveStar.Loader.Shims.D3D12X;
 
 /// <summary>
-/// Device slot 14. A shader-visible heap gets its CPU descriptor range from the title's XMemAlloc hook, as on the
-/// console (<see cref="TitleMemoryHooks"/>); the game sees that memory as the heap's CPU start and the desktop heap's
-/// handles stand behind it in <see cref="Handles"/>. The game's view descriptors start at desktop index
-/// <see cref="DescriptorWindow.ReservedViews"/> (the indices below are the programs' fixed slots), and slot 10 returns
-/// the GPU handle of that index, so the game's GPU handles (GPU start + CPU offset) are desktop handles. Other heaps
-/// use the desktop handles directly.
+/// Device slot 14 and the handles of the game's two shader-visible heaps. Their descriptors live in title memory, as
+/// on the console (<see cref="TitleMemoryHooks"/>): slot 9 returns that memory and slot 10 the same address, so a CPU
+/// or GPU handle is the address of a descriptor's record (<see cref="ShaderVisibleHeap"/>). The view heap's game
+/// indices reach the desktop heap through a <see cref="DescriptorRemap"/>; sampler indices are the desktop ones. Other
+/// heaps use the desktop handles directly.
 /// </summary>
 internal sealed unsafe class XboxDescriptorHeaps
 {
@@ -38,39 +38,110 @@ internal sealed unsafe class XboxDescriptorHeaps
     private readonly TitleMemoryHooks _hooks;
     private readonly DescriptorWindow _window;
     private readonly LoaderLog _log;
-    private ulong _unbackedStart;
-    private ulong _unbackedEnd;
+    private readonly OnceLog _warnings;
+
+    /// <summary>Title memory the shim allocated itself (no game image to ask), kept alive with the heaps.</summary>
+    private readonly List<byte[]> _ownMemory = [];
+    private ShaderVisibleHeap? _views;
+    private ShaderVisibleHeap? _samplers;
     private nint _sink;
 
-    public XboxDescriptorHeaps(XboxObjects objects, TitleMemoryHooks hooks, DescriptorWindow window, LoaderLog log)
+    public XboxDescriptorHeaps(XboxObjects objects, TitleMemoryHooks hooks, DescriptorWindow window, LoaderLog log, OnceLog warnings)
     {
         _objects = objects;
         _hooks = hooks;
         _window = window;
         _log = log;
+        _warnings = warnings;
     }
 
-    /// <summary>Descriptor handles in title memory to desktop CPU descriptor handles.</summary>
-    public AddressTable Handles { get; } = new();
+    /// <summary>The game's shader-visible view heap; null before it exists.</summary>
+    public ShaderVisibleHeap? Views => _views;
 
-    /// <summary>
-    /// The desktop handle behind a CPU descriptor handle the game holds; a descriptor past the desktop heap's end gets
-    /// the sink, other handles pass through.
-    /// </summary>
+    /// <summary>The game's shader-visible sampler heap; null before it exists.</summary>
+    public ShaderVisibleHeap? Samplers => _samplers;
+
+    /// <summary>The desktop CPU handle a new descriptor at a game handle is written to (records updated); other handles pass through.</summary>
     [HotPath]
-    public nint Translate(nint handle)
+    public nint Destination(nint handle)
     {
-        if (Handles.TryTranslate((ulong)handle, out ulong desktop))
+        var heap = Find(handle, out uint index);
+
+        if (heap is null)
         {
-            return (nint)desktop;
+            return handle;
         }
 
-        if ((ulong)handle - _unbackedStart < _unbackedEnd - _unbackedStart)
+        nint desktop = heap.Destination(index, 1);
+
+        if (desktop == 0)
         {
-            return _sink;
+            return Sink();
         }
 
-        return handle;
+        return desktop;
+    }
+
+    /// <summary>The desktop CPU handle of the descriptor a game handle names; other handles pass through.</summary>
+    [HotPath]
+    public nint Source(nint handle)
+    {
+        var heap = Find(handle, out uint index);
+
+        if (heap is null)
+        {
+            return handle;
+        }
+
+        return heap.Source(index);
+    }
+
+    /// <summary>The shader-visible heap holding a handle, with the descriptor's index; null for other handles.</summary>
+    [HotPath]
+    public ShaderVisibleHeap? Find(nint handle, out uint index)
+    {
+        var views = _views;
+
+        if (views is not null && views.TryIndex((ulong)handle, out index))
+        {
+            return views;
+        }
+
+        var samplers = _samplers;
+
+        if (samplers is not null && samplers.TryIndex((ulong)handle, out index))
+        {
+            return samplers;
+        }
+
+        index = 0;
+
+        return null;
+    }
+
+    /// <summary>The window pointer of a table at a GPU handle, its records mirrored; the null table for a handle in neither heap.</summary>
+    [HotPath]
+    public uint TableAddress(ulong handle, uint extent)
+    {
+        var heap = Find((nint)handle, out uint index);
+
+        if (heap is null)
+        {
+            _warnings.Warn("table-handle", "[d3d12_xs] SetRootDescriptorTable: a GPU handle outside the shader-visible heaps reads null descriptors");
+
+            return DescriptorWindow.NullTableBase;
+        }
+
+        return heap.Table(index, extent);
+    }
+
+    /// <summary>The desktop sink for views no desktop descriptor is left for (warned once).</summary>
+    [HotPath]
+    public nint Sink()
+    {
+        _warnings.Warn("descriptor-limit", "[d3d12_xs] the game's descriptors touch more pages than the desktop heap holds: views written there are dropped");
+
+        return _sink;
     }
 
     public int Create(nint device, DescriptorHeapDescription* description, Guid* iid, nint* heap)
@@ -80,7 +151,9 @@ internal sealed unsafe class XboxDescriptorHeaps
 
         if (visible && desktop.Type == ViewHeapType)
         {
-            desktop.Count = (uint)Math.Min((ulong)desktop.Count + DescriptorWindow.ReservedViews, DescriptorWindow.MaxViews);
+            // Whole remap pages after the reserved descriptors, as far as the desktop allows.
+            ulong pages = ((ulong)desktop.Count + DescriptorRemap.PageSize - 1) / DescriptorRemap.PageSize;
+            desktop.Count = (uint)Math.Min(DescriptorWindow.ReservedViews + (pages * DescriptorRemap.PageSize), DescriptorWindow.MaxViews);
         }
         else if (visible && desktop.Type == SamplerHeapType)
         {
@@ -104,46 +177,56 @@ internal sealed unsafe class XboxDescriptorHeaps
         return hr;
     }
 
-    /// <summary>Puts the heap's CPU descriptors in title memory and sets it up for binding.</summary>
+    /// <summary>Puts the heap's descriptors in title memory and sets it up for binding.</summary>
     private void Place(nint device, XboxDescriptorHeapObject* heap, DescriptorHeapDescription* description, uint desktopCount)
     {
         uint increment = ((delegate* unmanaged<nint, int, uint>)ComObject.Slot(device, DesktopIncrementSlot))(device, description->Type);
         nint inner = heap->Header.Inner;
-        uint first = 0;
+        bool views = description->Type == ViewHeapType && _views is null;
+        bool samplers = description->Type == SamplerHeapType && _samplers is null;
 
-        if (description->Type == ViewHeapType && _window.ViewHeap == 0 && _window.AttachViews(device, inner, desktopCount, increment))
+        if (!views && !samplers)
         {
-            first = DescriptorWindow.ReservedViews;
-            heap->GameGpuStart = (nint)(DesktopCalls.HeapGpuStart(inner) + ((ulong)first * increment));
-        }
-        else if (description->Type == SamplerHeapType && _window.SamplerHeap == 0)
-        {
-            _window.AttachSamplers(device, inner, desktopCount, increment);
-        }
-
-        nint memory = _hooks.Allocate((nuint)description->Count * increment, DescriptorAttributes);
-        nint desktopStart = DesktopCalls.HeapCpuStart(inner) + (nint)((ulong)first * increment);
-
-        if (memory == 0)
-        {
-            // No title hooks (no game image): the game's CPU start is the first desktop descriptor it owns.
-            heap->GameCpuStart = first == 0 ? 0 : desktopStart;
-
             return;
         }
 
-        ulong backed = Math.Min(description->Count, desktopCount - first);
+        nint memory = TitleMemory((nuint)description->Count * increment);
         heap->GameCpuStart = memory;
-        Handles.Add(new AddressRange((ulong)memory, backed * increment, (ulong)desktopStart));
-        _log.Detail($"  [d3d12_xs]   CPU descriptors at title memory 0x{memory:x} (desktop 0x{desktopStart:x}, from index {first})");
+        heap->GameGpuStart = memory;
+        nint desktopStart = DesktopCalls.HeapCpuStart(inner);
+        _log.Detail($"  [d3d12_xs]   CPU and GPU descriptors at title memory 0x{memory:x} (desktop 0x{desktopStart:x})");
 
-        if (backed < description->Count && first != 0)
+        if (views)
         {
-            // Descriptors the desktop heap has no room for: written to the sink, read as null descriptors.
-            _unbackedStart = (ulong)memory + (backed * increment);
-            _unbackedEnd = (ulong)memory + ((ulong)description->Count * increment);
-            _sink = DesktopCalls.HeapCpuStart(inner) + (nint)((ulong)DescriptorWindow.SinkSlot * increment);
-            _log.Warn($"[d3d12_xs] descriptor heap of {description->Count} descriptors: the last {description->Count - backed} have no desktop descriptor (the desktop takes {DescriptorWindow.MaxViews}, {first} of them reserved)");
+            _window.AttachViews(device, inner, description->Count, increment);
+            var remap = new DescriptorRemap(DescriptorWindow.ReservedViews, desktopCount, description->Count);
+            _sink = desktopStart + (nint)((ulong)DescriptorWindow.SinkSlot * increment);
+            _views = new ShaderVisibleHeap(memory, description->Count, increment, desktopStart, DescriptorWindow.ViewRecords(desktopCount), remap, _window);
+            _log.Detail($"  [d3d12_xs]   game views on {remap.Capacity} desktop pages of {DescriptorRemap.PageSize} descriptors, mapped on first write");
+        }
+        else if (samplers)
+        {
+            _window.AttachSamplers(device, inner, desktopCount, increment);
+            _samplers = new ShaderVisibleHeap(memory, description->Count, increment, desktopStart, DescriptorWindow.SamplerRecords(desktopCount), null, _window);
+        }
+    }
+
+    /// <summary>The title's memory for a heap's descriptors; without a game image (tests), pinned memory of the shim's own.</summary>
+    private nint TitleMemory(nuint bytes)
+    {
+        nint memory = _hooks.Allocate(bytes, DescriptorAttributes);
+
+        if (memory != 0)
+        {
+            return memory;
+        }
+
+        byte[] own = GC.AllocateArray<byte>((int)bytes, pinned: true);
+        _ownMemory.Add(own);
+
+        fixed (byte* data = own)
+        {
+            return (nint)data;
         }
     }
 

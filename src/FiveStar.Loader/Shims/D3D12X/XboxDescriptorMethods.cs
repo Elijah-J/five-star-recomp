@@ -3,13 +3,16 @@
 
 using System.Runtime.InteropServices;
 using FiveStar.Loader.Native;
+using FiveStar.Loader.Shims.D3D12X.Binding;
 
 namespace FiveStar.Loader.Shims.D3D12X;
 
 /// <summary>
-/// Device slots 17 to 24 (view creation and descriptor copies, desktop order): CPU handles in title memory become
-/// desktop handles (<see cref="XboxDescriptorHeaps.Translate"/>) and wrapped resources desktop resources. Views are
-/// written while streaming, so these stay allocation-free.
+/// Device slots 17 to 24 (view creation and descriptor copies, desktop order): a destination handle in a shader-visible
+/// heap becomes the desktop handle behind it with its record written (<see cref="XboxDescriptorHeaps.Destination"/>),
+/// a source handle the desktop descriptor its record names, and wrapped resources desktop resources. Copies inside one
+/// shader-visible heap copy records, as the console copies descriptor bytes. Views are written while streaming, so
+/// these stay allocation-free.
 /// </summary>
 internal static unsafe class XboxDescriptorMethods
 {
@@ -22,8 +25,8 @@ internal static unsafe class XboxDescriptorMethods
     public const int CopyDescriptorsSlot = 23;
     public const int CopyDescriptorsSimpleSlot = 24;
 
-    /// <summary>Descriptor ranges translated per desktop CopyDescriptors call.</summary>
-    private const int Batch = 64;
+    /// <summary>ID3D12Device::GetDescriptorHandleIncrementSize (d3d12.h).</summary>
+    private const int IncrementSlot = 15;
 
     private static XboxDeviceFactory D3D12X => ShimContext.Runtime.D3D12X;
 
@@ -55,7 +58,7 @@ internal static unsafe class XboxDescriptorMethods
             }
         }
 
-        ((delegate* unmanaged<nint, ConstantBufferViewDescription*, nint, void>)ComObject.Slot(inner, CreateConstantBufferViewSlot))(inner, view, Handle(handle));
+        ((delegate* unmanaged<nint, ConstantBufferViewDescription*, nint, void>)ComObject.Slot(inner, CreateConstantBufferViewSlot))(inner, view, Destination(handle));
     }
 
     [HotPath]
@@ -86,7 +89,7 @@ internal static unsafe class XboxDescriptorMethods
         nint inner = self->Inner;
         var objects = D3D12X.Objects;
         var create = (delegate* unmanaged<nint, nint, nint, void*, nint, void>)ComObject.Slot(inner, CreateUnorderedAccessViewSlot);
-        create(inner, objects.Unwrap(resource), objects.Unwrap(counter), description, Handle(handle));
+        create(inner, objects.Unwrap(resource), objects.Unwrap(counter), description, Destination(handle));
     }
 
     [HotPath]
@@ -94,7 +97,7 @@ internal static unsafe class XboxDescriptorMethods
     public static void CreateSampler(XboxObject* self, void* description, nint handle)
     {
         nint inner = self->Inner;
-        ((delegate* unmanaged<nint, void*, nint, void>)ComObject.Slot(inner, CreateSamplerSlot))(inner, description, Handle(handle));
+        ((delegate* unmanaged<nint, void*, nint, void>)ComObject.Slot(inner, CreateSamplerSlot))(inner, description, Destination(handle));
     }
 
     [HotPath]
@@ -102,36 +105,141 @@ internal static unsafe class XboxDescriptorMethods
     public static void CopyDescriptorsSimple(XboxObject* self, uint count, nint destination, nint source, int type)
     {
         nint inner = self->Inner;
-        var copy = (delegate* unmanaged<nint, uint, nint, nint, int, void>)ComObject.Slot(inner, CopyDescriptorsSimpleSlot);
-        copy(inner, count, Handle(destination), Handle(source), type);
+        Copy(inner, count, destination, source, Increment(inner, type), type);
     }
 
     /// <summary>
     /// CopyDescriptors(dest range count, dest starts, dest sizes, source range count, source starts, source sizes,
-    /// type). Ranges are translated in batches; a batch boundary splits nothing because each range keeps its size.
+    /// type); null sizes mean ranges of one. The ranges are walked together and copied in runs both sides share.
     /// </summary>
     [HotPath]
     [UnmanagedCallersOnly]
     public static void CopyDescriptors(XboxObject* self, uint destinationCount, nint* destinations, uint* destinationSizes, uint sourceCount, nint* sources, uint* sourceSizes, int type)
     {
         nint inner = self->Inner;
-        var copy = (delegate* unmanaged<nint, uint, nint*, uint*, uint, nint*, uint*, int, void>)ComObject.Slot(inner, CopyDescriptorsSlot);
+        uint increment = Increment(inner, type);
+        uint destination = 0;
+        uint source = 0;
+        uint destinationOffset = 0;
+        uint sourceOffset = 0;
 
-        if (destinationCount > Batch || sourceCount > Batch)
+        while (destination < destinationCount && source < sourceCount)
         {
-            // Rare: translate in place, the game does not reuse the arrays after the call.
-            TranslateAll(destinations, destinationCount);
-            TranslateAll(sources, sourceCount);
-            copy(inner, destinationCount, destinations, destinationSizes, sourceCount, sources, sourceSizes, type);
+            uint destinationLeft = RangeSize(destinationSizes, destination) - destinationOffset;
+            uint sourceLeft = RangeSize(sourceSizes, source) - sourceOffset;
+            uint run = Least(destinationLeft, sourceLeft);
+            Copy(inner, run, destinations[destination] + (nint)((ulong)destinationOffset * increment), sources[source] + (nint)((ulong)sourceOffset * increment), increment, type);
+            destinationOffset += run;
+            sourceOffset += run;
+
+            if (run == destinationLeft)
+            {
+                destination++;
+                destinationOffset = 0;
+            }
+
+            if (run == sourceLeft)
+            {
+                source++;
+                sourceOffset = 0;
+            }
+        }
+    }
+
+    /// <summary>
+    /// One run: records copied inside a shader-visible heap; into one from elsewhere, desktop copies per desktop run
+    /// with the records written; out of one, a desktop copy per descriptor from what its record names.
+    /// </summary>
+    [HotPath]
+    private static void Copy(nint device, uint count, nint destination, nint source, uint increment, int type)
+    {
+        var heaps = D3D12X.DescriptorHeaps;
+        var destinationHeap = heaps.Find(destination, out uint destinationIndex);
+        var sourceHeap = heaps.Find(source, out uint sourceIndex);
+
+        if (destinationHeap is not null && destinationHeap == sourceHeap)
+        {
+            uint inside = Least(destinationHeap.Count - destinationIndex, destinationHeap.Count - sourceIndex);
+            destinationHeap.CopyRecords(destinationIndex, sourceIndex, Least(count, inside));
 
             return;
         }
 
-        nint* desktopDestinations = stackalloc nint[Batch];
-        nint* desktopSources = stackalloc nint[Batch];
-        Copy(destinations, desktopDestinations, destinationCount);
-        Copy(sources, desktopSources, sourceCount);
-        copy(inner, destinationCount, desktopDestinations, destinationSizes, sourceCount, desktopSources, sourceSizes, type);
+        if (destinationHeap is not null)
+        {
+            CopyInto(device, destinationHeap, destinationIndex, count, source, increment, type);
+
+            return;
+        }
+
+        if (sourceHeap is null)
+        {
+            DesktopCopy(device, count, destination, source, type);
+
+            return;
+        }
+
+        for (uint i = 0; i < count; i++)
+        {
+            DesktopCopy(device, 1, destination + (nint)((ulong)i * increment), sourceHeap.Source(sourceIndex + i), type);
+        }
+    }
+
+    [HotPath]
+    private static void CopyInto(nint device, ShaderVisibleHeap heap, uint index, uint count, nint source, uint increment, int type)
+    {
+        uint done = 0;
+        count = Least(count, heap.Count - index);
+
+        while (done < count)
+        {
+            uint run = Least(count - done, heap.RunLength(index + done));
+            nint desktop = heap.Destination(index + done, run);
+
+            if (desktop == 0)
+            {
+                desktop = D3D12X.DescriptorHeaps.Sink();
+                run = 1;
+            }
+
+            DesktopCopy(device, run, desktop, source + (nint)((ulong)done * increment), type);
+            done += run;
+        }
+    }
+
+    [HotPath]
+    private static void DesktopCopy(nint device, uint count, nint destination, nint source, int type)
+    {
+        var copy = (delegate* unmanaged<nint, uint, nint, nint, int, void>)ComObject.Slot(device, CopyDescriptorsSimpleSlot);
+        copy(device, count, destination, source, type);
+    }
+
+    [HotPath]
+    private static uint RangeSize(uint* sizes, uint range)
+    {
+        if (sizes == null)
+        {
+            return 1;
+        }
+
+        return sizes[range];
+    }
+
+    [HotPath]
+    private static uint Least(uint first, uint second)
+    {
+        if (first < second)
+        {
+            return first;
+        }
+
+        return second;
+    }
+
+    [HotPath]
+    private static uint Increment(nint device, int type)
+    {
+        return ((delegate* unmanaged<nint, int, uint>)ComObject.Slot(device, IncrementSlot))(device, type);
     }
 
     [HotPath]
@@ -139,30 +247,12 @@ internal static unsafe class XboxDescriptorMethods
     {
         nint inner = self->Inner;
         var create = (delegate* unmanaged<nint, nint, void*, nint, void>)ComObject.Slot(inner, slot);
-        create(inner, D3D12X.Objects.Unwrap(resource), description, Handle(handle));
+        create(inner, D3D12X.Objects.Unwrap(resource), description, Destination(handle));
     }
 
     [HotPath]
-    private static nint Handle(nint handle)
+    private static nint Destination(nint handle)
     {
-        return D3D12X.DescriptorHeaps.Translate(handle);
-    }
-
-    [HotPath]
-    private static void Copy(nint* handles, nint* desktop, uint count)
-    {
-        for (uint i = 0; i < count; i++)
-        {
-            desktop[i] = Handle(handles[i]);
-        }
-    }
-
-    [HotPath]
-    private static void TranslateAll(nint* handles, uint count)
-    {
-        for (uint i = 0; i < count; i++)
-        {
-            handles[i] = Handle(handles[i]);
-        }
+        return D3D12X.DescriptorHeaps.Destination(handle);
     }
 }
