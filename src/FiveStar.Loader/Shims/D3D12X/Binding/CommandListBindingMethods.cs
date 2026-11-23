@@ -125,14 +125,16 @@ internal static unsafe class CommandListBindingMethods
     [UnmanagedCallersOnly]
     public static void SetComputeRootDescriptorTable(XboxObject* self, uint parameter, ulong handle)
     {
-        UserData.Write(CommandListBindings.Of(self), true, parameter, 0, TableAddress(handle));
+        var bindings = CommandListBindings.Of(self);
+        UserData.Write(bindings, true, parameter, 0, TableAddress(bindings, true, parameter, handle));
     }
 
     [HotPath]
     [UnmanagedCallersOnly]
     public static void SetGraphicsRootDescriptorTable(XboxObject* self, uint parameter, ulong handle)
     {
-        UserData.Write(CommandListBindings.Of(self), false, parameter, 0, TableAddress(handle));
+        var bindings = CommandListBindings.Of(self);
+        UserData.Write(bindings, false, parameter, 0, TableAddress(bindings, false, parameter, handle));
     }
 
     [HotPath]
@@ -371,19 +373,18 @@ internal static unsafe class CommandListBindingMethods
         }
     }
 
-    /// <summary>The window pointer of a table; a handle outside both heaps (past the desktop heap's end) reads the sink.</summary>
+    /// <summary>The window pointer of a table, with as many records mirrored as the bound root signature's table holds.</summary>
     [HotPath]
-    private static uint TableAddress(ulong handle)
+    private static uint TableAddress(CommandListBindings* bindings, bool compute, uint parameter, ulong handle)
     {
-        uint? address = Bindings.Window.TableAddress(handle);
+        RootLayout* layout = compute ? bindings->ComputeLayout : bindings->GraphicsLayout;
+        uint extent = DescriptorWindow.MaxTableRecords;
 
-        if (address.HasValue)
+        if (layout != null && parameter < (uint)layout->Count)
         {
-            return address.Value;
+            extent = layout->Extents[parameter];
         }
 
-        Bindings.Warnings.Warn("table-handle", "[d3d12_xs] SetRootDescriptorTable: a GPU handle outside the desktop heaps (past the 1,000,000 descriptors?) reads null descriptors");
-
-        return DescriptorWindow.SinkSlot * DescriptorWindow.ViewRecordBytes;
+        return ShimContext.Runtime.D3D12X.DescriptorHeaps.TableAddress(handle, extent);
     }
 }

@@ -123,6 +123,21 @@ public sealed class XmaStreamDecoder
         _frames.Reset();
     }
 
+    /// <summary>
+    /// Starts at a frame boundary as the continuation of <paramref name="previous"/>, a decoder of the same stream format:
+    /// the next frame overlaps the last frame <paramref name="previous"/> decoded, as in one continuous decode.
+    /// </summary>
+    public void ContinueFrom(XmaStreamDecoder previous)
+    {
+        if (previous.Channels != Channels)
+        {
+            throw new ArgumentException("the decoders have different channel counts", nameof(previous));
+        }
+
+        _assembler.Clear();
+        _frames.ContinueFrom(previous._frames);
+    }
+
     private int FrameFloats => XmaLayout.FrameSamples * Channels;
 
     /// <summary>Adds the first bits of the packet to the frame carried over from the last one and decodes it when whole.</summary>

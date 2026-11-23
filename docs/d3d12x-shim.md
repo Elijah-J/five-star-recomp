@@ -167,6 +167,19 @@ exe exports `__XMemAllocationHooks__`). Around the creation of the main shader-v
 descriptors) the game pushes a hook that answers allocator id 128, object type 4 with memory it reserved, and breaks
 into the debugger unless slot 9 then returns that memory.
 
+The game treats that memory as plain memory, 32 bytes per descriptor (measured at boot):
+
+| Descriptors | Bytes | Use |
+|---|---|---|
+| 0 to 327,679 | 0 to 0x9FFFFF | persistent views, written through slots 17 to 24 and 70; free list in dword 0 of each free descriptor (next free index, last 0xFFFFFFFF), filled by the game before the first view; boot writes 0 to 10 and 17 to 101 |
+| 360,448 on | 0xB00000 on | the start of the 0xAE00000-byte slot-133 pool, which overlaps the heap's last 0x1B00000 bytes |
+
+Per-draw tables are not written through the device: 0x1400321d8 takes room from the graphics context's linear
+allocator (0x142484aa0: count × increment bytes), 0x144d9efc0 copies each 32-byte descriptor into it with AVX moves
+from the persistent descriptor its binding names (record +0x18), and the table's GPU handle is that address + (GPU
+start - CPU start). Boot binds such tables at descriptors 368,373 to 372,600, in pool memory next to other data
+(vertex positions).
+
 ## Shim
 
 `XboxDeviceFactory` (`src/FiveStar.Loader/Shims/D3D12X`) implements `D3D12XboxCreateDevice` on a desktop
@@ -226,7 +239,7 @@ slot. Reset (10, 139), draws and dispatches (12 to 14, 61) and slots 32 to 46 ar
 | Resource | 2 | Release that also frees a slot-127 resource's title memory |
 | Resource | 11 | the console address for a slot-133 resource, else the desktop GPU address |
 | Fence | 2, 12 | 12 returns a cell holding the completed value, which the game polls (0x144fb0ad0); a mirror thread keeps every such cell current (SetEventOnCompletion(value + 1) on a shared event) |
-| Descriptor heap | 9, 10 | heap start handles returned in rax; 9 returns the title memory when the heap has some, 10 the GPU handle of the first descriptor the game owns |
+| Descriptor heap | 9, 10 | heap start handles returned in rax; for the game's shader-visible view and sampler heaps both return the title memory ([Binding](#binding)) |
 | Device | 16 | CreateRootSignature; the parameter layout is kept ([Binding](#binding)) |
 | Command list | 10, 12 to 14, 32 to 46, 61, 139 | [Binding](#binding) |
 | Command list | 20 | IASetPrimitiveTopology with console topologies made desktop ones ([Boot](#boot)) |
@@ -271,7 +284,8 @@ passes 0x3000000) and logs the serializer's message when it still fails.
 
 **XboxBvhBuilder.dll.** Its constructor builds compute pipelines from console shader code (device slot 62) and
 throws when that fails. Its seven exports bind to shims: prebuild sizes from the desktop's
-GetRaytracingAccelerationStructurePrebuildInfo, builds, copies and rehydration logged once and skipped.
+GetRaytracingAccelerationStructurePrebuildInfo, builds, copies and rehydration logged once and skipped. With
+`--raytracing` the DLL's own CPU paths give console sizes and rehydrate BLASes ([raytracing.md](raytracing.md)).
 
 ### Binding
 
@@ -288,15 +302,23 @@ flowchart LR
   ud --> ring --> cbv["root parameter 0: cbuffer UserData"]
 ```
 
-- **Heaps** (`XboxDescriptorHeaps`). A shader-visible heap takes title memory from the game's hook (allocator id
-  128, object type 4) and `Handles` maps it onto desktop CPU handles, which slots 17 to 24 translate. The view heap
-  gets 262 more descriptors, capped at 1,000,000 (the tier-2 limit): desktop index 0 is a raw SRV over the
-  descriptor window (`GPU_MEM_HEAP`), 1 a raw UAV over it, 2 to 5 null descriptors for the mesh fallback table (root
-  parameter 1), 6 to 261 a sink. Game descriptor i is desktop index 262 + i; slot 9 returns the title memory (desktop
-  index 262 without it) and slot 10 the GPU handle of index 262, so the game's GPU handles are desktop handles. The
-  last 245,446 of the main heap's 1,245,184 descriptors have no desktop descriptor: views written there land in the
-  sink and tables there read null descriptors (both warned once). The sampler heap gets 2048 samplers (the game asks
-  for 128); 2032 to 2047 (`STATIC_SAMPLER_BASE`) hold a trilinear wrapping sampler for the programs' literal S#s.
+- **Heaps** (`XboxDescriptorHeaps`, `ShaderVisibleHeap`). The game's shader-visible view and sampler heaps take
+  title memory from the game's hook (allocator id 128, object type 4; pinned memory of the shim's own without a game
+  image). Slots 9 and 10 both return it, so a CPU or GPU handle is the address of the descriptor's 32-byte record,
+  as on the console. A record's dword 0 is the desktop index standing behind the descriptor, the rest zero: slots
+  17 to 22, 61 and 70 write it with the view, so the game's own copies of records (its per-draw tables) carry
+  desktop indices. The desktop view heap holds 7 reserved descriptors then whole 4096-descriptor pages up to
+  1,000,000 (the tier-2 limit): 0 is a raw SRV over the descriptor window (`GPU_MEM_HEAP`), 1 a raw UAV over it, 2
+  to 5 null descriptors for the mesh fallback table (root parameter 1; 5 is also what a record naming nothing
+  reads), 6 a sink.
+- **Remap** (`DescriptorRemap`). The game's 1,245,184 view descriptors fall into 304 pages; a page gets the next
+  of the 244 desktop pages the first time a view is written in it (a lock only then; lookups read an array), and
+  stays contiguous inside. Boot touches one page. Only views written past all 244 pages land in the sink (warned
+  once). The sampler heap gets 2048 samplers (the game asks for 128), game index = desktop index; 2032 to 2047
+  (`STATIC_SAMPLER_BASE`) hold a trilinear wrapping sampler for the programs' literal S#s.
+- **Copies (23, 24)** walk the ranges in runs both sides share. Inside one shader-visible heap they copy records;
+  into one from a CPU-only heap, a desktop copy per desktop run with the records written; out of one, a desktop copy
+  of what each record names.
 - **SetDescriptorHeaps (32)** binds the desktop heaps behind the wrappers. A root signature set before any heap
   binds the main heaps first; a heap change sets the bindless root signature again.
 - **Root signatures (16, 33, 34).** Device slot 16 reads the RTS0 part of the blob into a `RootLayout`: parameters
@@ -309,11 +331,15 @@ flowchart LR
 - **Draws and dispatches (12 to 14, 61)** upload the bind point's 128 dwords when they changed (a 64 MiB upload ring
   of 512-byte blocks, a block reused after 131,072 others) and point root parameter 0 at them; ExecuteIndirect
   unwraps its signature and buffers. Reset (10, 139) clears the list's binding state.
-- **Descriptor window.** A 32,032,768-byte buffer (custom heap, write-combined system memory, UAV): one 32-byte
-  record per desktop view index (a T#; buffers and CBVs use the first 16 bytes), then one 16-byte record per sampler
-  from 32,000,000, each with dword 0 = its own index. A table's user SGPR is the window offset of its first record
-  ((handle - heap GPU start) / increment × record size), so a program's `MemLoad(table + k * 32)` reads the heap index
-  of the table's k-th descriptor. Records never change: view creation and copies keep the desktop index.
+- **Descriptor window.** A buffer (custom heap, write-combined system memory, UAV; 0x2610000 bytes for the game):
+  one 16-byte record per sampler, a 1024-record null table at 0x8000, then from 0x10000 one 32-byte record per game
+  view descriptor in game order (a T#; buffers and CBVs use the first 16 bytes). Dword 0 of each mirrors dword 0 of
+  the title record, a record naming no desktop descriptor reading 5. A table's user SGPR is the window offset of its
+  first record (base + (handle - title start) / increment × record size), so a program's `MemLoad(table + k * 32)`
+  reads the heap index of the table's k-th descriptor wherever the game put the table. Records are mirrored when the
+  shim writes them and, for a table, at SetRootDescriptorTable: as many as the root signature's table spans (end of
+  its last range, at most 1024, unbounded ranges 1024), skipping records whose dword 0 did not change (a shadow
+  array). A handle outside both heaps reads the null table (warned once).
 
 The window covers only descriptors of the console's 32-bit pointer space: pointers into game memory (root
 descriptors, constants loaded through pointers) read the window, not game memory. Buffer views stay typed or
@@ -448,6 +474,8 @@ not done yet.
 - Present: what the plane dword at +0x28 and the parameter dword at +0x18 mean, how a second plane is placed and
   blended, which flags slot 80's flag 2 and slot 78's period stand for, and the layout the console expects the plane
   in; queue slot 31's arguments.
-- Descriptors the game writes into title memory itself instead of through slots 17 to 24, and which descriptors of
-  the main heap past the desktop's 999,738 the game uses.
+- Which descriptors the game uses past boot (boot ends at the GPU hang); whether it reads fields of a descriptor
+  back from title memory (it finds the shim's record there, not a T#); whether the console's view increment is 32
+  bytes (the shim forwards the desktop's, 32 on the machine measured; the table copy at 0x144d9efc0 assumes 32);
+  whether descriptors in the pool past the heap's end are bound as tables.
 - Parameter-block fields at 0x20, 0x24, 0x28 and 0x3C.

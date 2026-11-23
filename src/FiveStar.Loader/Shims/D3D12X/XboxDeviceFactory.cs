@@ -62,7 +62,7 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
 
         var hooks = new TitleMemoryHooks(images);
         Bindings = new XboxBindings(log, Warnings);
-        DescriptorHeaps = new XboxDescriptorHeaps(Objects, hooks, Bindings.Window, log);
+        DescriptorHeaps = new XboxDescriptorHeaps(Objects, hooks, Bindings.Window, log, Warnings);
         CommittedResources = new XboxCommittedResources(Objects, Descriptions, hooks, log);
         Presenter = new Presenter(Objects, Warnings, log);
 

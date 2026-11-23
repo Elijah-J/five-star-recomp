@@ -16,19 +16,38 @@ internal static class XDspLayout
     /// <summary>Activation config: frames per processed block (the game always asks for 1024).</summary>
     public const int ConfigFramesOffset = 0x08;
 
-    /// <summary>Activation config: 1 or 2 for a convolution (the channels, inferred); 1 for the other kind.</summary>
+    /// <summary>Activation config: the impulse response's channels, 1 or 2, for a convolution (0x14003b928); 1 for kind 2.</summary>
     public const int ConfigChannelsOffset = 0x0C;
 
-    /// <summary>Convolution config: impulse response length in floats, then its address (unaligned u64).</summary>
+    /// <summary>Convolution config: impulse response length in 4-byte units (its byte size / 4), then its address (unaligned u64).</summary>
     public const int ConfigResponseLengthOffset = 0x10;
     public const int ConfigResponseAddressOffset = 0x14;
+
+    /// <summary>Bytes of an activation config the shim reads: up to the end of the response address.</summary>
+    public const int ConfigSize = ConfigResponseAddressOffset + sizeof(long);
 
     /// <summary>Bytes of one command record.</summary>
     public const int CommandSize = 0x20;
 
-    /// <summary>Command: input block address, then output block address (u64 each); +0x00 and +0x04 hold 1.0f.</summary>
+    /// <summary>Command: two floats the game always sets to 1.0 (0x145fc6ed8), read here as gains.</summary>
+    public const int CommandGain0Offset = 0x00;
+    public const int CommandGain1Offset = 0x04;
+
+    /// <summary>Command: input block address, then output block address (u64 each).</summary>
     public const int CommandInputOffset = 0x08;
     public const int CommandOutputOffset = 0x10;
+
+    /// <summary>Bytes of one input or output page of the game's pool (0x141d6bdf0): 1024 floats.</summary>
+    public const int PageBytes = 0x1000;
+
+    /// <summary>
+    /// Frames per channel of a two-channel command: the game's mixer block, 256 frames (0x144e5a5be passes 0x100), each
+    /// channel's block after the other's in the page (0x1443b2a40). A one-channel command carries the configured frames.
+    /// </summary>
+    public const int StereoBlockFrames = 0x100;
+
+    /// <summary>The most channels a stream convolves.</summary>
+    public const int MaxChannels = 2;
 
     /// <summary>
     /// The status record of one stream. The game reads the u32 at <see cref="StatusCompletedOffset"/>, compares it

@@ -28,8 +28,15 @@ internal sealed unsafe class XmaContextDecoder
 
     public bool Enabled { get; private set; }
 
-    /// <summary>Message 5: starts the context afresh with the format, start skip and buffers the game filled in.</summary>
-    public void Enable(uint* context)
+    /// <summary>Counts the enables, so a work buffer tag names one run of the context (<see cref="XmaWorkBufferTag"/>).</summary>
+    public uint Generation { get; private set; }
+
+    /// <summary>
+    /// Message 5: starts the context with the format, start skip and buffers the game filled in. Afresh, or as the
+    /// continuation of <paramref name="previous"/> (the decoder of the context this one is chained to) when it decoded
+    /// the same format: then the first frame overlaps the last frame <paramref name="previous"/> decoded.
+    /// </summary>
+    public void Enable(uint* context, XmaContextDecoder? previous)
     {
         int channels = XmaContextLayout.Stereo.Read(context) != 0 ? XmaLayout.MaxChannels : 1;
         int rate = XmaContextLayout.SampleRates[(int)XmaContextLayout.SampleRate.Read(context)];
@@ -44,6 +51,12 @@ internal sealed unsafe class XmaContextDecoder
             _decoder.Reset();
         }
 
+        if (previous is not null)
+        {
+            ContinueFrom(previous, _decoder);
+        }
+
+        Generation++;
         _pendingStart = 0;
         _pendingEnd = 0;
         _skipSubframes = (int)XmaContextLayout.SubframeSkip.Read(context);
@@ -201,6 +214,19 @@ internal sealed unsafe class XmaContextDecoder
         }
 
         XmaContextLayout.InputReadOffset.Write(context, (uint)next.Value);
+    }
+
+    /// <summary>Carries the overlap of <paramref name="previous"/> into <paramref name="decoder"/> when both decode the same format.</summary>
+    private void ContinueFrom(XmaContextDecoder previous, XmaStreamDecoder decoder)
+    {
+        var earlier = previous._decoder;
+
+        if (earlier is null || previous._sampleRate != _sampleRate || earlier.Channels != decoder.Channels)
+        {
+            return;
+        }
+
+        decoder.ContinueFrom(earlier);
     }
 
     private static bool InputValid(uint* context, bool second)

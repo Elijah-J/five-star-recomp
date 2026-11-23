@@ -155,10 +155,40 @@ internal sealed unsafe class AcpHalDevice : IDisposable
 
         int index = (int)*payload;
         var decoder = _decoders[index] ??= new XmaContextDecoder();
-        decoder.Enable(context);
+        var work = (uint*)_heap.ToVirtualAddress(XmaContextLayout.WorkBuffer.Read(context), XmaContextLayout.WorkBufferBytes);
+        decoder.Enable(context, Chained(XmaWorkBufferTag.Read(work), index));
+        new XmaWorkBufferTag((uint)index, decoder.Generation).Write(work);
         Service(decoder, context);
 
         return HResult.Ok;
+    }
+
+    /// <summary>
+    /// The decoder a context continues: the one its work buffer's tag names, when that context is another one and has
+    /// not been enabled again since it wrote the tag.
+    /// </summary>
+    private XmaContextDecoder? Chained(XmaWorkBufferTag? tag, int index)
+    {
+        if (tag is null)
+        {
+            return null;
+        }
+
+        var value = tag.Value;
+
+        if (value.Context == (uint)index || value.Context >= (uint)_decoders.Length)
+        {
+            return null;
+        }
+
+        var previous = _decoders[value.Context];
+
+        if (previous is null || previous.Generation != value.Generation)
+        {
+            return null;
+        }
+
+        return previous;
     }
 
     private int DisableContext(uint* payload)

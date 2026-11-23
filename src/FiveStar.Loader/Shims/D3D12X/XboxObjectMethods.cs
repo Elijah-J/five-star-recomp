@@ -106,7 +106,7 @@ internal static unsafe class XboxObjectMethods
         return HeapStart(&self->Header, DesktopCpuStartSlot);
     }
 
-    /// <summary>Descriptor-heap slot 10, the GPU handle, returned like slot 9 (*inferred*); past the reserved descriptors of the main heap.</summary>
+    /// <summary>Descriptor-heap slot 10, the GPU handle, returned like slot 9 (*inferred*); a heap in title memory answers with that memory too.</summary>
     [HotPath]
     [UnmanagedCallersOnly]
     public static nint GetGpuHandleForHeapStart(XboxDescriptorHeapObject* self)

@@ -21,6 +21,9 @@ internal unsafe struct RootLayout
     public fixed byte Offsets[MaxParameters];
     public fixed byte Sizes[MaxParameters];
 
+    /// <summary>Descriptors a table parameter spans (the end of its last range), at most <see cref="DescriptorWindow.MaxTableRecords"/>.</summary>
+    public fixed ushort Extents[MaxParameters];
+
     /// <summary>The parameter's kind, or null past <see cref="Count"/>.</summary>
     public readonly RootParameterKind? Kind(uint parameter)
     {

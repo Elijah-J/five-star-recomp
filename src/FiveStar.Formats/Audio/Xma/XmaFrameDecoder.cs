@@ -80,6 +80,15 @@ internal sealed class XmaFrameDecoder
         }
     }
 
+    /// <summary>Takes over the overlap and channel state <paramref name="previous"/> (same channel count) left after its last frame.</summary>
+    public void ContinueFrom(XmaFrameDecoder previous)
+    {
+        for (var channel = 0; channel < _channelCount; channel++)
+        {
+            _channels[channel].CopyFrom(previous._channels[channel]);
+        }
+    }
+
     /// <summary>Writes the half-transform tail of the last frame (256 samples per channel, interleaved).</summary>
     public void Flush(Span<float> output)
     {

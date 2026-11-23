@@ -66,6 +66,9 @@ internal static class XmaContextLayout
 
     public static readonly XmaContextField OutputBuffer = new(7, 0, 32);
 
+    /// <summary>Dword 8: APU address of the context's work buffer (<see cref="WorkBufferBytes"/>).</summary>
+    public static readonly XmaContextField WorkBuffer = new(8, 0, 32);
+
     /// <summary>Dword 9: the block the game reads next; it moves when the game sends message 0x12.</summary>
     public static readonly XmaContextField OutputReadOffset = new(9, 0, 5);
 
@@ -74,6 +77,9 @@ internal static class XmaContextLayout
 
     /// <summary>A loop count that never runs down.</summary>
     public const uint InfiniteLoops = 255;
+
+    /// <summary>Bytes of a work buffer: the game cuts one 0x200-byte buffer per context (0x1443aed13).</summary>
+    public const int WorkBufferBytes = 0x200;
 
     /// <summary>Bytes of an output block: one 128-sample subframe of one channel in 16-bit PCM.</summary>
     public const int BlockBytes = XmaLayout.MinSubframeSamples * sizeof(short);
