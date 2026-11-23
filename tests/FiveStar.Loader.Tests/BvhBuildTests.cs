@@ -67,7 +67,7 @@ public sealed unsafe class BvhBuildTests
                 Assert.Equal(expected, new ReadOnlySpan<byte>(dest, expected.Length).ToArray());
                 Assert.Equal((ulong)expected.Length, *compacted);
 
-                *(uint*)(desc + 0x08) = 0;
+                *(uint*)(desc + 0x08) = 2;
                 Assert.Equal(0, builder.Build(1, desc));
             }
         }

@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Five Star Recomp contributors.
+// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Text;
@@ -60,6 +60,8 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         Textures = new GpuTextures(MemorySource, Descriptions, log);
         PlacedResources = new XboxPlacedResources(memory, Objects, Textures, log);
         GameMemory = new XboxGameMemoryBuffers(Objects, PlacedResources.Addresses, log);
+
+        Uploads = new UploadArena(Objects, PlacedResources.Addresses, log);
         AddressBuffers = new AddressBufferViews(GameMemory);
         AddressViews = new AddressShaderViews(Textures, AddressBuffers, Warnings, log);
 
@@ -116,6 +118,9 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
 
     /// <summary>Device slot 133 and the console-to-desktop GPU address table.</summary>
     public XboxPlacedResources PlacedResources { get; }
+
+    /// <summary>The memory of list slot 148.</summary>
+    public UploadArena Uploads { get; }
 
     /// <summary>Queue slot 32 on a swap chain on the game's window.</summary>
     public Presenter Presenter { get; }
@@ -382,7 +387,10 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         BindInputBuffers();
         RectangleListSlots.Register(Objects);
         PresentSlots.Bind(Objects);
+
         ResourceBarrierSlots.Bind(Objects);
+        EnhancedBarrierSlots.Bind(Objects);
+        UploadAllocations.Bind(Objects);
     }
 
     private void BindInputBuffers()

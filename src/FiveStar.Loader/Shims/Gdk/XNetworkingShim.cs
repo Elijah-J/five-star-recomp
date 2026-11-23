@@ -7,8 +7,8 @@ using FiveStar.Loader.Native;
 namespace FiveStar.Loader.Shims.Gdk;
 
 /// <summary>
-/// XNetworking.h entry points with offline answers (<see cref="NetworkingService"/>). Change notifications register
-/// and never fire. URL security queries and certificate checks fail with HRESULT_FROM_WIN32(ERROR_NETWORK_UNREACHABLE).
+/// XNetworking.h entry points: the connectivity hint and its change event from <see cref="ConnectivityService"/>; the
+/// port-change event registers and never fires. URL security queries and certificate checks fail with HRESULT_FROM_WIN32(ERROR_NETWORK_UNREACHABLE).
 /// </summary>
 internal static unsafe partial class XNetworkingShim
 {
@@ -16,7 +16,7 @@ internal static unsafe partial class XNetworkingShim
     [UnmanagedCallersOnly]
     private static int XNetworkingGetConnectivityHint(byte* hint)
     {
-        return NetworkingService.GetConnectivityHint(hint);
+        return ShimContext.Runtime.Gdk.Connectivity.GetHint(hint);
     }
 
     /// <summary>HRESULT XNetworkingRegisterConnectivityHintChanged(XTaskQueueHandle, void* context, callback, XTaskQueueRegistrationToken*).</summary>
@@ -24,7 +24,7 @@ internal static unsafe partial class XNetworkingShim
     [UnmanagedCallersOnly]
     private static int XNetworkingRegisterConnectivityHintChanged(nint queue, nint context, nint callback, ulong* token)
     {
-        return ShimContext.Runtime.Gdk.Registrations.Register("XNetworkingRegisterConnectivityHintChanged", callback, token);
+        return ShimContext.Runtime.Gdk.Connectivity.Register(queue, context, callback, token);
     }
 
     [Shim(GdkModule.Name, "XNetworkingUnregisterConnectivityHintChanged")]

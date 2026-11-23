@@ -27,19 +27,27 @@ The device is created in one function (0x142478440), after the game registers an
 REFIID riid, void** device)`. The game passes a null adapter and `riid` = `5405c344-d457-444e-b4dd-2366e45aee39`,
 the desktop IID of ID3D12Device11 (`XboxBvhBuilder.dll` also takes an `ID3D12Device11*`).
 
-The parameter block is 0x50 bytes, cleared before it is filled:
+The parameter block (D3D12XBOX_CREATE_DEVICE_PARAMETERS) is 0x50 bytes, cleared before it is filled (0x142478559).
+Field names are those of the public header as mirrored in ebiten's Go binding (`d3d12_windows.go`), offsets by x64
+alignment; the values are what the game writes:
 
-| Offset | Value | Meaning |
+| Offset | Field | Value |
 |---|---|---|
-| 0x00 | 0x00020004 | Version (*inferred*) |
-| 0x04 | 0 | Process debug flags (*inferred*) |
-| 0x08 | 0x00100000 (1 MiB) | Graphics command-queue ring size (*inferred*) |
-| 0x0C, 0x10 | 0 | Graphics and compute scratch sizes, 0 = default (*inferred*) |
-| 0x20 | byte at 0x14a943957 | Boolean set at run time; meaning unknown |
-| 0x24 | byte at 0x14a943958 | Boolean set at run time; meaning unknown |
-| 0x28 | 1 | Unknown |
-| 0x3C | 0x20 | Unknown |
-| other | 0 | |
+| 0x00 | Version | 0x00020004 |
+| 0x04 | ProcessDebugFlags | 0 |
+| 0x08 | GraphicsCommandQueueRingSizeBytes | 0x00100000 (1 MiB) |
+| 0x10 | pOffchipTessellationBuffer | 0 |
+| 0x18, 0x1C | GraphicsScratchMemorySizeBytes, ComputeScratchMemorySizeBytes | 0 |
+| 0x20 | DisableGeometryShaderAllocations | byte at 0x14a943957, set at run time |
+| 0x24 | DisableTessellationShaderAllocations | byte at 0x14a943958, set at run time |
+| 0x28 | DisableDXR | 1 |
+| 0x2C | DisableAutomaticDPBBBreakBatchEvents | 0 |
+| 0x30, 0x38 | pDXRStackBuffer, DXRStackBufferOverrideSizeBytes | 0 |
+| 0x3C | CreateDeviceFlags | 0x20 (bit meaning not public) |
+| 0x40, 0x44 | AutoHDRPaperWhiteLevelNits, DisableAutomaticCommandSegmentChaining | 0 |
+
+The game sets DisableDXR and builds its acceleration structures with `XboxBvhBuilder.dll` and traverses them
+inline ([raytracing.md](raytracing.md)).
 
 ## D3D12ConfigureVirtualMemoryX
 
@@ -154,11 +162,19 @@ method follows from the arguments and from the inline packet written instead:
 | 70 | 62 | OMSetDepthBounds | floats in xmm1, xmm2 |
 | 71 | | X: PIX marker (*inferred*) | (pointer, dword, 0, 0) (0x144ed46a3) |
 | 72, 74 | | X | (pointer into a record array, 0, 0, 1) (0x142482b31); (pointer, 7, pointer, 1) (0x142484b0c) |
-| 75, 126, 142, 146 | | X: state writes (*inferred*) | one byte (0x14003281a); (byte, packed dword pair) (0x140032638); one qword (0x1400329e3); (dword, pointer) (0x14003210d) |
+| 75, 126, 142 | | X: state writes (*inferred*) | one byte (0x14003281a); (byte, packed dword pair) (0x140032638); one qword (0x1400329e3) |
+| 146 | | X: Barrier (ID3D12GraphicsCommandList7) | (group count, D3D12_BARRIER_GROUP*) (0x14003210d, 0x144da61d1), below |
+| 148 | | X: upload allocation | (size, alignment) returns a pointer the caller also uses as a GPU address; XboxBvhBuilder.dll only (0x180020ed6), no call in the exe |
+
+**Enhanced barriers (146).** The game queues barrier groups in its graphics context (+0x12780 + 0xA0, at most 256
+groups of 16 bytes: type, count, pointer) and flushes them with slot 146 (0x1400320e0), then clears the counters. The
+queueing functions fill the public structures: 0x1400095e0 adds a D3D12_BUFFER_BARRIER (40 bytes: sync, access,
+resource from the game's record +0x20, offset 0, size UINT64_MAX) to a type-2 group, 0x1400097f0 a
+D3D12_TEXTURE_BARRIER (64 bytes: sync, access, layouts, resource, all subresources, flags) to a type-1 group; 1024
+buffer and 1024 texture barriers at most. Boot calls it from 0x140032113.
 
 Slots 32 to 52 are the desktop slot + 4: the queries moved up to 28 to 30 (*inferred*); between 52 and 61 two desktop
-methods are missing. None of the list slots called in boot (9 to 52, 61, 70 to 75, 126, 131, 132, 142, 146) takes a
-barrier, and the exe writes no barrier packet inline: no ACQUIRE_MEM, RELEASE_MEM or EVENT_WRITE header is an
+methods are missing. The exe writes no barrier packet inline: no ACQUIRE_MEM, RELEASE_MEM or EVENT_WRITE header is an
 immediate (the inline packets are 0xB6 and 0xB8 register writes). The inline form
 of a descriptor table is (dword from the root signature's register table at list +0x144 + index * 4, low dword of the
 GPU handle): the table reaches the program as a 32-bit address in one user SGPR. The game derives a GPU handle as its
@@ -209,6 +225,11 @@ wrapper.
   method taking the wrapper first), before or after the vtables exist. `Wrap`, `Unwrap` and `WrapResult` are the
   helpers for handlers that create or receive objects.
 - Pipeline states (slots 55, 57, 62, 67, 86, [d3d12x-pipelines.md](d3d12x-pipelines.md)) are returned unwrapped.
+- The device wrapper is 0x20 bytes; its byte at +0x18 is 1. The game (0x14006ddf5, 0x144d9f5dc, 0x144fd2b7e) and
+  the FSR DLL read it before writing a descriptor: 0 makes them write a raw buffer descriptor (V#) or copy the
+  32-byte record themselves, non-zero makes them call slot 17 (CreateConstantBufferView) or slot 24
+  (CopyDescriptorsSimple). The shim's records hold desktop indices, not hardware descriptors, so it asks for the
+  calls (before, the byte lay past a 16-byte wrapper and was whatever the allocator left there).
 
 | Interface | Forwarded slots | Slot map |
 |---|---|---|
@@ -252,7 +273,8 @@ to the desktop buffer over that memory (an address outside known memory unbinds 
 | Command list | 47, 48 | IASetIndexBuffer, IASetVertexBuffers with console addresses translated |
 | Command list | 20 | IASetPrimitiveTopology with console topologies made desktop ones ([Rectangle lists](#rectangle-lists)) |
 | Command list | 25 | SetPipelineState, recorded for [Rectangle lists](#rectangle-lists) |
-| Command list | 9, 26 | Close and ResourceBarrier with resource states ([gpu-resources.md](gpu-resources.md#barriers)) |
+| Command list | 9, 26, 146 | Close, ResourceBarrier and Barrier with resource states ([gpu-resources.md](gpu-resources.md#barriers)) |
+| Command list | 148 | a 32 MiB persistently mapped upload ring, made on first use, whose CPU range is in the address table as a console GPU range (`UploadArena`); a range is reused once the ring has passed it |
 
 ### Game memory on the GPU
 
@@ -396,10 +418,13 @@ width, height) and builds one 0x48-byte plane each:
 | 0x10 | pointer to the entry's resource | ID3D12Resource* const* |
 | 0x18 | RECT {0, 0, width, height} | source rect |
 | 0x20 | float[4] {0, 0, 1, 1} (0x146159cd0) | normalized destination rect |
-| 0x28 | the entry's dword | color space; 0 at boot |
-| 0x2C to 0x47 | 0 | |
+| 0x28 | the entry's dword | ColorSpace; 0 at boot |
+| 0x2C to 0x47 | 0 | ScaleFilter, ExtendedDescCount, pExtendedDescs, Flags (public names, ebiten's binding) |
 
-The parameter block is 0x20 bytes, zero except the dword at +0x18 = (record byte +0x3E == 0); all zero at boot.
+The parameter block (D3D12XBOX_PRESENT_PARAMETERS: ImmediateThresholdPercent, ViewCount, ExtendedDescCount,
+pExtendedDescs, Flags; public names) is 0x20 bytes, zero except Flags at +0x18 = (record byte +0x3E == 0); all zero
+at boot. The flag's value is not public; Mesa's Xbox backend sets D3D12XBOX_PRESENT_FLAG_IMMEDIATE there for an
+immediate present.
 Count 0 (0x14248b68a at shutdown, 0x14248d847 before the game releases and recreates its render targets) shows
 nothing. Boot presents one plane: the 3840x2160 render target from slot 127 (R8G8B8A8 family), color-space dword 0.
 
@@ -424,7 +449,9 @@ nothing. Boot presents one plane: the 3840x2160 render target from slot 127 (R8G
   type t at origin + its slot-79 offset. A type-0 wait with flag 2 or timeout 0 returns the current token at once, a
   blocking type-0 wait sleeps (high-resolution waitable timer) until the next origin and returns its token, a wait
   for another type with a token returns once that frame's event passed. A finite timeout that ends first returns
-  HRESULT_FROM_WIN32(WAIT_TIMEOUT).
+  S_FALSE, a wait for a type slot 79 never scheduled (other than the origin) E_INVALIDARG, as in XCL's
+  implementation. The game's three call sites break only on a failing HRESULT (0x14248463e, 0x14248244e;
+  0x14248240d through 0x144e9b660) and never pass a finite non-zero timeout.
 - A present uses up its plane's token: the current token is at least the last presented one + 1 (reset with the
   grid). The render thread takes the current token (0x142482448), waits for event 2 of the frame two presents back
   (0x142482405) and presents; with a token per origin that wait sleeps, and the game runs at its interval (33.3 ms
@@ -542,18 +569,18 @@ which any change of timing exposed.
   slots 61, 70 and 133 are in [gpu-resources.md](gpu-resources.md).
 - CBVs at addresses the desktop cannot express (16-byte aligned); the allocator's slot 9 (callback, context).
 - List slots 27, 31, 53 to 60, 62 and above 70 apart from those named; the list slots that take wrapped resources
-  inside structures (texture copies) and GPU addresses; whether the game has an enhanced-barrier slot.
+  inside structures (texture copies) and GPU addresses.
 - Whether root constants take one SGPR per value (they are always the last parameter, so the metadata cannot tell),
   and what graphics s0 to s7 and compute s0 to s3 hold.
 - Device slots 44 to 133 apart from those named above; the meaning of the desc dwords of slots 48 and 73.
 - The slot maps marked *inferred*: allocator, resource and fence have no X call site in the census.
-- Present: what the plane dword at +0x28 and the parameter dword at +0x18 mean, how a second plane is placed and
-  blended, which flags slot 80's flag 2 and slot 78's period stand for, and the layout the console expects the plane
-  in; queue slot 31's arguments.
+- Present: the values of the plane's ColorSpace and the parameter Flags, how a second plane is placed and blended,
+  which flags slot 80's flag 2 and slot 78's period stand for, and the layout the console expects the plane in; queue
+  slot 31's arguments.
 - Which descriptors the game uses past boot (boot ends at the GPU hang); whether it reads fields of a descriptor
   back from title memory (it finds the shim's record there, not a T#); whether the console's view increment is 32
   bytes (the shim forwards the desktop's, 32 on the machine measured; the table copy at 0x144d9efc0 assumes 32);
   whether descriptors in the pool past the heap's end are bound as tables.
-- Parameter-block fields at 0x20, 0x24, 0x28 and 0x3C.
+- The bits of CreateDeviceFlags (0x20); the block's words past 0x48.
 - Which rectangle vertex the hardware takes as the corner (the variant picks the right angle, which agrees for
   rectangles), and how flat attributes and culling apply to the derived corner; rectangle lists drawn by mesh programs.

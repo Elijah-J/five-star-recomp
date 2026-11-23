@@ -33,6 +33,20 @@ public sealed unsafe class DumpTests : IClassFixture<DumpFixture>
     }
 
     [DumpFact]
+    public void The_http_libraries_reach_winhttp_connections_only_through_the_seal()
+    {
+        string[] sealedCalls = ["WinHttpConnect", "WinHttpOpenRequest", "WinHttpSendRequest", "WinHttpReceiveResponse", "WinHttpReadData", "WinHttpWriteData", "WinHttpQueryDataAvailable"];
+        var transport = _dump.Targets
+            .Where(i => i.Name is "libhttpclient.gdk.dll" or "xcurl.dll")
+            .SelectMany(i => i.Imports)
+            .Where(i => i.Module.Equals("WINHTTP.dll", StringComparison.OrdinalIgnoreCase) && sealedCalls.Contains(i.Symbol))
+            .ToList();
+
+        Assert.Equal(2 * sealedCalls.Length, transport.Count);
+        Assert.All(transport, i => Assert.Equal(ResolutionSource.Shim, i.Source));
+    }
+
+    [DumpFact]
     public void The_inspected_exports_behave_as_their_disassembly_predicts()
     {
         var caller = new ExportCaller(_dump.Runtime, new LoaderLog(TextWriter.Null, null, false));

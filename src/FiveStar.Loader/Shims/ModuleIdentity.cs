@@ -154,7 +154,25 @@ internal sealed unsafe class ModuleIdentity
             return ProcFromVirtualModule(virtualName, symbol, ordinal);
         }
 
-        // An OS module: hand out the "*" shim for interposed functions, so dynamic lookups see the same view as imports.
+        return ProcFromSystemModule(module, name, symbol, ordinal);
+    }
+
+    /// <summary>
+    /// An OS module: hand out the shim of that module (the sealed ws2_32 and winhttp functions, also by ordinal) or the
+    /// "*" shim for interposed functions, so dynamic lookups see the same view as imports.
+    /// </summary>
+    private nint ProcFromSystemModule(nint module, byte* name, string? symbol, uint ordinal)
+    {
+        string file = ModuleNames.NormalizeImport(SystemModules.FileName(module));
+        var own = _shims.TryResolve(file, symbol, ordinal);
+
+        if (own is not null && own.Module == file)
+        {
+            Trace($"GetProcAddress({file}, {ModuleNames.SymbolKey(symbol, ordinal)}) -> shim {own.MethodName}");
+
+            return own.Address;
+        }
+
         var star = symbol is null ? null : _shims.TryResolve(ModuleNames.AnyModule, symbol, 0);
 
         if (star is not null && star.Module == ModuleNames.AnyModule)

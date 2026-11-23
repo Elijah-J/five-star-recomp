@@ -24,6 +24,7 @@ internal sealed class GdkServices : IDisposable
         Display = platform.Display;
         Accessibility = platform.Accessibility;
         Launcher = platform.Launcher;
+        Connectivity = platform.Connectivity;
     }
 
     public GdkConfig Config { get; }
@@ -54,6 +55,9 @@ internal sealed class GdkServices : IDisposable
     public AccessibilityService Accessibility { get; }
 
     public LauncherService Launcher { get; }
+
+    /// <summary>The connectivity hint and its change event (<c>--network</c>).</summary>
+    public ConnectivityService Connectivity { get; }
 
     public void Dispose()
     {

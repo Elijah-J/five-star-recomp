@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using FiveStar.Loader.Loading;
+using FiveStar.Loader.Shims.Network;
 
 namespace FiveStar.Loader.Host;
 
@@ -140,6 +141,10 @@ internal sealed class CommandLineParser
                 return SetRayTracing();
             case "--xdsp-convolution":
                 return SetXDspConvolution();
+            case "--network":
+                return SetNetworkMode();
+            case "--network-level":
+                return SetNetworkLevel();
             default:
                 throw new CommandLineException($"unknown argument {option}");
         }
@@ -401,6 +406,36 @@ internal sealed class CommandLineParser
     private bool SetRayTracing()
     {
         _options.RayTracing = true;
+
+        return true;
+    }
+
+    /// <summary>--network offline | sealed-online.</summary>
+    private bool SetNetworkMode()
+    {
+        string value = Next();
+
+        _options.NetworkMode = value switch
+        {
+            "offline" => NetworkMode.Offline,
+            "sealed-online" => NetworkMode.SealedOnline,
+            _ => throw new CommandLineException($"--network {value}: expected offline or sealed-online"),
+        };
+
+        return true;
+    }
+
+    /// <summary>--network-level: a level name or its XNetworkingConnectivityLevelHint value (0..4).</summary>
+    private bool SetNetworkLevel()
+    {
+        string value = Next();
+
+        if (!Enum.TryParse<ConnectivityLevel>(value, true, out var level) || !Enum.IsDefined(level))
+        {
+            throw new CommandLineException($"--network-level {value}: expected 0..4 or Unknown, None, LocalAccess, InternetAccess, ConstrainedInternetAccess");
+        }
+
+        _options.NetworkLevel = level;
 
         return true;
     }

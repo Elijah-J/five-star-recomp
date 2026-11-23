@@ -3,9 +3,10 @@
 
 namespace FiveStar.Loader.Shims.Gdk;
 
-/// <summary>The GDK services that answer from the PC itself or from nothing: events, display, accessibility, launching.</summary>
+/// <summary>The GDK services that answer from the PC itself or from nothing: events, display, accessibility, launching, connectivity.</summary>
 internal sealed record GdkPlatformServices(
     EventRegistrations Registrations,
     DisplayService Display,
     AccessibilityService Accessibility,
-    LauncherService Launcher);
+    LauncherService Launcher,
+    ConnectivityService Connectivity);

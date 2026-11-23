@@ -89,13 +89,24 @@ internal static unsafe class ResourceBarrierSlots
             return;
         }
 
-        var wrapper = objects.AsResource(barrier->Resource);
-        nint resource = objects.Unwrap(barrier->Resource);
+        Move(objects, list, states, barrier->Resource, barrier->StateBefore, barrier->StateAfter, barrier->Subresource);
+    }
+
+    /// <summary>
+    /// Moves the game's <paramref name="gameResource"/> to <paramref name="after"/> on <paramref name="list"/>: a
+    /// texture the shim created from the state it is in on the list, a buffer by a UAV barrier, any other resource with
+    /// the game's states. Shared by slot 26 and the enhanced barriers of slot 146 (<see cref="EnhancedBarrierSlots"/>).
+    /// </summary>
+    [HotPath]
+    internal static void Move(XboxObjects objects, nint list, ListResourceStates states, nint gameResource, int before, int after, uint subresource)
+    {
+        var wrapper = objects.AsResource(gameResource);
+        nint resource = objects.Unwrap(gameResource);
 
         if (wrapper == null || wrapper->Dimension == ResourceStates.UnknownDimension)
         {
-            var copy = TransitionBarrier.Of(resource, barrier->StateBefore, barrier->StateAfter);
-            copy.Subresource = barrier->Subresource;
+            var copy = TransitionBarrier.Of(resource, before, after);
+            copy.Subresource = subresource;
             BarrierWriter.Write(list, &copy);
 
             return;
@@ -110,7 +121,6 @@ internal static unsafe class ResourceBarrierSlots
 
         int home = wrapper->HomeState;
         int current = states.Current(resource, home);
-        int after = barrier->StateAfter;
 
         if (current == after)
         {
@@ -137,8 +147,9 @@ internal static unsafe class ResourceBarrierSlots
         BarrierWriter.Write(list, &copy);
     }
 
+    /// <summary>A UAV barrier on the desktop <paramref name="resource"/>; 0 orders every UAV access.</summary>
     [HotPath]
-    private static void Uav(nint list, nint resource)
+    internal static void Uav(nint list, nint resource)
     {
         var copy = new TransitionBarrier { Type = TransitionBarrier.UavType, Resource = resource };
         BarrierWriter.Write(list, &copy);
