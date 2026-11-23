@@ -17,6 +17,55 @@ builds them with `XboxBvhBuilder.dll` (XDXR). Code: `src/FiveStar.Loader/Shims/B
 | DXR state object | device slot 101 creates a `D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE` with DXIL library subobjects | 0x1424813EF |
 | Inline traversal | 64 translated programs execute `image_bvh_intersect_ray` | shader translation |
 
+| TLAS size | the DLL's prebuild query with Type TOP_LEVEL, NumDescs = instance count (low 26 bits of the scene's packed count), Flags from bits 27..26 (0: PREFER_FAST_BUILD, 2: PREFER_FAST_TRACE, else none) | 0x1456AC100, from 0x14022CB0C |
+| Instance descs | a game buffer of 64-byte records, one per instance (D3D12_RAYTRACING_INSTANCE_DESC size), allocated per TLAS slot next to the TLAS | 0x14022CA73 |
+| TLAS view | an SRV with ViewDimension 11 (RAYTRACING_ACCELERATION_STRUCTURE), mapping 0x1688, Location = TLAS address | 0x1456AC000 |
+| BLAS size | prebuild with Type BOTTOM_LEVEL and 0x38-byte triangle geometry descs built from the game's mesh records | 0x144EE2A00 |
+| DXR shader identifiers | after slot 101, QueryInterface for ID3D12StateObjectProperties and two GetShaderIdentifier calls (object +0x140, +0x158) | 0x142481429 |
+
+The DLL's batched build takes both types: its desc partition (0x18000CC00) branches on Inputs.Type 0 (instance
+count) and 1 (geometry count). The game imports no other build entry, so a TLAS is built through the same batched
+call as a BLAS.
+
+## Batched build
+
+The game's build wrapper (two copies, 0x142490110 and 0x140FE4E50) takes an array of geometry records (record +0x08
+build scratch size, +0x10 update scratch size, +0x20 the result resource, +0x28 the 24-byte
+D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS), destinations, update flags, a scratch base and a scratch
+budget, and fills D3D12XBOX_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_BATCHED_DESC2 records of 0x50 bytes:
+
+| Offset | Content |
+|---|---|
+| 0x00 | DestAccelerationStructureData |
+| 0x08 | Inputs (Type, Flags, NumDescs, DescsLayout, pGeometryDescs / InstanceDescs) |
+| 0x20 | SourceAccelerationStructureData (the destination when updating, else 0) |
+| 0x28 | ScratchAccelerationStructureData (256-aligned slices of the scratch range) |
+| 0x30 | number of postbuild-info descs (0 or 1) |
+| 0x38 | postbuild-info descs (16 bytes: address, type); type 0 or 3 size, 2 serialization, 0x10 rejected |
+| 0x40 | 16 bytes, zero |
+
+An update sets Flags bit 5 (PERFORM_UPDATE). A build with ALLOW_COMPACTION asks for the compacted size into a
+readback slot; the wrapper then copies the structure with `CopyRaytracingAccelerationStructure` (mode 1, COMPACT).
+A batch is flushed at 16 descs or when the scratch budget is used up. The second form (no compaction) brackets the
+batch with `Set64BitMortonCodes(true)` / `(false)`.
+
+## Traversal header
+
+The translated shaders read the root node pointer of a TLAS at byte 0x30 of the structure (dword 12, as in the
+serialized BLAS header) from a T#-like record (address bits 47..8). Node address = base + ((pointer >> 3) << 6).
+A type-6 node is an instance; CS_TraceShadowRays_Half reads it as:
+
+| Offset | Content |
+|---|---|
+| 0x30 | dword tested against 0xD5000000 (mask / flag bits in the top byte) |
+| 0x38 | bits 29..0 the BLAS root node pointer (0x3FFFFFFF: none); bit 31 set: translation-only transform |
+| 0x3C | BLAS base address >> 8 |
+| 0x40 | translation x, y, z (f32) |
+| 0x4C to 0x6F | the nine remaining f32 of the 3x4 world-to-object matrix, applied to origin and direction |
+
+This is not GPURT's instance node (GPURT keeps the transform at 0). The exact matrix element order and the meaning
+of the bytes below 0x30 are not read out yet.
+
 The rehydration caller (0x142490A20) skips a resource unless its serialized header has bit 24 set, puts the GPU
 address of the header in `Source` and passes the CPU address of the same bytes (the streaming range's CPU alias,
 [gpu-resources.md](gpu-resources.md)) in the extra array argument.
@@ -101,8 +150,11 @@ with testing all 500 triangles.
 
 ## Unknown
 
-- Where the TLAS is built and what writes the instance nodes the shaders read.
-- The XDXR header the shaders read for a BLAS built at run time (root pointer, fields beyond the nodes).
+- The DLL's TLAS encoding (its console compute shaders write the instance nodes; no CPU path exists), so the full
+  instance-node layout and the header fields beyond the root pointer.
+- The XDXR header the shaders read for a BLAS built at run time beyond the root pointer at 0x30.
+- Whether the slot-101 pipeline is dispatched: the identifiers are fetched, but no DispatchRays call has been found
+  (the X list slot numbering above 70 is not mapped); the 70 ray-tracing programs found are inline compute.
 - Whether the vertex data is always in memory when the game records the rehydration; the CPU path runs at record
   time, the console's GPU path at execution.
 - The meaning of dword 0 bits 31, 17, 2 and 1 (set in every sample), and of dword 15's transform table.
