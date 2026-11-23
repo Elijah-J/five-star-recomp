@@ -30,6 +30,13 @@ and jumps to the image callback with `rcx` = image base. After `LoadLibrary` of 
 and allocates blocks for existing and future threads. ntdll ignores the TLS directory of a DLL without imports, so the
 host imports `kernel32!GetLastError`.
 
+**TLS slot 0.** The linker compiles an executable's thread_local accesses as `mov rax,gs:[58h]; mov rax,[rax]`: an
+executable's slot is always 0 and `_tls_index` is not read. Slot 0 of this process belongs to the host executable, so
+the TLS host of a mapped executable gets two more callbacks around the image's: the first (process and thread attach)
+saves the thread's slot-0 pointer in 8 bytes added after the template and points slot 0 at the executable's block; the
+last (process and thread detach) puts it back before ntdll frees the blocks. Threads that existed before the
+executable was mapped, other than the loading thread, keep the host's slot 0.
+
 **Unresolved imports.** Each gets a stub `mov rcx,id; mov rax,handler; jmp rax` in a code heap that is never writable
 and executable at once. `--unresolved stub` (default) logs the first call and returns 0 or the module's value; `trap`
 terminates on the call; `error` fails the load.
@@ -75,7 +82,7 @@ ntdll answers only for OS-loaded modules; mapping it lets the loader bind that i
 |---|---|
 | `xmem.dll` | `XMemAlloc`: requests of 64 KiB or more, or with a PageSize attribute, from `VirtualAlloc`; others from the aligned native heap, alignment from the attribute bits 24..28 (code n is 2^(n-1), at least 16). `XMemFree` releases what `XMemAlloc` returned and ignores other pointers. `XMemVirtualQuery` fills `MEMORY_BASIC_INFORMATION` and zeroes the 16-byte tail. `XMemGetWorkingSetStatistics` writes peak and current working set. `XMemAllocDefault`/`XMemFreeDefault` as `XMemAlloc`/`XMemFree` |
 | `xmem.dll` pages | `XMemVirtualAlloc` passes only MEM_RESERVE/MEM_COMMIT and the low protection byte to `VirtualAlloc` (a MEM_PHYSICAL reservation only reserves). Physical pages are numbers (64 KiB pages counted in 4 KiB frames, never 0); `XMemMapPhysicalPages` and `XMemMapPhysicalPagesScatter` commit read-write memory at the target (a null page array or a 0 entry decommits). `XMemIsToolsMemAvailable` and `XMemTransferMemory` return 0 |
-| `d3d12_xs.dll` | `D3D12SerializeRootSignature`, `D3D12SerializeVersionedRootSignature`, `D3D12Create[Versioned]RootSignatureDeserializer` forwarded to the PC `d3d12.dll`; everything else E_NOTIMPL (`D3D12XboxCreateDevice` is tested for failure) |
+| `d3d12_xs.dll` | `D3D12SerializeRootSignature`, `D3D12SerializeVersionedRootSignature`, `D3D12Create[Versioned]RootSignatureDeserializer` forwarded to the PC `d3d12.dll`; `D3D12ConfigureVirtualMemoryX` S_OK; everything else E_NOTIMPL (`D3D12XboxCreateDevice` is tested for failure) |
 | `acphal.dll` | APU heap: `ApuCreateHeap` commits one region for both parts; `ApuAlloc` hands out zeroed, aligned blocks of it (first fit); an APU address is the offset plus 0x10000; `ApuFree`, `ApuIsVirtualAddressValid`, `ApuMapVirtualAddress`, `ApuMapApuAddress` follow. `AcpHalCreate` and `AcpHalAllocateShapeContexts` return E_NOTIMPL (no SHAPE hardware), so audio start-up fails cleanly |
 | `chad.dll`, `xapu.dll` | XDsp and XApu connect, activate, submit, enqueue and dequeue return E_NOTIMPL; `XApuGetResultCount` 0; disconnect and deactivate 0 |
 | `xg_xs.dll` | `XGCreateTextureComputer`, `XGSuggestSwizzleMode` return E_NOTIMPL (console tiling not implemented) |
@@ -87,7 +94,7 @@ ntdll answers only for OS-loaded modules; mapping it lets the loader bind that i
 | `LoadLibrary{A,W,ExA,ExW}` (any module) | a mapped image: its base, reference counted; an Xbox-only module: a read-only page with a minimal PE header (a virtual module); a manual module or a DLL in the search directories, by name or by a path inside one: mapped now; data-file loads and the rest: the OS |
 | `GetProcAddress` (any module) | mapped image: its exports; virtual module: the shim table (unknown name: NULL, error 127); OS module: the "*" shim of that name if there is one, else the real export |
 | `FreeLibrary` (any module) | mapped image: reference count down; an image first mapped by `LoadLibrary` and imported by no other image is unloaded at 0; virtual module: TRUE |
-| `CreateFile{W,A}`, `CreateFile2`, `GetFileAttributes{W,ExW}`, `fopen`, `_wfopen`, `_fsopen`, `_wfsopen`, `_open`, `_wopen` (any module) | the file overlay (below), then the real function; an ANSI call that is redirected opens the mod file through the wide function |
+| `CreateFile{W,A}`, `CreateFile2`, `GetFileAttributes{W,ExW}`, `fopen`, `_wfopen`, `_fsopen`, `_wfsopen`, `_open`, `_wopen` (any module) | the console package drive and the file overlay (below), then the real function; an ANSI call that is redirected opens the mod file through the wide function |
 | `XGameRuntimeInitialize*`, `XGameRuntimeIsFeatureAvailable` | succeed; every feature available except XAppCapture, XSpeechSynthesizer and XGameStreaming |
 | `XTaskQueue*` | Manual, ThreadPool, SerializedThreadPool and Immediate ports; composite queues; delayed callbacks; waiters (re-armed after each signal); monitors; terminate (pending callbacks run with `canceled = true`); duplicate and close reference counted; a process queue (ThreadPool/ThreadPool) created on first use |
 | `XAsync*` | Begin, Schedule, Complete, GetStatus (with wait), GetResultSize, GetResult (identity and buffer checked), Cancel, Run; DoWork on the work port, the completion routine on the completion port, Cleanup once |
@@ -157,8 +164,11 @@ outside the image, an unknown shim). A skipped or failed patch writes nothing.
 package root (`--package-root`, else the main image's directory) through one of the file shims, the loader takes the
 path relative to the root and opens the same relative path in the first mod folder that contains that file. Paths
 outside the root, and files no mod folder has, open unchanged. `\\?\` prefixes and relative paths are resolved first.
-Each redirect is a detail line in the log (`[overlay] CreateFileW("...") -> "..."`). Without `--mods` the shims only
-forward.
+Each redirect is a detail line in the log (`[overlay] CreateFileW("...") -> "..."`), and with a log file every path
+the file shims see is one (`[file] GetFileAttributesW("...")`).
+
+The console mounts the game package as drive `G:`; a path starting with `G:\` is mapped to the package root before the mod
+folders are consulted.
 
 Directory listings (`FindFirstFile*`) are not merged: a file only a mod folder has opens, but is not listed.
 
