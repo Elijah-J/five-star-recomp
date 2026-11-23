@@ -6,6 +6,7 @@ using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Loading;
 using FiveStar.Loader.Shims.D3D12X.Pipelines;
 using FiveStar.Loader.Shims.Gdk;
+using FiveStar.Loader.Shims.Network;
 
 namespace FiveStar.Benchmarks;
 
@@ -19,7 +20,7 @@ internal static class BenchmarkRuntime
     {
         var log = new LoaderLog(TextWriter.Null, null, false);
         var options = new LoaderOptions([], new HashSet<string>(), UnresolvedMode.Stub, false, Path.GetTempPath(), null, 0);
-        var gdk = new GdkOptions(null, Path.GetTempPath(), Path.GetTempPath(), Path.GetTempPath(), DeviceType, new Version());
+        var gdk = new GdkOptions(null, Path.GetTempPath(), Path.GetTempPath(), Path.GetTempPath(), DeviceType, new Version(), NetworkOptions.Offline);
         var environment = new LoaderEnvironment(string.Empty, TimeProvider.System, IgnoreFailure);
 
         return new LoaderRuntime(options, gdk, new PipelineFolders(null, null), environment, log);

@@ -14,6 +14,7 @@ using FiveStar.Loader.Shims.D3D12X.Pipelines;
 using FiveStar.Loader.Shims.Ffx;
 using FiveStar.Loader.Shims.Gdk;
 using FiveStar.Loader.Shims.Input;
+using FiveStar.Loader.Shims.Network;
 using FiveStar.Loader.Shims.Storage;
 using FiveStar.Loader.Shims.Xg;
 
@@ -60,6 +61,7 @@ internal sealed class LoaderRuntime : IDisposable
         FidelityFx = new FidelityFxBridge(new XboxObjectResolver(D3D12X.Objects), log);
         BvhBuilder = new BvhBuilderService(D3D12X.Objects, Loader, XMemPhysical, log);
 
+        Network = new NetworkSeal(log);
         Gdk = CreateGdk(gdk, environment.Time);
         Overlay = new FileOverlay(Gdk.Config, log);
         Storage = new DStorageFactory(Stubs, CodeHeap, Overlay, new UnsupportedDestinationSink(log), log);
@@ -145,6 +147,9 @@ internal sealed class LoaderRuntime : IDisposable
     /// <summary>XboxBvhBuilder.dll's exports: desktop sizes by default; console sizes and CPU rehydration with --raytracing.</summary>
     public BvhBuilderService BvhBuilder { get; }
 
+    /// <summary>The record of blocked outbound network attempts (WinHTTP, Winsock, libHttpClient).</summary>
+    public NetworkSeal Network { get; }
+
     public GdkServices Gdk { get; }
 
     /// <summary>GameInputCreate and the gamepad, keyboard and mouse sources behind it.</summary>
@@ -181,7 +186,10 @@ internal sealed class LoaderRuntime : IDisposable
         var system = new SystemService(config, boundary);
         var store = new StoreService(config, packages);
         var runtime = new GameRuntimeService(config, Shims, Stubs, CodeHeap, Trace, Log);
-        var platform = new GdkPlatformServices(new EventRegistrations(), new DisplayService(boundary), new AccessibilityService(), new LauncherService(boundary));
+
+        var registrations = new EventRegistrations();
+        var connectivity = new ConnectivityService(options.Network, registrations, taskQueues, boundary);
+        var platform = new GdkPlatformServices(registrations, new DisplayService(boundary), new AccessibilityService(), new LauncherService(boundary), connectivity);
 
         return new GdkServices(config, boundary, taskQueues, async, users, saves, packages, system, store, runtime, platform);
     }

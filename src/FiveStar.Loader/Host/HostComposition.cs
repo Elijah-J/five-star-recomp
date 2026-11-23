@@ -4,6 +4,7 @@
 using FiveStar.Loader.Loading;
 using FiveStar.Loader.Shims.D3D12X.Pipelines;
 using FiveStar.Loader.Shims.Gdk;
+using FiveStar.Loader.Shims.Network;
 
 namespace FiveStar.Loader.Host;
 
@@ -40,7 +41,9 @@ internal static class HostComposition
         string dataRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), DataFolder, GdkDataFolder);
         uint deviceType = options.DeviceType ?? SystemService.XboxScarlettAnaconda;
 
-        return new GdkOptions(options.PackageRoot, options.SaveDirectory, dataRoot, Environment.CurrentDirectory, deviceType, Environment.OSVersion.Version);
+        var network = new NetworkOptions(options.NetworkMode, options.NetworkLevel);
+
+        return new GdkOptions(options.PackageRoot, options.SaveDirectory, dataRoot, Environment.CurrentDirectory, deviceType, Environment.OSVersion.Version, network);
     }
 
     public static PipelineFolders CreatePipelineFolders(HostOptions options)

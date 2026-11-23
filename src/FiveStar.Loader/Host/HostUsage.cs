@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Five Star Recomp contributors.
+// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 namespace FiveStar.Loader.Host;
@@ -49,6 +49,10 @@ internal static class HostUsage
           --xdsp-convolution     run the XDsp convolution effects on the CPU (default: silence; response format inferred)
           --package-root <dir>  package root for XPackage / MicrosoftGame.config (default: main image directory)
           --device-type <n>      XSystemGetDeviceType result (default 7 = XboxScarlettAnaconda)
+          --network <mode>       offline (default: connectivity level None) | sealed-online (InternetAccess); either
+                                 way every WinHTTP, Winsock and libHttpClient connection fails inside the process
+          --network-level <l>    connectivity level reported instead: 0..4 or Unknown, None, LocalAccess,
+                                 InternetAccess, ConstrainedInternetAccess
           --patches <path>       code patch file, or folder of *.fspatch files (repeatable, applied in order)
           --mods <dir>           mod folder laid over the package root (repeatable, first has priority)
           --manual <a.dll,b.dll> map these modules with this loader instead of LoadLibrary (repeatable)
