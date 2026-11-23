@@ -12,7 +12,9 @@ the Windows system DLL.
 | `d3d12_xs.dll` | the device on a desktop D3D12 device: desktop-compatible methods forward through generated thunks, console-only ones are logged; compute queues, command lists and frame pacing; root-signature helpers forwarded to `d3d12.dll` |
 | `xg_xs.dll` | texture layout computers over the console's tiling (sizes, mip offsets, tiling, copies in and out) |
 | `xcrdapi.dll` | DirectStorage: files read on worker threads and zlib chunks inflated into memory, exactly as stored |
-| `acphal.dll`, `chad.dll`, `xapu.dll` | the APU heap on ordinary memory; the audio hardware reports itself unavailable |
+| `xapu.dll` | the console's Opus decoder queue, run on the CPU |
+| `acphal.dll` | the APU heap on ordinary memory and the SHAPE XMA decoder contexts (no XMA decoding yet) |
+| `chad.dll` | the audio DSP (XDsp) reports itself unavailable |
 | `GameInput.dll` | keyboard, mouse and gamepads |
 | `xgameruntime.dll` | offline GDK runtime (below); the game loads it at run time and gets the loader's implementation |
 

@@ -8,12 +8,13 @@ The executable is in hand; `fivestar exe analyze` reports its imports and GDK ca
 
 | Item | State |
 |---|---|
-| GPU memory | next blocker. On the console a GPU address is the CPU address; the game places buffers in its own xmem pages. Plan: open the page sections as D3D12 heaps, place resources in them, and translate game addresses wherever they reach descriptors or commands ([d3d12x-shim.md](https://github.com/ThatRecompDev/five-star-recomp/blob/main/docs/d3d12x-shim.md)) |
-| D3D12.X objects | queues, command lists, allocators, resources and heaps wrapped like the device, so console-only methods are reached and logged; the command-list methods are mapped from a run-time trace |
-| Pipeline creation | the game's five pipeline-creation methods (from its pipeline cache, from a state stream, compute, and derived variants) are recovered and build desktop pipelines from the translated shaders on WARP; wiring them into the device, picking per-GPU program variants and slot 101 (ray-tracing state objects) are open ([d3d12x-pipelines.md](https://github.com/ThatRecompDev/five-star-recomp/blob/main/docs/d3d12x-pipelines.md)) |
+| Device removal | next blocker: after the descriptor heaps an invalid call removes the desktop device (device slot 70 is the first unknown call); the D3D12 debug layer should name it |
+| GPU memory | buffers at game-chosen addresses are placed in heaps opened over the game's own pages, and a table maps game GPU addresses to desktop ones. Open: translating those addresses where they reach commands and descriptors, ranges that span several page sections, and the main descriptor heap's 1,245,184 descriptors (the desktop limit is 1,000,000) ([d3d12x-shim.md](https://github.com/ThatRecompDev/five-star-recomp/blob/main/docs/d3d12x-shim.md)) |
+| Command lists | the game writes most commands itself into the list's own buffer and calls a method only when it is full; about 50 of the list's methods are mapped to desktop ones; barriers, texture copies and the console-only methods are open |
+| Pipeline creation | the game's five pipeline-creation methods (from its pipeline cache, from a state stream, compute, and derived variants) build desktop pipelines from the translated shaders; picking per-GPU program variants and slot 101 (ray-tracing state objects) are open ([d3d12x-pipelines.md](https://github.com/ThatRecompDev/five-star-recomp/blob/main/docs/d3d12x-pipelines.md)) |
 | Pipeline state | whole root signatures (the cache lists only the bindings each shader uses, with their user SGPRs) and the shader constants layout; blend, depth, raster state, render-target and depth formats and vertex formats already come from the driver's pipeline cache |
 | Present | the queue's present and frame-event methods, on a swap chain for the game's own window |
-| Audio | the console's audio hardware reports itself unavailable; what the game falls back to is not known yet |
+| Audio | the game mixes on the CPU and plays through WASAPI but leaves decoding to the console hardware: Opus (99.9% of sounds) now decodes through a CPU copy of the console's queue; XMA2 (1,818 streams) needs a decoder ([audio-runtime.md](https://github.com/ThatRecompDev/five-star-recomp/blob/main/docs/audio-runtime.md)) |
 | Archive file table | names and exact entry boundaries stay encrypted; the game opens and reads its archives itself at run time |
 
 ## Research
@@ -29,7 +30,7 @@ The executable is in hand; `fivestar exe analyze` reports its imports and GDK ca
 
 | Item | State |
 |---|---|
-| D3D12.X runtime | the game's device, compute queues, command lists and frame pacing run on desktop D3D12; adapters, the bindless root signature and pipeline creation exist; no command translation yet |
+| D3D12.X runtime | every object the game creates is a wrapper over a desktop object, with a registration API for console-only methods; no command translation yet |
 | Shader linking | real VS/MS+PS pairs link and build pipelines; values filled for inputs a producer never writes are not yet checked against real shading |
 | Wave size | emulated or pinned; still open: 19 compute programs with several waves per group need 64-lane waves, 445 wave64 pixel and 1 vertex program read lanes a 32-lane GPU does not have, and 37 mesh programs that compile only through the mesh fallback need 64-lane waves ([details](Shader-Translation.md#wave-size)) |
 | Structured shader control flow | the default since a differential check on real programs (see [Status](Status.md)) |
