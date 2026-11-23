@@ -85,6 +85,9 @@ internal sealed record HostOptions
     /// <summary>Present a test pattern instead of the game's frame (<c>--present-test</c>).</summary>
     public bool PresentTest { get; set; }
 
+    /// <summary>XboxBvhBuilder.dll's CPU paths: console sizes and BLAS rehydration (<c>--raytracing</c>).</summary>
+    public bool RayTracing { get; set; }
+
     public bool Verbose { get; set; }
 
     public bool ListSafeCalls { get; set; }

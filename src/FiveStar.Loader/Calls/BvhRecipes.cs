@@ -10,6 +10,7 @@ internal static unsafe class BvhRecipes
 {
     public const string Module = "xboxbvhbuilder.dll";
     public const string Set64BitMortonCodes = "?Set64BitMortonCodes@XboxBvhBuilder@@QEAAX_N@Z";
+    public const string PrebuildInfo = "?GetRaytracingAccelerationStructurePrebuildInfo@XboxBvhBuilder@@QEAAXPEBUD3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS@@PEBUD3D12XBOX_XDXR_STREAM_DESC@@PEAUD3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO@@@Z";
     public const string ValidateRehydrate = "?ValidateRehydrateAccelerationStructureBuildDesc@XboxBvhBuilder@@QEAAJPEBUD3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC@@@Z";
 
     /// <summary>The global Set64BitMortonCodes writes (from the disassembly: <c>mov [rip+global],dl; ret</c>).</summary>
@@ -27,6 +28,27 @@ internal static unsafe class BvhRecipes
 
     /// <summary>D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL.</summary>
     private const uint BottomLevel = 1;
+
+    // D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS (0x18) and D3D12_RAYTRACING_GEOMETRY_DESC (0x38), d3d12.h.
+    private const int InputsSize = 0x18;
+    private const int InputsCountOffset = 0x08;
+    private const int InputsGeometriesOffset = 0x10;
+    private const int GeometrySize = 0x38;
+    private const int VertexFormatOffset = 0x14;
+    private const int VertexCountOffset = 0x1C;
+    private const int VertexStrideOffset = 0x30;
+
+    /// <summary>DXGI_FORMAT_R32G32B32_FLOAT, one f32 xyz per vertex.</summary>
+    private const uint PositionFormat = 6;
+    private const uint PositionStride = 12;
+    private const uint TriangleVertices = 3;
+
+    /// <summary>The prebuild info's three sizes; the result size is rounded up to 1 KiB by the DLL.</summary>
+    private const int PrebuildFields = 3;
+    private const int ResultField = 0;
+    private const int ScratchField = 1;
+    private const int UpdateField = 2;
+    private const ulong ResultAlignment = 1024;
 
     private const int DestSize = 0x10000;
     private const int SourceSize = 0x1000;
@@ -51,6 +73,34 @@ internal static unsafe class BvhRecipes
         byte off = *flag;
 
         return new ExportCallResult($"global flag (+0x{MortonFlagRva:x}): initial={initial}, after (true)={on}, after (false)={off}", on == 1 && off == 0);
+    }
+
+    /// <summary>
+    /// The prebuild size query for a one-triangle BLAS with a zeroed stand-in object: CPU arithmetic over the inputs,
+    /// the object is passed nowhere. Expects a nonzero result size rounded to 1 KiB and a nonzero scratch size.
+    /// </summary>
+    public static ExportCallResult ConsoleSizes(ExportCallContext call)
+    {
+        var query = (delegate* unmanaged<nint, byte*, void*, ulong*, void>)call.Function;
+        byte* self = stackalloc byte[FakeThisSize];
+        byte* inputs = stackalloc byte[InputsSize];
+        byte* geometry = stackalloc byte[GeometrySize];
+        ulong* info = stackalloc ulong[PrebuildFields];
+        new Span<byte>(self, FakeThisSize).Clear();
+
+        new Span<byte>(inputs, InputsSize).Clear();
+        new Span<byte>(geometry, GeometrySize).Clear();
+        *(uint*)inputs = BottomLevel;
+        *(uint*)(inputs + InputsCountOffset) = 1;
+        *(ulong*)(inputs + InputsGeometriesOffset) = (ulong)geometry;
+
+        *(uint*)(geometry + VertexFormatOffset) = PositionFormat;
+        *(uint*)(geometry + VertexCountOffset) = TriangleVertices;
+        *(ulong*)(geometry + VertexStrideOffset) = PositionStride;
+        query((nint)self, inputs, null, info);
+        bool expected = info[ResultField] != 0 && info[ResultField] % ResultAlignment == 0 && info[ScratchField] != 0;
+
+        return new ExportCallResult($"one-triangle BLAS: result {info[ResultField]}, scratch {info[ScratchField]}, update {info[UpdateField]}", expected);
     }
 
     /// <summary>

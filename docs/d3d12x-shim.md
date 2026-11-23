@@ -271,7 +271,8 @@ passes 0x3000000) and logs the serializer's message when it still fails.
 
 **XboxBvhBuilder.dll.** Its constructor builds compute pipelines from console shader code (device slot 62) and
 throws when that fails. Its seven exports bind to shims: prebuild sizes from the desktop's
-GetRaytracingAccelerationStructurePrebuildInfo, builds, copies and rehydration logged once and skipped.
+GetRaytracingAccelerationStructurePrebuildInfo, builds, copies and rehydration logged once and skipped. With
+`--raytracing` the DLL's own CPU paths give console sizes and rehydrate BLASes ([raytracing.md](raytracing.md)).
 
 ### Binding
 
