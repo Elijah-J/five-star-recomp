@@ -42,6 +42,39 @@ public sealed class VehicleFragmentTests
         Assert.Equal([0.368, 0.368, 0.345, 0.345], car.Wheels.Select(wheel => Math.Round(wheel.Radius, 3)));
     }
 
+    [DumpFact]
+    public void A_muscle_car_is_skinned_to_its_bones_and_its_inverse_binds_undo_the_bone_transforms()
+    {
+        var car = Read(0x10EC398010, "dominator9_hi.#ft");
+        var wheel = car.Skeleton.IndexOf("wheel_lf");
+
+        Assert.True(Matrix4x4.Invert(car.Skeleton.Bones[wheel].InverseBind!.Value, out var bind));
+        Assert.Equal(car.Skeleton.World(wheel).Translation, bind.Translation, new Tolerance(0.001f));
+
+        // Joints name bones (u16 on this 386-bone skeleton where needed); weights sum to 255 per vertex.
+        var skinned = car.Lod(0).Where(geometry => geometry.Extras.Skin is not null).ToList();
+        Assert.Contains(skinned, geometry => geometry.Extras.Skin!.Joints.Any(joint => joint > byte.MaxValue));
+
+        foreach (var geometry in skinned)
+        {
+            var skin = geometry.Extras.Skin!;
+
+            Assert.All(skin.Joints, joint => Assert.InRange(joint, 0, car.Skeleton.Bones.Count - 1));
+            Assert.All(skin.Weights.Chunk(skin.Influences), weights => Assert.Equal(255, weights.Sum(weight => weight)));
+        }
+    }
+
+    [DumpFact]
+    public void An_ambulance_body_of_more_than_65535_meshlet_vertices_decodes_whole()
+    {
+        // Geometry 19: 542 meshlets, 59,541 triangles over 67,575 remap entries; the u16 meshlet starts wrap.
+        var ambulance = Read(0x10B5111010, "ambulance_hi.#ft");
+        var body = ambulance.Lod(0).Single(geometry => geometry.MeshletCount == 542);
+
+        Assert.Empty(ambulance.Problems);
+        Assert.Equal(59541, body.TriangleCount);
+    }
+
     private static Drawable Read(long offset, string name)
     {
         using var source = new MappedFileSource(Path.Combine(DumpFactAttribute.Folder!, Archive));

@@ -17,6 +17,7 @@ namespace FiveStar.Formats.Models;
 /// <param name="TexCoords">Null when slot 3 is missing or of another format.</param>
 /// <param name="Indices">Three vertex indices per triangle.</param>
 /// <param name="Streams">The vertex buffer's stream table.</param>
+/// <param name="Extras">Tangents, further texture coordinates and skin influences.</param>
 public sealed record MeshGeometry(
     int Lod,
     int Offset,
@@ -27,7 +28,8 @@ public sealed record MeshGeometry(
     float[]? Normals,
     float[]? TexCoords,
     int[] Indices,
-    IReadOnlyList<VertexChannel> Streams)
+    IReadOnlyList<VertexChannel> Streams,
+    VertexExtras Extras)
 {
     private const int Corners = 3;
 
