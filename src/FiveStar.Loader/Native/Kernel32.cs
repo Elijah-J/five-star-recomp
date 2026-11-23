@@ -116,6 +116,20 @@ internal static unsafe class Kernel32
     [DllImport(Library, SetLastError = true)]
     public static extern nint CreateFile2(char* name, uint access, uint share, uint disposition, nint parameters);
 
+    /// <summary>ReadFile with an OVERLAPPED: the read starts at the overlapped offset and signals its event.</summary>
+    [DllImport(Library, SetLastError = true)]
+    public static extern int ReadFile(nint file, byte* buffer, uint bytes, uint* read, FileOverlapped* overlapped);
+
+    [DllImport(Library, SetLastError = true)]
+    public static extern int GetOverlappedResult(nint file, FileOverlapped* overlapped, uint* transferred, int wait);
+
+    [DllImport(Library, SetLastError = true)]
+    public static extern nint CreateEventW(nint security, int manualReset, int initialState, char* name);
+
+    /// <summary>GetFileInformationByHandle: <paramref name="information"/> is a BY_HANDLE_FILE_INFORMATION.</summary>
+    [DllImport(Library, SetLastError = true)]
+    public static extern int GetFileInformationByHandle(nint file, void* information);
+
     [DllImport(Library, SetLastError = true)]
     public static extern uint GetFileAttributesW(char* name);
 

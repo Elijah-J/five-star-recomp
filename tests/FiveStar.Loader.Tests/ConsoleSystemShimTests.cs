@@ -14,9 +14,9 @@ public sealed unsafe class ConsoleSystemShimTests
     private const uint HeapBytes = 0x100000;
     private const uint Alignment = 0x800;
 
-    /// <summary>Slot 8 is the staging buffer size the game sets right after creating the factory; slot 4 creates a queue.</summary>
+    /// <summary>Slot 8 is the staging buffer size the game sets right after creating the factory; slot 3 is never called.</summary>
     private const int StagingBufferSizeSlot = 8;
-    private const int CreateQueueSlot = 4;
+    private const int UncalledSlot = 3;
 
     [Fact]
     public void Apu_heap_blocks_are_real_memory_and_translate_both_ways()
@@ -49,7 +49,7 @@ public sealed unsafe class ConsoleSystemShimTests
     }
 
     [Fact]
-    public void Storage_factory_accepts_the_staging_size_and_refuses_the_rest()
+    public void Storage_factory_accepts_the_staging_size_and_refuses_a_slot_the_game_never_calls()
     {
         using var test = TestRuntime.Create();
         var getFactory = (delegate* unmanaged<Guid*, nint*, int>)test.Shim("XCRDAPI.dll", "DStorageGetFactory");
@@ -59,9 +59,9 @@ public sealed unsafe class ConsoleSystemShimTests
         Assert.Equal(Ok, getFactory(&iid, &factory));
         nint* vtable = *(nint**)factory;
         var setStagingBufferSize = (delegate* unmanaged<nint, uint, int>)vtable[StagingBufferSizeSlot];
-        var createQueue = (delegate* unmanaged<nint, nint, nint, nint, int>)vtable[CreateQueueSlot];
+        var uncalled = (delegate* unmanaged<nint, nint, nint, nint, int>)vtable[UncalledSlot];
 
         Assert.Equal(Ok, setStagingBufferSize(factory, 0x2000000));
-        Assert.Equal(NotImplemented, createQueue(factory, 0, 0, 0));
+        Assert.Equal(NotImplemented, uncalled(factory, 0, 0, 0));
     }
 }

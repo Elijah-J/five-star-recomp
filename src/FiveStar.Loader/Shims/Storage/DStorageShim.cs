@@ -9,8 +9,8 @@ namespace FiveStar.Loader.Shims.Storage;
 /// <summary>
 /// XCRDAPI.dll, the console DirectStorage runtime: <c>HRESULT DStorageGetFactory(REFIID riid, void** ppv)</c>
 /// (dstorage.h). The PC DirectStorage runtime is not a system DLL and its interfaces differ from the console ones,
-/// so the shim hands out <see cref="DStorageFactoryStub"/> instead: the game stops at an <c>int3</c> when this call
-/// fails or yields null, while a failed CreateQueue later is handled (the queue stays null).
+/// so the shim hands out <see cref="DStorageFactory"/>, a CPU implementation: the game stops at an <c>int3</c> when
+/// this call fails or yields null.
 /// </summary>
 [ShimModule(Module, UnresolvedReturn = HResult.NotImplemented)]
 internal static unsafe class DStorageShim

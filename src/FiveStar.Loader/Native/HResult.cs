@@ -18,6 +18,9 @@ internal static class HResult
     public const int OutOfMemory = unchecked((int)0x8007000E);
     public const int InvalidArgument = unchecked((int)0x80070057);
 
+    /// <summary>HRESULT_FROM_WIN32(ERROR_INVALID_DATA).</summary>
+    public const int InvalidData = unchecked((int)0x8007000D);
+
     /// <summary>HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER).</summary>
     public const int NotSufficientBuffer = unchecked((int)0x8007007A);
 
@@ -25,6 +28,20 @@ internal static class HResult
     public const int NotFound = unchecked((int)0x80070490);
 
     public const int ClassNotRegistered = unchecked((int)0x80040154);
+
+    /// <summary>HRESULT_FROM_WIN32: FACILITY_WIN32 with the failure bit, or S_OK for ERROR_SUCCESS.</summary>
+    public static int FromWin32(int error)
+    {
+        const int Win32Facility = unchecked((int)0x80070000);
+        const int CodeMask = 0xFFFF;
+
+        if (error <= 0)
+        {
+            return error;
+        }
+
+        return Win32Facility | (error & CodeMask);
+    }
 
     public static bool Failed(int hr)
     {

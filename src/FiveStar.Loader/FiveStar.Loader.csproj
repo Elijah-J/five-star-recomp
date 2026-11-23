@@ -12,6 +12,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- The zlib inflater the DirectStorage queues decode archive chunks with. -->
+    <ProjectReference Include="..\FiveStar.Formats\FiveStar.Formats.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="FiveStar.Loader.Tests" />
     <InternalsVisibleTo Include="FiveStar.Benchmarks" />
   </ItemGroup>
