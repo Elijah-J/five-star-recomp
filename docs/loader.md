@@ -50,10 +50,7 @@ flowchart TD
   exp -->|"no"| unres
   img -->|"no"| sys{"LoadLibraryExW from System32<br/>and the export found?"}
   sys -->|"yes"| bsys["the System32 export"]
-  sys -->|"not in System32"| pkg{"DLL in the search directories?"}
-  pkg -->|"yes"| exp
-  pkg -->|"no"| unres
-  sys -->|"export missing"| unres
+  sys -->|"no"| unres
 ```
 
 1. **Shim.** Matched on (module, symbol), then through a module alias, then on ("*", symbol). A module declared
@@ -67,8 +64,6 @@ flowchart TD
    `concrt140`, `vccorlib140`, `vcomp140`. Forwarders resolve through the same order.
 3. **System32.** `LoadLibraryExW(name, LOAD_LIBRARY_SEARCH_SYSTEM32)`, so API sets resolve and a same-named DLL in
    the game folder is never picked up.
-4. **Packaged DLL.** A module System32 does not have is mapped from the search directories, so the DLLs shipped next
-   to the executable (`XboxBvhBuilder.dll`, `Bink2Scarlett.dll`, `libHttpClient.GDK.dll`, ...) load as dependencies.
 
 The shipped `vcruntime140.dll` is mapped by default because `_CxxThrowException` calls `RtlPcToFileHeader`, which
 ntdll answers only for OS-loaded modules; mapping it lets the loader bind that import to its own shim. With
@@ -323,7 +318,7 @@ entry point (the CRT startup, the static initializers, then `main`) runs on a th
   search, so the game's own handlers still run.
 
 `--run-timeout <s>` suspends the main thread if the entry point has not returned after s seconds, logs the same
-record for it and exits with code 3. Run boots in a child process: the CRT ends the process through `exit`.
+record for it and exits with code 3. `--trace-system` also traces imports bound to System32 (the ring then covers far\nless time). Run boots in a child process: the CRT ends the process through `exit`.
 
 The loader is built with `<CETCompat>false</CETCompat>`: with CET shadow stacks, SEH resuming inside mapped code
 fail-fasts (0x30).

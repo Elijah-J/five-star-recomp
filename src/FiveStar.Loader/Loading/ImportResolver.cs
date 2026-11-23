@@ -302,9 +302,7 @@ internal sealed unsafe class ImportResolver
 
             if (handle == 0)
             {
-                int error = Marshal.GetLastPInvokeError();
-
-                return ResolvePackaged(module, key, name, ordinal, delay) ?? Unresolved(module, symbol, delay, $"LoadLibrary failed (error {error})", 0);
+                return Unresolved(module, symbol, delay, $"LoadLibrary failed (error {Marshal.GetLastPInvokeError()})", 0);
             }
         }
 
@@ -316,21 +314,6 @@ internal sealed unsafe class ImportResolver
         }
 
         return new ImportRecord(module, symbol, ResolutionSource.System, SystemModules.Describe(address), address, delay);
-    }
-
-    /// <summary>A DLL System32 does not have, shipped next to an image (the search directories): mapped by this loader.</summary>
-    private ImportRecord? ResolvePackaged(string module, string key, string? name, uint ordinal, bool delay)
-    {
-        string? file = _loader.FindModuleFile(key);
-
-        if (file is null)
-        {
-            return null;
-        }
-
-        _loader.Load(file, false);
-
-        return ResolveImage(module, key, name, ordinal, delay, 0);
     }
 
     private nint LoadSystemModule(string key)
