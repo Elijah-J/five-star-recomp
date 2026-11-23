@@ -44,6 +44,12 @@ internal sealed class X64Emitter
     private static readonly byte[] MovqXmm3FromRspDisp32 = [0xF3, 0x0F, 0x7E, 0x9C, 0x24];
     private static readonly byte[] MovEaxFromRipDisp32 = [0x8B, 0x05];
     private static readonly byte[] MovR11MemFromEax = [0x41, 0x89, 0x03];
+    private static readonly byte[] MovRcxFromRcxDisp8 = [0x48, 0x8B, 0x49];
+    private static readonly byte[] MovRdxFromRdxDisp8 = [0x48, 0x8B, 0x52];
+    private static readonly byte[] MovRaxFromRcxEncoding = [0x48, 0x8B, 0x01];
+    private static readonly byte[] MovRaxFromRdxEncoding = [0x48, 0x8B, 0x02];
+    private static readonly byte[] XchgRcxRdxEncoding = [0x48, 0x87, 0xCA];
+    private static readonly byte[] JmpRaxDisp32Encoding = [0xFF, 0xA0];
 
     private readonly List<byte> _code = [];
 
@@ -210,6 +216,43 @@ internal sealed class X64Emitter
     public void StoreEaxToR11()
     {
         Emit(MovR11MemFromEax);
+    }
+
+    /// <summary><c>mov rcx,[rcx+disp8]</c>.</summary>
+    public void LoadRcxFromRcx(byte displacement)
+    {
+        Emit(MovRcxFromRcxDisp8, displacement);
+    }
+
+    /// <summary><c>mov rdx,[rdx+disp8]</c>.</summary>
+    public void LoadRdxFromRdx(byte displacement)
+    {
+        Emit(MovRdxFromRdxDisp8, displacement);
+    }
+
+    /// <summary><c>mov rax,[rcx]</c>.</summary>
+    public void LoadRaxFromRcx()
+    {
+        Emit(MovRaxFromRcxEncoding);
+    }
+
+    /// <summary><c>mov rax,[rdx]</c>.</summary>
+    public void LoadRaxFromRdx()
+    {
+        Emit(MovRaxFromRdxEncoding);
+    }
+
+    /// <summary><c>xchg rcx,rdx</c>.</summary>
+    public void SwapRcxRdx()
+    {
+        Emit(XchgRcxRdxEncoding);
+    }
+
+    /// <summary><c>jmp qword ptr [rax+disp32]</c>: a tail call through a vtable slot.</summary>
+    public void JmpRaxIndirect(int displacement)
+    {
+        Emit(JmpRaxDisp32Encoding);
+        Emit32((uint)displacement);
     }
 
     /// <summary>Pads with <c>int3</c> to a multiple of <paramref name="alignment"/>.</summary>

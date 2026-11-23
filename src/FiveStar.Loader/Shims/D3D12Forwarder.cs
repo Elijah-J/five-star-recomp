@@ -60,6 +60,16 @@ internal sealed unsafe class D3D12Forwarder
         return hr;
     }
 
+    /// <summary>HRESULT D3D12CreateDevice(IUnknown* adapter, D3D_FEATURE_LEVEL, REFIID, void**) on the default adapter.</summary>
+    public int CreateDevice(int minimumFeatureLevel, Guid* iid, nint* device)
+    {
+        var target = (delegate* unmanaged<nint, int, Guid*, nint*, int>)Export("D3D12CreateDevice");
+        int hr = target(0, minimumFeatureLevel, iid, device);
+        _log.Detail($"  [d3d12_xs] D3D12CreateDevice(level=0x{minimumFeatureLevel:x}) -> 0x{hr:x8}");
+
+        return hr;
+    }
+
     private nint Export(string name)
     {
         lock (_gate)

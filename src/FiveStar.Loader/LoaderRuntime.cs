@@ -7,6 +7,7 @@ using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Loading;
 using FiveStar.Loader.Mods;
 using FiveStar.Loader.Shims;
+using FiveStar.Loader.Shims.D3D12X;
 using FiveStar.Loader.Shims.Gdk;
 using FiveStar.Loader.Shims.Input;
 
@@ -38,6 +39,8 @@ internal sealed class LoaderRuntime : IDisposable
 
         XMem = new XMemAllocator(Images, log);
         D3D12 = new D3D12Forwarder(log);
+        D3D12X = new XboxDeviceFactory(D3D12, Stubs, CodeHeap, log);
+
         Gdk = CreateGdk(gdk, environment.Time);
         Overlay = new FileOverlay(Gdk.Config, log);
         RecipeAllocator = new RecipeAllocator();
@@ -82,6 +85,9 @@ internal sealed class LoaderRuntime : IDisposable
     public XMemAllocator XMem { get; }
 
     public D3D12Forwarder D3D12 { get; }
+
+    /// <summary>D3D12XboxCreateDevice: the D3D12.X device on a desktop device.</summary>
+    public XboxDeviceFactory D3D12X { get; }
 
     public GdkServices Gdk { get; }
 
