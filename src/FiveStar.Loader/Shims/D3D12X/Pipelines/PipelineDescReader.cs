@@ -39,7 +39,8 @@ internal static unsafe class PipelineDescReader
         }
 
         var (layoutAddress, layoutSize) = GameMemory.Range(desc, PipelineLayout.CachedInputLayoutField);
-        var layout = Elements(GameMemory.Copy(layoutAddress, layoutSize));
+        var layoutMeta = GameMemory.Copy(layoutAddress, layoutSize);
+        var layout = Elements(layoutMeta);
         var shaders = new List<ShaderSource>();
 
         for (var slot = 0; slot < PipelineLayout.CachedSlotCount; slot++)
@@ -52,7 +53,20 @@ internal static unsafe class PipelineDescReader
             }
         }
 
-        return CachedStateMapping.Describe(FixedFunctionDecoder.Decode(registers), *(nint*)desc, shaders, layout);
+        var state = FixedFunctionDecoder.Decode(registers);
+
+        return CachedStateMapping.Describe(state, Targets(layoutMeta), *(nint*)desc, shaders, layout);
+    }
+
+    /// <summary>The formats the record's 0x0C entry stores ahead of the input layout; null when the entry is absent.</summary>
+    private static PipelineTargets? Targets(byte[] meta)
+    {
+        if (meta.Length == 0)
+        {
+            return null;
+        }
+
+        return PipelineTargetsParser.Parse(meta);
     }
 
     /// <summary>Slot 55: <paramref name="count"/> override entries of <see cref="PipelineLayout.OverrideStride"/> bytes.</summary>

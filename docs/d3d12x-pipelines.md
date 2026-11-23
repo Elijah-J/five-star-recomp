@@ -122,10 +122,20 @@ The override array has 0x14C-byte entries, a u32 kind then the desc:
 
 | Kind | Desc |
 |---|---|
-| 0 | `D3D12_RASTERIZER_DESC` |
-| 1 | `D3D12_DEPTH_STENCIL_DESC` |
+| 0 | `D3D12_DEPTH_STENCIL_DESC` (write mask 0 when depth is off) |
+| 1 | `D3D12_RASTERIZER_DESC` |
 | 2 | `D3D12_BLEND_DESC` |
-| 5 | written after kind 1 when the state asks for it: 16 zero bytes, the stencil read and write masks, 0; meaning unknown |
+| 5 | written after kind 0 when the state asks for it: 16 zero bytes, the stencil read and write masks, 0; meaning unknown |
+
+Each desc is built from the compact state tables with desktop enum values. Entries come in the order rasterizer,
+depth-stencil (then 5), blend, each only when its hash differs.
+
+### Topology type
+
+The stream's topology type comes from the state's topology byte (+0x1E) through a table (0x1461edaac, 4 for bytes
+above 20). The table yields 0 to 4 and 19 for byte 17. The command list's topology setter (0x140032570) passes
+topologies 6 and 0x13 to the D3D12 interface as triangle lists, so 19 is a triangle-class type (*inferred*: a
+rectangle list) and becomes `TRIANGLE`; so does 0.
 
 ## Translation
 
@@ -147,13 +157,30 @@ flowchart LR
 | Shader stage | from the program's hardware stage: VS, PS, GS, NGG as mesh shader (no input assembler then) |
 | Root signature | `BindlessRootSignature`, created once per device; the game's root signature is kept in the description for binding translation |
 | Input layout | element n of a cache layout becomes `ATTR` n; a stream element becomes `ATTR` p, p its position among the non-system ISG1 inputs of the VS; elements the VS does not read become `UNUSED` k |
-| Blend, rasterizer, depth-stencil, sample mask, formats, topology, sample desc | passed through (stream); decoded from the context registers (cache) with 0 values replaced by the D3D12 default |
-| Depth format (cache) | not stored: D32_FLOAT, or D32_FLOAT_S8X24_UINT with stencil (*inferred*) |
-| Derive | the base pipeline's description (kept per created pipeline) with the overrides applied, created anew |
+| Blend, rasterizer, depth-stencil | passed through (stream); decoded from the context registers (cache) with 0 values replaced by the D3D12 default |
+| Topology type | 1 to 4 pass; 0, the console type 19 and other values become `TRIANGLE` (stream and cache) |
+| Render-target and depth formats, sample mask and count (cache) | the record's 0x0C entry ([pipeline-cache.md](pipeline-cache.md#pipeline-outputs-and-vertex-input-layout)); the console's D16_UNORM_S8_UINT (118) becomes D32_FLOAT_S8X24_UINT (`DepthFormats`). Only without that entry are they guessed from the registers |
+| Derive | the base pipeline's description (kept per created pipeline) with the overrides applied, created anew; the formats are the base's, which the game found by a pipeline hash over them |
 
-`TranslatedProgramLibrary` reads `<name>.dxil` from the output of `fivestar shader translate`, finding names through a
+`TranslatedProgramLibrary` reads DXIL from the output of `fivestar shader translate`, finding names through a
 `ProgramIndex` of the extracted programs. A description that cannot be read is logged once and answered with
 E_NOTIMPL; a shader without a translation with HRESULT_FROM_WIN32(ERROR_NOT_FOUND).
+
+### Variant per adapter
+
+When the translated folder holds `variants.json`, `ProgramVariantPicker` picks each program's file with
+`VariantSelector` ([shader-translation.md](shader-translation.md#wave-size)) for the desktop device: shader model,
+`WaveLaneCountMin`/`Max` (D3D12_OPTIONS1) and the mesh-shader tier (D3D12_OPTIONS7), read by `DesktopAdapter`.
+
+| Selector result | File loaded |
+|---|---|
+| native | `<name>.dxil` |
+| variant | `<name>.w32.dxil`: the group-wave or superstep form of a compute program pinned to a wave size outside Min-Max, or the superstep form of a mesh program whose floor is above `WaveLaneCountMin` |
+| fallback (mesh program, no mesh shaders or over the output limit) | `<name>.dxil`, logged once: a pipeline takes one shader per stage, and the compute + vertex-pulling fallback needs its own draw path |
+| incorrect, compute pinned without a variant | none, logged once with the adapter's wave range; creation returns ERROR_NOT_FOUND instead of a driver error |
+| incorrect, other | `<name>.dxil`, logged once (results may differ from the console) |
+
+Without `variants.json` every program loads `<name>.dxil` and a warning says so.
 
 ## Device hookup
 
@@ -168,8 +195,9 @@ unwrapped, so slot 55 receives the desktop pointer it registered.
 - Override kind 5, and whether kinds 3 and 4 exist.
 - The meaning of the shader flags beyond the mesh bits, and of the second stored bytecode (+0x10, size +0x2C) that
   0x14086f8e0 reads when its last argument is set (the pipeline paths pass 0).
-- Render-target formats of cache pipelines are the cache's guesses; the stream path carries the real ones.
-- Which variant of a program (wave32, superstep, mesh fallback, linked VS) to pick per adapter; the library takes the
-  native `<name>.dxil`.
+- Whether the depth view of a D16_UNORM_S8_UINT target gets the same desktop format as the pipeline
+  (D32_FLOAT_S8X24_UINT); no such target has been created yet.
+- Running the mesh fallback (and linked VS forms) through pipelines, for adapters without mesh shaders.
+- What console topology type 19 and topology 6 are exactly (rectangle list and triangle fan are guesses).
 - Which pipelines' programs read graphics user SGPRs 0 to 7 as their own; the command list fills them with SGPRs 8
   to 15 for mesh programs ([d3d12x-shim.md](d3d12x-shim.md#binding)).

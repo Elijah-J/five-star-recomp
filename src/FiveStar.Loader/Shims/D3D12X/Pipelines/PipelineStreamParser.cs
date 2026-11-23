@@ -82,7 +82,7 @@ internal static unsafe class PipelineStreamParser
             case XboxSubobjectType.StripCutValue:
                 return description with { StripCut = *(int*)payload };
             case XboxSubobjectType.PrimitiveTopology:
-                return description with { TopologyType = *(int*)payload };
+                return description with { TopologyType = TopologyTypes.Desktop(*(int*)payload) };
             case XboxSubobjectType.RenderTargetFormats:
                 return description with { RenderTargetFormats = Targets(payload) };
             case XboxSubobjectType.DepthStencilFormat:

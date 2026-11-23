@@ -9,26 +9,24 @@ namespace FiveStar.Loader.Shims.D3D12X.Pipelines;
 /// <summary>
 /// A pipeline-cache record's decoded state (docs/pipeline-cache.md) as desktop descs. The decoder yields D3D12 enum
 /// values, with 0 where the hardware value has none; those become the D3D12 defaults so the runtime accepts the desc.
+/// The output formats are the record's own (its 0x0C entry); the register guesses are only a fallback without one.
 /// </summary>
 internal static class CachedStateMapping
 {
-    /// <summary>DXGI_FORMAT_D32_FLOAT: the depth format of depth-only pipelines (the cache stores none).</summary>
+    /// <summary>DXGI_FORMAT_D32_FLOAT: the fallback depth format of depth-only pipelines.</summary>
     public const int DepthFormat = 40;
 
-    /// <summary>DXGI_FORMAT_D32_FLOAT_S8X24_UINT: the depth format of pipelines that use stencil (the cache stores none).</summary>
+    /// <summary>DXGI_FORMAT_D32_FLOAT_S8X24_UINT: the fallback depth format of pipelines that use stencil.</summary>
     public const int DepthStencilFormat = 20;
 
+    /// <summary>DXGI_SAMPLE_DESC.Count of a pipeline that does not multisample.</summary>
+    private const int SingleSample = 1;
+
     public static GraphicsPipelineDescription Describe(
-        FixedFunctionState state, nint gameRootSignature, IReadOnlyList<ShaderSource> shaders, IReadOnlyList<VertexElement> layout)
+        FixedFunctionState state, PipelineTargets? targets, nint gameRootSignature, IReadOnlyList<ShaderSource> shaders, IReadOnlyList<VertexElement> layout)
     {
-        var topology = state.TopologyType;
-
-        if (topology == 0)
-        {
-            topology = PipelineLayout.TriangleTopology;
-        }
-
-        return GraphicsPipelineDescription.Defaults(gameRootSignature) with
+        var topology = TopologyTypes.Desktop(state.TopologyType);
+        var description = GraphicsPipelineDescription.Defaults(gameRootSignature) with
         {
             Shaders = shaders,
             Blend = Blend(state),
@@ -38,6 +36,19 @@ internal static class CachedStateMapping
             TopologyType = topology,
             RenderTargetFormats = Targets(state),
             DepthStencilFormat = Depth(state.DepthStencil),
+        };
+
+        if (targets is null)
+        {
+            return description;
+        }
+
+        return description with
+        {
+            RenderTargetFormats = targets.RenderTargetFormats,
+            DepthStencilFormat = DepthFormats.Desktop(targets.DepthStencilFormat),
+            SampleCount = Or(targets.SampleCount, SingleSample),
+            SampleMask = targets.SampleMask,
         };
     }
 

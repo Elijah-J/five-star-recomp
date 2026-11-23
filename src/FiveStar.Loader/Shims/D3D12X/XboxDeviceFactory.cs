@@ -193,7 +193,7 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         }
 
         var warnings = new OnceLog(_log);
-        var library = new TranslatedProgramLibrary(ProgramIndex.Load(programs), translated);
+        var library = TranslatedProgramLibrary.Open(ProgramIndex.Load(programs), translated, device2, warnings, _log);
         Pipelines = new PipelineSlots(new PipelineFactory(device2, root, library, warnings), warnings);
         PipelineSlotHandlers.Register(Objects);
         _log.Detail($"  [d3d12_xs] pipeline slots on: programs {programs}, translated {translated}");

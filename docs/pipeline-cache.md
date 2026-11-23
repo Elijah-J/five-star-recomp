@@ -148,7 +148,7 @@ pipeline whose pixel shader is named `*Opaque*` blends, while all `ptfx` and `Tr
 
 `psocache --out` writes each graphics pipeline's `state` in D3D12 enum values: blend per target, render targets with
 a DXGI format guess, depth-stencil, rasterizer, topology type, sample counts, and the raw registers. The pipeline's
-actual render-target and depth formats are stored in its 0x0C entry
+actual render-target and depth formats are stored in its 0x0C entry, and the loader creates pipelines with those
 ([below](#pipeline-outputs-and-vertex-input-layout)); the table rates what the registers alone give.
 
 | Field | Confidence |
@@ -213,9 +213,9 @@ Checks on the reference dump: NumRenderTargets equals the number of non-zero RTV
 SX_PS_DOWNCONVERT and SPI_SHADER_COL_FORMAT ([Fixed-function state](#fixed-function-state)); the others are mostly
 formats the registers cannot tell apart (SRGB 5,430, B8G8R8A8_UNORM 2,353, A8_UNORM 2,022, R8_UNORM 1,658,
 R11G11B10_FLOAT 922, R8G8_UNORM 882, 32-bit integer formats). The registers name 973 more written targets past
-NumRenderTargets. Depth formats: D32_FLOAT_S8X24_UINT (20) 14,553, D16_UNORM (55) 2,731, D32_FLOAT (40) 139, 118 (not
-a desktop DXGI value) 969, none 7,079; stencil is on only with 20 and 118, and 39 pipelines without a depth format
-have depth or stencil on. The topology type agrees with VGT_GS_OUT_PRIM_TYPE in all but one pipeline (a slot-6 one:
+NumRenderTargets. Depth formats: D32_FLOAT_S8X24_UINT (20) 14,553, D16_UNORM (55) 2,731, D32_FLOAT (40) 139, 118 (the
+console's D16_UNORM_S8_UINT, no desktop value) 969, none 7,079; stencil is on only with 20 and 118, and 39 pipelines
+without a depth format have depth or stencil on. The topology type agrees with VGT_GS_OUT_PRIM_TYPE in all but one pipeline (a slot-6 one:
 triangle here, lines in the register).
 
 ### Shader metadata
@@ -305,7 +305,7 @@ shaders ([shader-translation.md](shader-translation.md#stages), Linkage).
   block of the mesh layout and the words not in the table above; alpha-to-coverage, logic op and conservative
   rasterisation.
 - In the 0x0C entry: the words between the fields above, bit 4 of the topology byte, the bytes after the sample count
-  in 21 pipelines, depth format 118.
+  in 21 pipelines.
 - Graphics record 0x20..0x37: hashes; neither half of 0x20 determines the render-target format class.
 - The shader metadata flags (version 2 at 0x0C, 0x403 at 0x14, between them zero; low half 0x440 or 0x8440); why
   unused 0x42 entries are declared; the size byte of root constants (always 4, whatever the parameter holds).
