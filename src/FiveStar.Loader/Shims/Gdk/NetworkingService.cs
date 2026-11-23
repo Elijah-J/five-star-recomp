@@ -13,6 +13,8 @@ internal static unsafe class NetworkingService
 {
     public const string PortApi = "XNetworkingQueryPreferredLocalUdpMultiplayerPortAsync";
 
+    public const string SecurityInformationApi = "XNetworkingQuerySecurityInformationForUrlAsync";
+
     /// <summary>UDP 3074, the port Xbox titles use for multiplayer traffic.</summary>
     public const ushort PreferredUdpPort = 3074;
 

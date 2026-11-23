@@ -21,11 +21,9 @@ internal static class GdkNotImplemented
     [NotImplementedTable(GdkModule.Name)]
     private static readonly (string Name, long ReturnValue)[] Catalog =
     [
-        // XUser.h: tokens, pictures, UI and the PC platform hooks need Xbox services.
-        ("XUserGetTokenAndSignatureAsync", NotImplemented), ("XUserGetTokenAndSignatureResultSize", NotImplemented), ("XUserGetTokenAndSignatureResult", NotImplemented),
+        // XUser.h: UTF-16 tokens, pictures, UI and the PC platform hooks need Xbox services.
         ("XUserGetTokenAndSignatureUtf16Async", NotImplemented), ("XUserGetTokenAndSignatureUtf16ResultSize", NotImplemented), ("XUserGetTokenAndSignatureUtf16Result", NotImplemented),
         ("XUserResolveIssueWithUiAsync", NotImplemented), ("XUserResolveIssueWithUiResult", NotImplemented), ("XUserResolveIssueWithUiUtf16Async", NotImplemented), ("XUserResolveIssueWithUiUtf16Result", NotImplemented),
-        ("XUserResolvePrivilegeWithUiAsync", NotImplemented), ("XUserResolvePrivilegeWithUiResult", NotImplemented),
         ("XUserGetGamerPictureAsync", NotImplemented), ("XUserGetGamerPictureResultSize", NotImplemented), ("XUserGetGamerPictureResult", NotImplemented),
         ("XUserAddByIdWithUiAsync", NotImplemented), ("XUserAddByIdWithUiResult", NotImplemented), ("XUserFindForWebAccount", NotImplemented),
         ("XUserGetMsaTokenSilentlyAsync", NotImplemented), ("XUserGetMsaTokenSilentlyResult", NotImplemented), ("XUserGetMsaTokenSilentlyResultSize", NotImplemented),
@@ -33,39 +31,22 @@ internal static class GdkNotImplemented
         ("XUserPlatformRemoteConnectSetEventHandlers", NotImplemented), ("XUserPlatformRemoteConnectCancelPrompt", NotImplemented),
         ("XUserPlatformSpopPromptSetEventHandlers", NotImplemented), ("XUserPlatformSpopPromptComplete", NotImplemented), ("XUserPlatformUiSetEventHandlers", NotImplemented),
 
-        // XStore.h (license, products, purchase UI)
-        ("XStoreAcquireLicenseForPackageAsync", NotImplemented), ("XStoreAcquireLicenseForPackageResult", NotImplemented),
-        ("XStoreAcquireLicenseForDurablesAsync", NotImplemented), ("XStoreAcquireLicenseForDurablesResult", NotImplemented),
+        // XStore.h functions the game does not call (the called ones are in the XStore*Shim classes); none of them
+        // reports a license or entitlement.
         ("XStoreCanAcquireLicenseForPackageAsync", NotImplemented), ("XStoreCanAcquireLicenseForPackageResult", NotImplemented),
         ("XStoreCanAcquireLicenseForStoreIdAsync", NotImplemented), ("XStoreCanAcquireLicenseForStoreIdResult", NotImplemented),
-        ("XStoreCloseLicenseHandle", Zero), ("XStoreIsLicenseValid", Zero), ("XStoreIsAvailabilityPurchasable", Zero),
+        ("XStoreIsAvailabilityPurchasable", Zero),
         ("XStoreQueryAddOnLicensesAsync", NotImplemented), ("XStoreQueryAddOnLicensesResultCount", NotImplemented), ("XStoreQueryAddOnLicensesResult", NotImplemented),
-        ("XStoreQueryAssociatedProductsAsync", NotImplemented), ("XStoreQueryAssociatedProductsResult", NotImplemented),
         ("XStoreQueryAssociatedProductsForStoreIdAsync", NotImplemented), ("XStoreQueryAssociatedProductsForStoreIdResult", NotImplemented),
-        ("XStoreQueryEntitledProductsAsync", NotImplemented), ("XStoreQueryEntitledProductsResult", NotImplemented),
         ("XStoreQueryProductsAsync", NotImplemented), ("XStoreQueryProductsResult", NotImplemented),
         ("XStoreQueryProductForCurrentGameAsync", NotImplemented), ("XStoreQueryProductForCurrentGameResult", NotImplemented),
         ("XStoreQueryProductForPackageAsync", NotImplemented), ("XStoreQueryProductForPackageResult", NotImplemented),
-        ("XStoreProductsQueryHasMorePages", Zero), ("XStoreProductsQueryNextPageAsync", NotImplemented), ("XStoreProductsQueryNextPageResult", NotImplemented),
-        ("XStoreEnumerateProductsQuery", NotImplemented), ("XStoreCloseProductsQueryHandle", Zero),
-        ("XStoreQueryConsumableBalanceRemainingAsync", NotImplemented), ("XStoreQueryConsumableBalanceRemainingResult", NotImplemented),
-        ("XStoreReportConsumableFulfillmentAsync", NotImplemented), ("XStoreReportConsumableFulfillmentResult", NotImplemented),
-        ("XStoreGetUserCollectionsIdAsync", NotImplemented), ("XStoreGetUserCollectionsIdResultSize", NotImplemented), ("XStoreGetUserCollectionsIdResult", NotImplemented),
-        ("XStoreGetUserPurchaseIdAsync", NotImplemented), ("XStoreGetUserPurchaseIdResultSize", NotImplemented), ("XStoreGetUserPurchaseIdResult", NotImplemented),
         ("XStoreQueryLicenseTokenAsync", NotImplemented), ("XStoreQueryLicenseTokenResultSize", NotImplemented), ("XStoreQueryLicenseTokenResult", NotImplemented),
         ("XStoreSendRequestAsync", NotImplemented), ("XStoreSendRequestResultSize", NotImplemented), ("XStoreSendRequestResult", NotImplemented),
         ("XStoreShowAssociatedProductsUIAsync", NotImplemented), ("XStoreShowAssociatedProductsUIResult", NotImplemented),
-        ("XStoreShowProductPageUIAsync", NotImplemented), ("XStoreShowProductPageUIResult", NotImplemented),
-        ("XStoreShowPurchaseUIAsync", NotImplemented), ("XStoreShowPurchaseUIResult", NotImplemented),
         ("XStoreShowRateAndReviewUIAsync", NotImplemented), ("XStoreShowRateAndReviewUIResult", NotImplemented),
-        ("XStoreShowRedeemTokenUIAsync", NotImplemented), ("XStoreShowRedeemTokenUIResult", NotImplemented),
         ("XStoreShowGiftingUIAsync", NotImplemented), ("XStoreShowGiftingUIResult", NotImplemented),
-        ("XStoreRegisterGameLicenseChanged", NotImplemented), ("XStoreUnregisterGameLicenseChanged", Zero),
-        ("XStoreRegisterPackageLicenseLost", NotImplemented), ("XStoreUnregisterPackageLicenseLost", Zero),
-        ("XStoreQueryPackageIdentifier", NotImplemented), ("XStoreQueryGameAndDlcPackageUpdatesAsync", NotImplemented), ("XStoreQueryGameAndDlcPackageUpdatesResult", NotImplemented),
-        ("XStoreQueryGameAndDlcPackageUpdatesResultCount", NotImplemented), ("XStoreDownloadPackageUpdatesAsync", NotImplemented), ("XStoreDownloadPackageUpdatesResult", NotImplemented),
-        ("XStoreDownloadAndInstallPackageUpdatesAsync", NotImplemented), ("XStoreDownloadAndInstallPackageUpdatesResult", NotImplemented),
-        ("XStoreDownloadAndInstallPackagesAsync", NotImplemented), ("XStoreDownloadAndInstallPackagesResult", NotImplemented), ("XStoreDownloadAndInstallPackagesResultCount", NotImplemented),
+        ("XStoreDownloadPackageUpdatesAsync", NotImplemented), ("XStoreDownloadPackageUpdatesResult", NotImplemented),
         ("XStoreQueryPackageUpdatesAsync", NotImplemented), ("XStoreQueryPackageUpdatesResult", NotImplemented), ("XStoreQueryPackageUpdatesResultCount", NotImplemented),
 
         // XGameUI.h: text entry windows, the title-drawn UI callbacks and the storage manager.
@@ -77,18 +58,17 @@ internal static class GdkNotImplemented
         ("XGameUiShowManageSpaceAsync", NotImplemented), ("XGameUiShowManageSpaceResult", NotImplemented),
 
         // XGame.h, XGameInvite.h, XGameActivation.h: there is never an invite to accept.
-        ("XLaunchNewGame", Zero), ("XGameInviteAcceptPendingInvite", NotImplemented), ("XGameActivationAcceptPendingInvite", NotImplemented),
+        ("XGameInviteAcceptPendingInvite", NotImplemented), ("XGameActivationAcceptPendingInvite", NotImplemented),
 
-        // XNetworking.h: URL security, certificates, statistics and settings.
-        ("XNetworkingQuerySecurityInformationForUrlAsync", NotImplemented), ("XNetworkingQuerySecurityInformationForUrlAsyncResult", NotImplemented),
-        ("XNetworkingQuerySecurityInformationForUrlAsyncResultSize", NotImplemented), ("XNetworkingQuerySecurityInformationForUrlUtf16Async", NotImplemented),
+        // XNetworking.h: UTF-16 URL security, statistics and settings.
+        ("XNetworkingQuerySecurityInformationForUrlUtf16Async", NotImplemented),
         ("XNetworkingQuerySecurityInformationForUrlUtf16AsyncResult", NotImplemented), ("XNetworkingQuerySecurityInformationForUrlUtf16AsyncResultSize", NotImplemented),
-        ("XNetworkingVerifyServerCertificate", NotImplemented), ("XNetworkingQueryStatistics", NotImplemented),
+        ("XNetworkingQueryStatistics", NotImplemented),
         ("XNetworkingQueryConfigurationSetting", NotImplemented), ("XNetworkingSetConfigurationSetting", NotImplemented),
         ("XNetworkingGetTitleTcpQueueingReservation", NotImplemented), ("XNetworkingGetTitleUdpQueueingReservation", NotImplemented),
 
         // XAppCapture.h (feature reported unavailable)
-        ("XAppCaptureTakeScreenshot", NotImplemented), ("XAppCaptureOpenScreenshotStream", NotImplemented), ("XAppCaptureReadScreenshotStream", NotImplemented),
+        ("XAppCaptureOpenScreenshotStream", NotImplemented), ("XAppCaptureReadScreenshotStream", NotImplemented),
         ("XAppCaptureCloseScreenshotStream", NotImplemented), ("XAppCaptureRecordTimespan", NotImplemented), ("XAppCaptureEnableRecord", Zero), ("XAppCaptureDisableRecord", Zero),
         ("XAppCaptureMetadataAddStringEvent", NotImplemented), ("XAppCaptureMetadataAddInt32Event", NotImplemented), ("XAppCaptureMetadataAddDoubleEvent", NotImplemented),
         ("XAppCaptureMetadataStartStringState", NotImplemented), ("XAppCaptureMetadataStartInt32State", NotImplemented), ("XAppCaptureMetadataStartDoubleState", NotImplemented),
@@ -100,11 +80,8 @@ internal static class GdkNotImplemented
         ("XAppBroadcastGetStatus", NotImplemented), ("XAppBroadcastIsAppBroadcasting", Zero), ("XAppBroadcastShowUI", NotImplemented),
         ("XAppBroadcastRegisterIsAppBroadcastingChanged", NotImplemented), ("XAppBroadcastUnregisterIsAppBroadcastingChanged", Zero),
 
-        // XAccessibility.h and XSpeechSynthesizer.h (speech feature reported unavailable)
+        // XAccessibility.h and speech-to-text
         ("XAccessibilityGetClosedCaptionProperties", NotImplemented), ("XAccessibilityGetHighContrastMode", NotImplemented), ("XAccessibilityGetTextToSpeechProperties", NotImplemented),
-        ("XSpeechSynthesizerCreate", NotImplemented), ("XSpeechSynthesizerCloseHandle", NotImplemented), ("XSpeechSynthesizerSetDefaultVoice", NotImplemented),
-        ("XSpeechSynthesizerSetCustomVoice", NotImplemented), ("XSpeechSynthesizerCreateStreamFromText", NotImplemented), ("XSpeechSynthesizerCreateStreamFromSsml", NotImplemented),
-        ("XSpeechSynthesizerGetStreamDataSize", NotImplemented), ("XSpeechSynthesizerGetStreamData", NotImplemented), ("XSpeechSynthesizerCloseStreamHandle", NotImplemented),
         ("XSpeechToTextSendString", NotImplemented), ("XSpeechToTextSetPositionHint", NotImplemented), ("XSpeechToTextBeginHypothesisString", NotImplemented),
         ("XSpeechToTextUpdateHypothesisString", NotImplemented), ("XSpeechToTextFinalizeHypothesisString", NotImplemented), ("XSpeechToTextCancelHypothesisString", NotImplemented),
 
@@ -126,9 +103,7 @@ internal static class GdkNotImplemented
         ("EXPERIMENTAL_XGameStreamingGetMotionState", StreamingNotInitialized),
 
         // XPackage.h (the rest)
-        ("XPackageUninstallPackage", Zero), ("XPackageUninstallUWPInstance", NotImplemented), ("XPackageGetIdentifier", NotImplemented),
-        ("XPackageInstallChunks", NotImplemented), ("XPackageInstallChunksAsync", NotImplemented), ("XPackageInstallChunksResult", NotImplemented),
-        ("XPackageUninstallChunks", NotImplemented), ("XPackageEnumerateChunkAvailability", NotImplemented), ("XPackageChangeChunkInstallOrder", NotImplemented),
+        ("XPackageUninstallUWPInstance", NotImplemented), ("XPackageGetIdentifier", NotImplemented), ("XPackageEnumerateChunkAvailability", NotImplemented),
         ("XPersistentLocalStorageMountForPackage", NotImplemented),
 
         // PFXGameSave.h: PlayFab cloud saves for PC; titles use XGameSave offline.

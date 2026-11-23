@@ -29,6 +29,12 @@ internal static class HResult
 
     public const int ClassNotRegistered = unchecked((int)0x80040154);
 
+    /// <summary>HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED).</summary>
+    public const int NotSupported = unchecked((int)0x80070032);
+
+    /// <summary>HRESULT_FROM_WIN32(ERROR_NETWORK_UNREACHABLE).</summary>
+    public const int NetworkUnreachable = unchecked((int)0x800704CF);
+
     /// <summary>HRESULT_FROM_WIN32: FACILITY_WIN32 with the failure bit, or S_OK for ERROR_SUCCESS.</summary>
     public static int FromWin32(int error)
     {

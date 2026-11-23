@@ -8,7 +8,7 @@ namespace FiveStar.Loader.Shims.Gdk;
 
 /// <summary>
 /// XLauncher.h and XLaunchRestartOnCrash: a web address opens in the PC's browser; any other URI (Xbox app and store
-/// protocols) is logged and dropped. Crash restarts are recorded, not acted on.
+/// protocols) is logged and dropped. Crash restarts are recorded, not acted on; launching another game is logged only.
 /// </summary>
 internal sealed class LauncherService
 {
@@ -49,5 +49,11 @@ internal sealed class LauncherService
         _boundary.Info($"XLaunchRestartOnCrash(\"{arguments}\") recorded; the loader does not restart the game");
 
         return HResult.Ok;
+    }
+
+    /// <summary>XLaunchNewGame has no result; the call is logged and the current game keeps running.</summary>
+    public void LaunchNewGame(string? exePath, string? arguments)
+    {
+        _boundary.Warn($"XLaunchNewGame(\"{exePath}\", \"{arguments}\") not supported; the game keeps running");
     }
 }

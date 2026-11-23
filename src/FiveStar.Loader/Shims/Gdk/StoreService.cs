@@ -7,17 +7,20 @@ using FiveStar.Loader.Native;
 namespace FiveStar.Loader.Shims.Gdk;
 
 /// <summary>
-/// XStore.h: store contexts and an always active, full (non-trial) game license. The rest of XStore is in the
-/// not-implemented catalog.
+/// XStore.h offline: store contexts, the game license and an unreachable store. Calls that need the store service
+/// (add-on licenses, consumables, user ids, downloads) fail with E_GAMESTORE_NETWORK_ERROR; product and entitlement
+/// queries return an empty list; purchase UI ends as canceled. No license handle is ever issued.
 /// </summary>
 internal sealed unsafe class StoreService
 {
     public const string GameLicenseApi = "XStoreQueryGameLicenseAsync";
 
+    /// <summary>E_GAMESTORE_NETWORK_ERROR (XGameErr.h): the store service could not be reached.</summary>
+    public const int NetworkError = unchecked((int)0x89245301);
+
     /// <summary>
     /// struct XStoreGameLicense { char skuStoreId[18]; bool isActive; bool isTrialOwnedByThisUser; bool isDiscLicense;
     /// bool isTrial; uint32_t trialTimeRemainingInSeconds; char trialUniqueId[64]; time_t expirationDate; }: 104 bytes.
-    /// The member list is unconfirmed.
     /// </summary>
     public const int GameLicenseSize = 104;
 
@@ -28,12 +31,17 @@ internal sealed unsafe class StoreService
     private const string SkuSuffix = "/0010";
 
     private readonly HandleTable<object> _contexts = new("XSTORCTX");
+    private readonly HandleTable<object> _productQueries = new("XSTORPQH");
     private readonly GdkConfig _config;
+    private readonly PackageService _packages;
 
-    public StoreService(GdkConfig config)
+    public StoreService(GdkConfig config, PackageService packages)
     {
         _config = config;
+        _packages = packages;
     }
+
+    public int OpenProductQueries => _productQueries.Count;
 
     public int CreateContext(nint* context)
     {
@@ -68,5 +76,40 @@ internal sealed unsafe class StoreService
 
         license[IsActiveOffset] = GdkModule.True;
         *(long*)(license + ExpirationOffset) = long.MaxValue;
+    }
+
+    /// <summary>A products query handle with no products and no further pages.</summary>
+    public nint CreateProductQuery()
+    {
+        return _productQueries.Add(new object());
+    }
+
+    public bool IsProductQuery(nint query)
+    {
+        return _productQueries.Get(query) is not null;
+    }
+
+    public void CloseProductQuery(nint query)
+    {
+        _productQueries.Remove(query);
+    }
+
+    /// <summary>
+    /// XStoreQueryPackageIdentifier: the game's own store id maps to the game package; no other product (DLC) is
+    /// installed, so any other id is E_NOTFOUND.
+    /// </summary>
+    public int QueryPackageIdentifier(string? storeId, nuint size, byte* packageIdentifier)
+    {
+        if (string.IsNullOrEmpty(storeId) || packageIdentifier == null)
+        {
+            return HResult.InvalidArgument;
+        }
+
+        if (!string.Equals(storeId, _config.Identity.StoreId, StringComparison.OrdinalIgnoreCase))
+        {
+            return HResult.NotFound;
+        }
+
+        return Utf8Text.Write(_packages.PackageId, size, packageIdentifier, null);
     }
 }
