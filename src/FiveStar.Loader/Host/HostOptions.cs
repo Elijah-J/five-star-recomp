@@ -52,6 +52,9 @@ internal sealed record HostOptions
 
     public string? InputConfig { get; set; }
 
+    /// <summary>Timed key presses added to the desktop input (<c>--input-script</c>).</summary>
+    public string? InputScript { get; set; }
+
     /// <summary>Extracted FSSM programs (`fivestar shader extract`) for pipeline creation.</summary>
     public string? ShaderDirectory { get; set; }
 
@@ -66,6 +69,15 @@ internal sealed record HostOptions
 
     /// <summary>How long --run lets the entry point run before reporting the main thread and exiting; null waits.</summary>
     public TimeSpan? RunTimeout { get; set; }
+
+    /// <summary>With --run, log call counts and every thread's stack at this interval (<c>--sample-threads</c>).</summary>
+    public TimeSpan? SampleThreads { get; set; }
+
+    /// <summary>With --sample-threads, also a profile burst of the running threads per sample (<c>--profile-threads</c>).</summary>
+    public bool ProfileThreads { get; set; }
+
+    /// <summary>With --run, also trace calls into these mapped images (<c>--trace-module</c>).</summary>
+    public List<string> TracedModules { get; } = [];
 
     /// <summary>With --run, also trace calls to System32 imports.</summary>
     public bool TraceSystemCalls { get; set; }

@@ -54,6 +54,7 @@ internal sealed class LoaderHost
         {
             // Before loading: TLS callbacks and DllMain already run mapped code.
             _runtime.Trace.Enable(_options.TraceSystemCalls);
+            _runtime.Trace.TracedModules.UnionWith(_options.TracedModules);
             _runtime.Faults.Install();
         }
 
@@ -95,6 +96,13 @@ internal sealed class LoaderHost
         {
             _runtime.Input.Configure(InputConfigFile.Load(_options.InputConfig));
             _log.Info($"  [input] mapping from {_options.InputConfig}");
+        }
+
+        if (_options.InputScript is not null)
+        {
+            var script = InputScript.Load(_options.InputScript);
+            _runtime.Input.UseScript(script, System.Diagnostics.Stopwatch.StartNew());
+            _log.Info($"  [input] {script.Presses.Count} scripted presses from {_options.InputScript}");
         }
 
         if (_options.D3D12Debug)
@@ -255,7 +263,22 @@ internal sealed class LoaderHost
             return Failure;
         }
 
+        var interval = _options.SampleThreads;
+
+        if (interval.HasValue)
+        {
+            new ThreadSampler(_runtime.Images, _runtime.Trace, SampledCounters, _options.ProfileThreads, _log).Start(interval.Value);
+        }
+
         return new ExecutableRunner(_runtime.Faults, _log).Run(main, _options.RunTimeout);
+    }
+
+    /// <summary>The loader counters each thread sample logs.</summary>
+    private string SampledCounters()
+    {
+        string pipelines = _runtime.D3D12X.Pipelines?.Summary ?? "pipeline slots off";
+
+        return $"DirectStorage {_runtime.Storage.Summary()}; {pipelines}; {_runtime.D3D12X.Presenter.Presents} presents; {_runtime.Input.Summary}";
     }
 
     /// <summary>

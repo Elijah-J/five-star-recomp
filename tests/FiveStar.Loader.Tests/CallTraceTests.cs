@@ -35,6 +35,8 @@ public sealed unsafe class CallTraceTests
         Assert.Equal(302UL, trace.CallCount);
         Assert.Equal(["a!Second", "a!Second", "a!First"], trace.Recent(3));
         Assert.Equal(256, trace.Recent(1000).Count);
+        Assert.Equal(2UL, trace.Totals()["a!First"]);
+        Assert.Equal(300UL, trace.Totals()["a!Second"]);
     }
 
     [UnmanagedCallersOnly]

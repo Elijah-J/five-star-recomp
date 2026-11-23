@@ -340,6 +340,10 @@ fivestar-loader --load $dump\XboxBvhBuilder.dll --load $dump\Bink2Scarlett.dll -
 | `--unresolved stub\|trap\|error`, `--no-shim <module!symbol>` | unresolved-import handling; disable one shim |
 | `--no-entry`, `--no-exports`, `--unload`, `--work-dir <dir>` | skip DllMain; skip the export listing; unload at the end; folder of the TLS host DLLs |
 | `--log <file>`, `-v` | full log of every import and shim call; the same on the console |
+| `--sample-threads <s>` | with `--run`: every s seconds the calls per shim, stub and GDK slot since the last sample, DirectStorage, pipeline, present and GameInput counters, and every thread's stack (below) |
+| `--profile-threads` | with `--sample-threads`: also the main image's busiest functions on running threads |
+| `--trace-module <dll>` | with `--run`: the call trace also wraps imports bound to this mapped image (for example `bink2scarlett.dll`) |
+| `--input-script <file>` | timed key presses added to the desktop keys (below) |
 
 The output lists the images, an import table per image and module, the totals and the exports. Tests:
 `dotnet test tests/FiveStar.Loader.Tests`; with `FIVESTAR_DUMP` set to the dump folder they also load the six Xbox
@@ -364,6 +368,17 @@ entry point (the CRT startup, the static initializers, then `main`) runs on a th
 record for it and ends the process with code 3 (TerminateProcess, no cleanup: the game's threads still use the shims,
 and disposing the swap chain under the presenting thread crashed in dxgi). `--trace-system` also traces imports bound to System32 (the ring then covers far\nless time). Run boots in a child process: the CRT ends the process through `exit`.
 
+**Thread sampler.** `--sample-threads` suspends each other thread in turn, reads its context and unwinds it through
+`.pdata`, then resumes it; nothing is allocated or logged while a thread is suspended, the captures run inside a no-GC
+region, and the walk stops at the first address outside a module (JIT code). Threads with the same stack are grouped;
+mapped frames print as `image+0xrva (fn 0xstart)`. The call counts come from the call-trace thunks, which also count
+calls (`lock inc`) and, under `--run`, wrap the GDK thunk-ABI slots. `OutputDebugString{A,W}` from mapped code is
+logged as `[debug]` (first 4096 messages).
+
+**Input script.** `--input-script` lines are `<seconds> <key> [hold <s>] [repeat <n> every <s>]`, times from loader
+start, keys named as in the input config, `#` a comment. A scripted key counts as held on the desktop, so the keyboard
+and the keyboard-and-mouse gamepad both see it (`Space` is A). The game reads input only through its own GameInput
+calls; a press while it does not poll has no effect.
 The loader is built with `<CETCompat>false</CETCompat>`: with CET shadow stacks, SEH resuming inside mapped code
 fail-fasts (0x30).
 

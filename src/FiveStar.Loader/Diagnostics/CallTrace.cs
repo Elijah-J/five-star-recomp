@@ -20,10 +20,14 @@ internal sealed unsafe class CallTrace
     /// <summary>The ring starts with the 64-bit call counter; the 32-bit ids follow it.</summary>
     private const byte IdsOffset = sizeof(ulong);
 
+    /// <summary>Wrapped imports with a call counter of their own; later ones are recorded in the ring only.</summary>
+    private const int CountedIds = 65536;
+
     private readonly object _gate = new();
     private readonly List<string> _names = [];
     private readonly CodeHeap _heap;
     private readonly nint _ring;
+    private readonly nint _counts;
 
     public CallTrace(CodeHeap heap)
     {
@@ -31,6 +35,13 @@ internal sealed unsafe class CallTrace
         _ring = Kernel32.VirtualAlloc(0, Win32Constants.PageSize, Win32Constants.MemReserveCommit, Win32Constants.PageReadWrite);
 
         if (_ring == 0)
+        {
+            throw new InvalidOperationException("CallTrace VirtualAlloc failed");
+        }
+
+        _counts = Kernel32.VirtualAlloc(0, CountedIds * sizeof(ulong), Win32Constants.MemReserveCommit, Win32Constants.PageReadWrite);
+
+        if (_counts == 0)
         {
             throw new InvalidOperationException("CallTrace VirtualAlloc failed");
         }
@@ -44,6 +55,9 @@ internal sealed unsafe class CallTrace
 
     /// <summary>Whether imports bound to System32 are wrapped too (many more calls, much shorter history).</summary>
     public bool IncludesSystem { get; private set; }
+
+    /// <summary>Mapped images whose exports are wrapped too (<c>--trace-module</c>), lower case.</summary>
+    public HashSet<string> TracedModules { get; } = new(StringComparer.OrdinalIgnoreCase);
 
     public void Enable(bool includeSystem)
     {
@@ -69,10 +83,38 @@ internal sealed unsafe class CallTrace
         code.AndR11d(Capacity - 1);
         code.StoreDwordR10IndexR11(IdsOffset, id);
 
+        if (id < CountedIds)
+        {
+            code.MovR10((ulong)(_counts + ((nint)id * sizeof(ulong))));
+            code.LockIncR10();
+        }
+
         code.MovR10((ulong)target);
         code.JmpR10();
 
         return _heap.Write(code.ToArray());
+    }
+
+    /// <summary>The calls through each wrapped name so far (several imports of one name are added up).</summary>
+    public Dictionary<string, ulong> Totals()
+    {
+        var totals = new Dictionary<string, ulong>(StringComparer.Ordinal);
+        ulong* counts = (ulong*)_counts;
+
+        lock (_gate)
+        {
+            for (int id = 0; id < Math.Min(_names.Count, CountedIds); id++)
+            {
+                ulong calls = Volatile.Read(ref counts[id]);
+
+                if (calls != 0)
+                {
+                    totals[_names[id]] = totals.GetValueOrDefault(_names[id]) + calls;
+                }
+            }
+        }
+
+        return totals;
     }
 
     /// <summary>The names of the last <paramref name="count"/> recorded calls, oldest first.</summary>
