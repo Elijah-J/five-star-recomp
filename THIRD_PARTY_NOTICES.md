@@ -9,7 +9,8 @@ https://github.com/ItsNotRexed/Leonida, GPL-3.0. Its notes on the console D3D12.
 device byte at +0x18), the create-device and present parameter names it collected from public sources, the
 WaitFrameEventX return codes and the BVH header and instance-node fields were leads; each was checked against the
 game's executable or shaders before use (docs/d3d12x-shim.md, docs/raytracing.md), and the instance node's 0x00 and
-0x70 fields are taken from it unverified. No code was copied.
+0x70 fields are taken from it unverified. Its note that an Intel host needs the four Zen 2 instruction families
+emulated was the lead for docs/cpu.md; the census and the emulation are our own. No code was copied.
 
 ## GTA6-Asset-Info
 

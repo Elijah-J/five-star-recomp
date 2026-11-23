@@ -402,6 +402,10 @@ entry point (the CRT startup, the static initializers, then `main`) runs on a th
   search, so the game's own handlers still run. Its native entry skips threads without a TLS array (exiting ones):
   managed code cannot run there. Faults it cannot see (inside coreclr or the heap manager) need `fivestar-dbg`
   ([debugging.md](debugging.md)).
+- **AMD-only instructions.** Before it reports, the handler emulates an illegal-instruction fault at SSE4a, CLZERO,
+  MONITORX/MWAITX or CLWB, which a CPU without them (Intel) raises, and continues the thread ([cpu.md](cpu.md)). The
+  loader logs at start which of them the host lacks; `--cpu intel` reports all four missing and runs the emulation
+  self-test through the handler.
 
 `--run-timeout <s>` suspends the main thread if the entry point has not returned after s seconds, logs the same
 record for it and ends the process with code 3 (TerminateProcess, no cleanup: the game's threads still use the shims,
