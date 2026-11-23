@@ -14,6 +14,9 @@ public static class TextureDescriptorReader
     private const uint DimensionMask = 0x3FFF;
     private const int HeightShift = 14;
     private const int MipShift = 28;
+
+    /// <summary>d1 bits 0-2 add to the d0 mip field; the sum is the stored mip count (docs/textures.md).</summary>
+    private const uint ExtraMipMask = 7;
     private const int FormatShift = 3;
     private const uint FormatMask = 0x7F;
     private const uint AddressMask = 0x1FFFFF;
@@ -30,7 +33,7 @@ public static class TextureDescriptorReader
             index,
             (int)(d0 & DimensionMask) + 1,
             (int)((d0 >> HeightShift) & DimensionMask) + 1,
-            (int)(d0 >> MipShift),
+            (int)(d0 >> MipShift) + (int)(d1 & ExtraMipMask),
             d1,
             (int)((d1 >> FormatShift) & FormatMask),
             (o0 & AddressMask) * AddressUnit,

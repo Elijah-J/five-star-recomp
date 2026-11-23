@@ -9,18 +9,24 @@ namespace FiveStar.Loader.Shims.Xg;
 /// <summary>
 /// A block swizzle as two bit masks over the element index inside a block: index bit k is the next x bit of the
 /// element's position when bit k of <see cref="XMask"/> is set, the next y bit otherwise. Blocks are laid out
-/// row-major. A pattern with a x bits and b y bits covers a 2^a by 2^b element block.
+/// row-major. A pattern with a x bits and b y bits covers a 2^a by 2^b element block. With
+/// <see cref="LowYSwapped"/> the first two y bits of the mask are y bit 1, then y bit 0.
 /// </summary>
 internal readonly struct XgSwizzle
 {
-    public XgSwizzle(uint xMask, int bits)
+    private const uint LowYBits = 3;
+
+    public XgSwizzle(uint xMask, int bits, bool lowYSwapped = false)
     {
         XMask = xMask;
         YMask = ((1u << bits) - 1) & ~xMask;
         Bits = bits;
+        LowYSwapped = lowYSwapped;
         TileWidth = 1 << BitOperations.PopCount(XMask);
         TileHeight = 1 << BitOperations.PopCount(YMask);
     }
+
+    public bool LowYSwapped { get; }
 
     public uint XMask { get; }
 
@@ -39,6 +45,8 @@ internal readonly struct XgSwizzle
     [HotPath]
     public uint Index(uint x, uint y)
     {
+        y = SwapLowY(y);
+
         if (Bmi2.IsSupported)
         {
             return Bmi2.ParallelBitDeposit(x, XMask) | Bmi2.ParallelBitDeposit(y, YMask);
@@ -58,7 +66,19 @@ internal readonly struct XgSwizzle
     [HotPath]
     public uint Y(uint index)
     {
-        return Extract(index, YMask);
+        return SwapLowY(Extract(index, YMask));
+    }
+
+    /// <summary>Exchanges y bits 0 and 1 when the block orders them the other way round.</summary>
+    [HotPath]
+    private uint SwapLowY(uint y)
+    {
+        if (!LowYSwapped)
+        {
+            return y;
+        }
+
+        return (y & ~LowYBits) | ((y & 1) << 1) | ((y >> 1) & 1);
     }
 
     private static uint Extract(uint value, uint mask)

@@ -18,10 +18,13 @@ internal static class XgSwizzles
     /// <summary>Element sizes with a pattern: 1, 2, 4, 8 and 16 bytes (index = log2 of the size).</summary>
     public const int ElementSizes = 5;
 
+    /// <summary>log2 of a 1-byte element: its 64 KB block puts y bit 1 below y bit 0 (docs/textures.md).</summary>
+    private const int OneByteSize = 0;
+
     private static readonly string[] SmallPatterns = ["xxxxyyyyyxyx", "xxxyyyxyxyx", "xxyyyxyxyx", "xyyxxyxyx", "yyxxyxyx"];
     private static readonly string[] LargePatterns = ["xxxyyyxyyxyxyxyx", "xxxyyyxyxyxyxyx", "xxyyxyyxyxyxyx", "xyxxyyxyxyxyx", "xyxyyxyxyxyx"];
     private static readonly XgSwizzle[] Small = Parse(SmallPatterns);
-    private static readonly XgSwizzle[] Large = Parse(LargePatterns);
+    private static readonly XgSwizzle[] Large = WithLowYSwapped(Parse(LargePatterns), OneByteSize);
 
     /// <summary>The swizzle of a block size (bytes) and element size (log2 of bytes); the 256-byte block is a prefix.</summary>
     [HotPath]
@@ -42,6 +45,13 @@ internal static class XgSwizzles
         int microBits = small.Bits - (System.Numerics.BitOperations.Log2(SmallBlockBytes) - System.Numerics.BitOperations.Log2(MicroBlockBytes));
 
         return new XgSwizzle(small.XMask & ((1u << microBits) - 1), microBits);
+    }
+
+    private static XgSwizzle[] WithLowYSwapped(XgSwizzle[] swizzles, int size)
+    {
+        swizzles[size] = new XgSwizzle(swizzles[size].XMask, swizzles[size].Bits, true);
+
+        return swizzles;
     }
 
     private static XgSwizzle[] Parse(string[] patterns)

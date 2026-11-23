@@ -46,35 +46,49 @@ At `align(0x18 + 8 * (n - 1), 0x100)`; in some files it overlaps the sentinel sl
 |---|---|---|
 | `d0` | 0-13 | Width - 1 |
 | `d0` | 14-27 | Height - 1 |
-| `d0` | 28-31 | Mip count (clamped; often 0 in mode-0 textures) |
+| `d0` | 28-31 | Mip field |
+| `d1` | 0-2 | Added to the mip field: the sum is the stored mip count (on cube maps also copies - 1) |
 | `d1` | 3-9 | DXGI format |
-| `d1` | 24-31 | Layout mode: bits 0-2 base (0 = 64 KB tiles, 1-3 = 4 KB tiles, 4 unknown), bit 3 cube map, bit 4 no layout effect |
+| `d1` | 10-19 | Array size - 1 (5 on cube maps), or depth - 1 on a volume |
+| `d1` | 20-23 | Resource kind: 2 = 2D, 4 = cube map, 6 = volume, 10 = 2D array |
+| `d1` | 24-31 | Layout mode: bits 0-2 base (0 = 64 KB tiles, 1-3 = 4 KB tiles; on cube maps the copy count), bit 3 cube map, bit 4 no layout effect |
 | `o0` | 0-20 | Virtual address / 0x1000 |
 | `o1` | | Unknown |
 
 ## Memory layout
 
 A texture's span runs from its address to the next texture's address (the last one to the end of the last page).
-Mips are stored smallest first, so mip 0 is the last tile-padded block of the span. The whole chain, mip tail
-included, follows the layout in [xg.md](xg.md).
+Each slice holds one mip chain laid out as in [xg.md](xg.md): the mip tail block first, then the other mips smallest
+first, so mip 0 ends the chain. A chain of one mip has no tail: a lone mip that would fit the tail starts at the
+tile's first byte. The chain splits into units, smallest first: the tail block (if any), then each other mip.
 
-Swizzle patterns give each bit of an element's index inside a tile, least significant first, as the next x or y bit
-of its position. An element is a 4x4 block for BC formats and a pixel otherwise. Tiles are laid out row-major.
-
-| Element size | 4 KB tile (bases 1-3) | Tile | 64 KB tile (base 0) | Tile |
-|---|---|---|---|---|
-| 1 byte | `xxxxyyyyyxyx` | 64x64 | `xxxyyyxyyxyxyxyx` | 256x256 |
-| 2 bytes | `xxxyyyxyxyx` | 64x32 | `xxxyyyxyxyxyxyx` | 256x128 |
-| 4 bytes | `xxyyyxyxyx` | 32x32 | `xxyyxyyxyxyxyx` | 128x128 |
-| 8 bytes | `xyyxxyxyx` | 32x16 | `xyxxyyxyxyxyx` | 128x64 |
-| 16 bytes | `yyxxyxyx` | 16x16 | `xyxyyxyxyxyx` | 64x64 |
-
-| Case | Where mip 0 is |
+| Kind | Layout from the span's start |
 |---|---|
-| Mip 0 larger than one tile | The last `padded size` bytes of the span |
-| Mip 0 fits in one tile (mip tail) | Swizzled with the shortest pattern prefix that covers it, starting half a tile before the span's end |
-| Cube map with one mip | Six faces of `span / 6` bytes, mip 0 at the end of each face (as above) |
-| Cube map with mips | Not decoded |
+| 2D | One chain |
+| 2D array | Level by level: each unit holds that unit of every slice back to back, so mip m of slice s is at `offset(m) x slices + s x size(m)` |
+| Cube map | c = mode - 8 complete copies of the cube (4 KB tiles), smallest first. Copy k holds the smallest `units - c + 1 + k` units of each face, face after face; a copy larger than 128 KiB is padded to whole 64 KiB. The last copy is the full cube |
+| Volume (one mip) | 4 KB bricks in x, then y, then z |
+
+Swizzle patterns give each bit of an element's index inside a tile, least significant first, as the lowest unused bit
+of x, y or z, or as the bit numbered after the letter (`y1y0`: y bit 1, then y bit 0). An element is a 4x4 block for
+BC formats and a pixel otherwise. Tiles are laid out row-major. Mip 0 in the tail sits half a tile in and uses the
+shortest prefix of the pattern that covers it.
+
+| Element size | 4 KB tile (bases 1-3) | Tile | 64 KB tile (base 0) | Tile | Volume brick |
+|---|---|---|---|---|---|
+| 1 byte | `xxxxyyyyyxyx` | 64x64 | `xxxy1y0yxyyxyxyxyx` | 256x256 | |
+| 2 bytes | `xxxyyyxyxyx` | 64x32 | `xxxyyyxyxyxyxyx` | 256x128 | `xzyzyxzyxzy` (8x16x16) |
+| 4 bytes | `xxyyyxyxyx` | 32x32 | `xxyyxyyxyxyxyx` | 128x128 | |
+| 8 bytes | `xyyxxyxyx` | 32x16 | `xyxxyyxyxyxyx` | 128x64 | `xzyxzyxzy` (8x8x8) |
+| 16 bytes | `yyxxyxyx` | 16x16 | `xyxyyxyxyxyx` | 64x64 | |
+
+Checked on the dump (357,115 textures): with the stored mip count the computed size equals the span of every 2D
+texture; in the tail block the last mip holds data and nothing lies outside the mips (216,699 of 216,706 sampled
+textures with a tail; the mip field + 1 leaves data outside or adds an empty mip on the rest). The 2,248 lone mips
+that would fit the tail hold their data from the tile's first byte. Every array span is slices x chain, every cube
+span the sum of its copies; mip 1 matches mip 0 shrunk (BC1 endpoint correlation, median) at 0.93 for array slices
+(0.04 slice by slice) and 0.97 to 0.99 for cube faces (0.00 to 0.15 as six equal parts). The 1-byte 64 KB order is
+smoother than `y0y1` on all 24 textures that are not flat, and the volume bricks than 2D slices on all three volumes.
 
 ## Page codecs
 
@@ -134,9 +148,9 @@ texture. The lookup in `graphics draw-model` does not read this table yet.
 
 ## DDS output
 
-One mip, `DDS_HEADER` with `DDSD_CAPS | HEIGHT | WIDTH | PIXELFORMAT | LINEARSIZE`, pitch field = bytes of one face,
-FourCC `DX10`, then `DDS_HEADER_DXT10` {format, 2D, cube flag for 6 faces, array size 1}. Files are named
-`<index>_<hash>_<width>x<height>_<format>.dds`.
+One mip, `DDS_HEADER` with `DDSD_CAPS | HEIGHT | WIDTH | PIXELFORMAT | LINEARSIZE` (and `DEPTH` for a volume),
+pitch field = bytes of one face, slice or depth slice, FourCC `DX10`, then `DDS_HEADER_DXT10` {format, 2D or 3D, cube
+flag for a cube map, array size}. Files are named `<index>_<hash>_<width>x<height>_<format>.dds`.
 
 ## Commands
 
@@ -149,9 +163,10 @@ fivestar texture bcpack-scan  <file|dir>... [--every N] [--jobs N] [--engine avx
 fivestar texture bcpack-bench <file|dir>... [--pages N] [--seconds S] [--engine avx512|avx2|scalar]
 ```
 
-Statuses: `ok`, `skip_fmt_N` (format not supported), `skip_modeN` (no swizzle known), `skip_cube_span`,
-`skip_size`, `skip_cube_mips`, `skip_unsupported_codec` (mip 0 on a BCPack page of codec 3 to 7), and in
-`coverage` `bcpack_codecN`.
+Statuses: `ok`, `skip_fmt_N` (format not supported), `skip_modeN` (no swizzle known), `skip_kindN`, `skip_size`
+(layout longer than the span), `skip_cube_copies` (more copies than units), `skip_unsupported_codec` (mip 0 on a
+BCPack page of codec 3 to 7), and in `coverage` `bcpack_codecN`. On the reference dump every texture's layout fits
+its span; 354,998 of 357,115 have a decodable mip 0, the rest sit on BCPack pages of codecs 3 to 7.
 
 `bcpack-scan` decodes every BC1 page on all cores and prints, per file and in total, the pages that converge, fail
 or reach an unfitted window slot, with the decode speed. `--hashes` writes one line per page (path, virtual address,
@@ -162,6 +177,6 @@ sampled pages, by page size.
 
 - The BCPack lane layouts of codecs 3 to 7.
 - Values of the BC1 preset window and codebook that no page of this dump tests.
-- Layout base 4, and what separates bases 1, 2 and 3.
-- Mipped cube map layout.
+- What separates bases 1, 2 and 3.
+- Volumes with mips, and volume bricks of 1-, 4- and 16-byte elements (none ship).
 - `o1`, `o0` bits 21-31 and the page tag.
