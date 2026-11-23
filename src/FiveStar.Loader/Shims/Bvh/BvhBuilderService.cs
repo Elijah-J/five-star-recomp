@@ -44,6 +44,7 @@ internal sealed unsafe class BvhBuilderService
         _log = log;
         _once = new OnceLog(log);
         _console = new ConsoleBvhModule(loader, log);
+
         _memory = new GameMemorySource(memory);
         _rehydrator = new BvhRehydrator(_console, _memory, _once);
         _builder = new BvhBatchBuilder(_memory, _console, _once);
