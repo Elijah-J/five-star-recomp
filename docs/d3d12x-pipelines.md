@@ -194,7 +194,7 @@ flowchart LR
 | Shader stage | from the program's hardware stage: VS, PS, GS, NGG as mesh shader (no input assembler then) |
 | Root signature | `BindlessRootSignature`, created once per device; the game's root signature is kept in the description for binding translation |
 | Input layout | element n of a cache layout becomes `ATTR` n; a stream element becomes `ATTR` p, p its position among the non-system ISG1 inputs of the VS; elements the VS does not read become `UNUSED` k |
-| Blend, rasterizer, depth-stencil | passed through (stream); decoded from the context registers (cache) with 0 values replaced by the D3D12 default |
+| Blend, rasterizer, depth-stencil | passed through (stream); decoded from the context registers (cache) with 0 values replaced by the D3D12 default. Two console combinations the runtime refuses are rewritten (`DesktopStateRules`): a dual-source factor on target 0 turns independent blending off and gives targets 1 to 7 the default blend; a forced sample count with depth or stencil on becomes 0 |
 | Topology type | 1 to 4 pass; 0, the console type 19 and other values become `TRIANGLE` (stream and cache) |
 | Render-target and depth formats, sample mask and count (cache) | the record's 0x0C entry ([pipeline-cache.md](pipeline-cache.md#pipeline-outputs-and-vertex-input-layout)); the console's D16_UNORM_S8_UINT (118) becomes D32_FLOAT_S8X24_UINT (`DepthFormats`). Only without that entry are they guessed from the registers |
 | Derive | the base pipeline's description (kept per created pipeline) with the overrides applied, created anew; the formats are the base's, which the game found by a pipeline hash over them |
@@ -231,8 +231,9 @@ unwrapped, so slot 55 receives the desktop pointer it registered.
 
 ## Unknown
 
-- Why the desktop runtime refuses some cache graphics pipelines (slot 57) with E_INVALIDARG, among them the
-  `PS_*Textured_Eight`, `PS_AlphaPrepass`, `PS_AlphaTransmission` and `PS_BreakableGlass` families.
+- The other graphics pipelines the desktop runtime refuses with E_INVALIDARG: the debug layer reports stage
+  linkage (errors 660, 662: an output in another register or with fewer components than the pixel shader reads;
+  666: a mesh shader without the pixel shader's `TEXCOORD22`), so the translated signatures differ between stages.
 - Override kind 5, and whether kinds 3 and 4 exist.
 - The meaning of the shader flags beyond the mesh bits, and of the second stored bytecode (+0x10, size +0x2C) that
   0x14086f8e0 reads when its last argument is set (the pipeline paths pass 0).

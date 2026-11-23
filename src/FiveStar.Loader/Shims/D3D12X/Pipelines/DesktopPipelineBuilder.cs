@@ -9,7 +9,7 @@ namespace FiveStar.Loader.Shims.D3D12X.Pipelines;
 /// <summary>
 /// Writes the desktop stream of a pipeline: our root signature, the translated programs in the stage their hardware
 /// stage asks for (an NGG program is a mesh shader, so such a pipeline has no input assembler) and the game's
-/// fixed-function descs as they are.
+/// fixed-function descs, with the combinations only the console takes rewritten (<see cref="DesktopStateRules"/>).
 /// </summary>
 internal static unsafe class DesktopPipelineBuilder
 {
@@ -26,9 +26,9 @@ internal static unsafe class DesktopPipelineBuilder
             stream.AddShader(StageType(program.Stage), program.Dxil);
         }
 
-        stream.AddBytes(PipelineStateSubObjectType.Blend, description.Blend);
+        stream.AddBytes(PipelineStateSubObjectType.Blend, DesktopStateRules.Blend(description.Blend));
         stream.AddWords(PipelineStateSubObjectType.SampleMask, [unchecked((int)description.SampleMask)]);
-        stream.AddBytes(PipelineStateSubObjectType.Rasterizer, description.Rasterizer);
+        stream.AddBytes(PipelineStateSubObjectType.Rasterizer, DesktopStateRules.Rasterizer(description.Rasterizer, description.DepthStencil));
         stream.AddBytes(PipelineStateSubObjectType.DepthStencil1, description.DepthStencil);
 
         if (!mesh)

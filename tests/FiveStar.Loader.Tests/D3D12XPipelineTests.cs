@@ -35,6 +35,31 @@ public sealed unsafe class D3D12XPipelineTests
     }
 
     [Fact]
+    public void Dual_source_blending_and_a_forced_sample_count_with_depth_become_desktop_states()
+    {
+        // The game repeats target 0's SRC1_COLOR blend on all eight targets with independent blending on, and asks
+        // for 16 forced samples with depth on; the desktop runtime refuses both (debug-layer errors 112 and 672).
+        var blend = DesktopStateBytes.DefaultBlend();
+        DesktopStateBytes.Write(blend, DesktopStateBytes.IndependentBlendField, true);
+
+        for (var target = 0; target < 8; target++)
+        {
+            DesktopStateBytes.WriteTarget(blend, target, true, [2, 16, 1, 2, 16, 1], 0x0F);
+        }
+
+        var rasterizer = DesktopStateBytes.DefaultRasterizer();
+        rasterizer[DesktopStateBytes.ForcedSampleCountField] = 16;
+
+        var desktopBlend = DesktopStateRules.Blend(blend);
+        var desktopRasterizer = DesktopStateRules.Rasterizer(rasterizer, DesktopStateBytes.DefaultDepthStencil());
+
+        Assert.Equal((0, 16, 0), (desktopBlend[DesktopStateBytes.IndependentBlendField], desktopBlend[0x08 + DesktopStateBytes.DestBlendField], desktopBlend[0x08 + 0x28]));
+        Assert.Equal(1, desktopBlend[0x08 + 0x28 + DesktopStateBytes.DestBlendField]);
+        Assert.Equal(0, desktopRasterizer[DesktopStateBytes.ForcedSampleCountField]);
+        Assert.Same(rasterizer, DesktopStateRules.Rasterizer(rasterizer, new byte[0x34 + 8]));
+    }
+
+    [Fact]
     public void Derive_overrides_are_read_at_their_stride_with_the_desc_after_the_kind()
     {
         using var memory = new NativeBlocks();
