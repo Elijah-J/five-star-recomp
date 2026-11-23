@@ -135,7 +135,7 @@ method follows from the arguments and from the inline packet written instead:
 |---|---|---|---|
 | 9 | 9 | Close | creation code |
 | 12, 13 | 12, 13 | DrawInstanced, DrawIndexedInstanced | 4 and 5 counts; limit +0x28 |
-| 20 to 24 | 20 to 24 | IASetPrimitiveTopology, RSSetViewports, RSSetScissorRects, OMSetBlendFactor, OMSetStencilRef | (1, rects), float*, one dword |
+| 20 to 24 | 20 to 24 | IASetPrimitiveTopology ([Boot](#boot)), RSSetViewports, RSSetScissorRects, OMSetBlendFactor, OMSetStencilRef | (1, rects), float*, one dword |
 | 25 | 25 | SetPipelineState | PSO; caches PSO state at +0x544 |
 | 29, 30 | | X | (pointer, dword, dword) at 0x142482b99; 30 has 7 arguments (0x1424843b0); not reached in boot |
 | 32 | 28 | SetDescriptorHeaps | (2, {main view heap, sampler heap}) at 0x144e4cac2, when a context takes a new list |
@@ -229,6 +229,7 @@ slot. Reset (10, 139), draws and dispatches (12 to 14, 61) and slots 32 to 46 ar
 | Descriptor heap | 9, 10 | heap start handles returned in rax; 9 returns the title memory when the heap has some, 10 the GPU handle of the first descriptor the game owns |
 | Device | 16 | CreateRootSignature; the parameter layout is kept ([Binding](#binding)) |
 | Command list | 10, 12 to 14, 32 to 46, 61, 139 | [Binding](#binding) |
+| Command list | 20 | IASetPrimitiveTopology with console topologies made desktop ones ([Boot](#boot)) |
 
 ### Game memory on the GPU
 
@@ -392,6 +393,11 @@ stored messages are drained after a failed creation. A private fence waiting for
 removal when it happens; the removal reason, the stored messages and the DRED breadcrumbs and page-fault
 allocations are then logged once.
 
+Two bisection aids: `--d3d12-skip list:20,queue:35` makes the named slots do nothing and return 0 (whatever handler
+is bound before or after), and `--d3d12-trace-queues` logs the first 4000 submissions (with the X frame object and
+flags), queue Signal and Wait and CPU fence signals, numbering queues and fences as they appear. Without
+`--shader-dir` the boot reaches the first frames in about 15 s, which makes a run per bisection step cheap.
+
 ### Boot
 
 The device removal after the descriptor heaps was a CreateUnorderedAccessView (call from 0x141647616): a raw
@@ -401,13 +407,33 @@ bytes). With the pool in one buffer, boot passed, in order: GetResourceAllocatio
 console compute pipelines, command-signature argument type 0x69, slot 74 (0x141e6c2c5), slot 108 (0x140abfe1b),
 slot-133 textures, list slot 139 (0x142474ce1), resource GetDesc register order, the first ExecuteCommandLists,
 WaitFrameEventX (device 80) and the first present (queue 32: the game's window shows the plane, black so far, or
-the test pattern), then texture formats refused as UAVs, fence
-slot 12 (0x144fb0b03) and unaligned CBVs. With binding, the frame loop records graphics work with pipelines
-created; after the first present the GPU hangs (DXGI_ERROR_DEVICE_HUNG): every list submitted after it stops before
-its first command (DRED: BEGIN_COMMAND_LIST not completed; a ClearRenderTargetView list, a present copy). The hang
-stays with every draw, dispatch and ExecuteIndirect skipped and without pipelines; the debug layer reports
-ClearRenderTargetView on a slot-127 render target in UNORDERED_ACCESS state just before. The game then breaks at
-0x142474606 (its fence wait, 0x144fb0e29).
+the test pattern), then texture formats refused as UAVs, fence slot 12 (0x144fb0b03) and unaligned CBVs.
+
+**The GPU hang after the first frame** (DXGI_ERROR_DEVICE_HUNG; every list submitted after it stopped before its
+first command, DRED page fault at VA 0, the game then broke at 0x142474606, its device-removed handler behind the
+fence wait 0x144fb0e29) was IASetPrimitiveTopology (list slot 20) forwarding the console value 17. The desktop
+runtime and debug layer do not check the value; the GPU hangs when the next list starts. The queue trace showed a
+plain protocol: all work on the direct queue, (1 list, flags 0; 2 lists, flags 3) per frame, one Signal before and
+one after each present, no queue Wait, and the compute queues of slot 48 unused in boot. Bisection without
+pipelines: the hang stayed with present, clears, draws and binding skipped and went with slot 20 skipped. The
+game's inline form of the call (0x140032570) maps topologies 6 and 0x13 to 4 itself and writes the rest through a
+table to the hardware primitive type (0x1461ecf30: 17 -> 0x11, the rectangle list). The handler
+(`PrimitiveTopologies`) sets 17 as a triangle list (the three vertices then cover half the rectangle) and drops any
+other value the desktop does not define, warned once. With the GDK ABI table loaded, a 120 s boot with pipelines
+presents about 25,000 frames (4.2 ms apart, the display's refresh with sync interval 1, not the 33 ms the game
+asks device 78 for); the window stays black.
+
+Barriers stay no-ops: the fix needs none. The debug layer still reports ClearRenderTargetView on the slot-127
+render targets, which are created in UNORDERED_ACCESS (the initial layout the game passes); no list slot 26 to 31
+is called in boot, so the game's barriers are not found yet.
+
+The debug layer also reports error #553 about once per 500 presents: the list the present path submits from the
+table at 0x1475e7300 (0x142482660; recorded once at device creation) runs again while its previous submission is still
+executing, which the console allows and the desktop does not (the debug layer drops that submission). Waiting on the
+CPU for the previous run before the resubmission removed the error but made the process fail in coreclr (access
+violation at coreclr+0x165f05) within 3,000 presents, the same failure as a boot with queue slot 35 skipped, so it is
+not done yet.
+
 ## Unknown
 
 - Device slot 71; what slot 74's output is; whether list slot 139's third argument is flags. The open points of

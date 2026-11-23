@@ -6,6 +6,7 @@ using FiveStar.Loader.Calls;
 using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Loading;
 using FiveStar.Loader.Mods;
+using FiveStar.Loader.Shims.D3D12X.DebugLayer;
 using FiveStar.Loader.Shims.Input;
 
 namespace FiveStar.Loader.Host;
@@ -92,6 +93,19 @@ internal sealed class LoaderHost
         if (_options.D3D12Debug)
         {
             _runtime.D3D12X.Debugging.Enable(_options.D3D12GpuValidation);
+        }
+
+        if (_options.D3D12TraceQueues)
+        {
+            QueueTrace.Enable(_runtime.D3D12X.Objects, _log);
+        }
+
+        foreach (string skips in _options.D3D12Skips)
+        {
+            foreach (var skipped in SkippedSlot.ParseList(skips))
+            {
+                _runtime.D3D12X.Objects.Skip(skipped);
+            }
         }
 
         _runtime.D3D12X.Presenter.ShowTestPattern = _options.PresentTest;

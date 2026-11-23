@@ -3,6 +3,7 @@
 
 using System.Runtime.InteropServices;
 using FiveStar.Loader.Native;
+using FiveStar.Loader.Shims.D3D12X.DebugLayer;
 
 namespace FiveStar.Loader.Shims.D3D12X;
 
@@ -29,6 +30,11 @@ internal static unsafe class XboxQueueMethods
     [UnmanagedCallersOnly]
     public static int ExecuteCommandListsX(XboxObject* self, uint count, nint* lists, nint frame, uint flags)
     {
+        if (QueueTrace.Enabled)
+        {
+            QueueTrace.Execute(self, count, frame, flags);
+        }
+
         Execute(self, count, lists);
 
         return HResult.Ok;
@@ -39,6 +45,11 @@ internal static unsafe class XboxQueueMethods
     [UnmanagedCallersOnly]
     public static void ExecuteCommandLists(XboxObject* self, uint count, nint* lists)
     {
+        if (QueueTrace.Enabled)
+        {
+            QueueTrace.Execute(self, count, 0, 0);
+        }
+
         Execute(self, count, lists);
     }
 

@@ -29,6 +29,7 @@ internal sealed unsafe class XboxObjects
 
     private readonly object _gate = new();
     private readonly Dictionary<(XboxInterfaceKind Kind, int Slot), nint> _handlers = [];
+    private readonly HashSet<(XboxInterfaceKind Kind, int Slot)> _skipped = [];
     private readonly UnresolvedStubs _stubs;
     private readonly CodeHeap _heap;
     private readonly D3D12Debugging _debugging;
@@ -67,12 +68,40 @@ internal sealed unsafe class XboxObjects
 
         lock (_gate)
         {
-            _handlers[(kind, slot)] = handler;
-
-            if (_built)
+            if (_skipped.Contains((kind, slot)))
             {
-                Volatile.Write(ref VtableOf(kind)[slot], handler);
+                return;
             }
+
+            Install(kind, slot, handler);
+        }
+    }
+
+    /// <summary>
+    /// <c>--d3d12-skip</c>: the slot does nothing and returns 0 from now on, whatever handler is bound to it before
+    /// or after (a bisection aid for GPU faults).
+    /// </summary>
+    public void Skip(SkippedSlot skipped)
+    {
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(skipped.Slot, XboxInterfaces.For(skipped.Kind).SlotCount);
+        delegate* unmanaged<XboxObject*, nint> nothing = &XboxObjectMethods.Skipped;
+
+        lock (_gate)
+        {
+            _skipped.Add((skipped.Kind, skipped.Slot));
+            Install(skipped.Kind, skipped.Slot, (nint)nothing);
+        }
+
+        _log.Warn($"[d3d12_xs] --d3d12-skip: {XboxInterfaces.For(skipped.Kind).Name} slot {skipped.Slot} does nothing");
+    }
+
+    private void Install(XboxInterfaceKind kind, int slot, nint handler)
+    {
+        _handlers[(kind, slot)] = handler;
+
+        if (_built)
+        {
+            Volatile.Write(ref VtableOf(kind)[slot], handler);
         }
     }
 

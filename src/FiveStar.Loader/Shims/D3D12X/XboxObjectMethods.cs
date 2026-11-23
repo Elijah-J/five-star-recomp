@@ -22,6 +22,14 @@ internal static unsafe class XboxObjectMethods
     private const int DesktopCpuStartSlot = 9;
     private const int DesktopGpuStartSlot = 10;
 
+    /// <summary>A slot <c>--d3d12-skip</c> switched off: does nothing and returns 0 (S_OK), whatever the arguments.</summary>
+    [HotPath]
+    [UnmanagedCallersOnly]
+    public static nint Skipped(XboxObject* self)
+    {
+        return 0;
+    }
+
     [HotPath]
     [UnmanagedCallersOnly]
     public static uint Release(XboxObject* self)

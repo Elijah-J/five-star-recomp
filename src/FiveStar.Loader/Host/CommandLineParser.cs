@@ -116,6 +116,10 @@ internal sealed class CommandLineParser
                 return SetD3D12Debug(false);
             case "--d3d12-gpu-validation":
                 return SetD3D12Debug(true);
+            case "--d3d12-skip":
+                return Add(_options.D3D12Skips);
+            case "--d3d12-trace-queues":
+                return SetTraceQueues();
             case "--present-test":
                 return SetPresentTest();
             default:
@@ -311,6 +315,13 @@ internal sealed class CommandLineParser
     {
         _options.D3D12Debug = true;
         _options.D3D12GpuValidation |= gpuValidation;
+
+        return true;
+    }
+
+    private bool SetTraceQueues()
+    {
+        _options.D3D12TraceQueues = true;
 
         return true;
     }

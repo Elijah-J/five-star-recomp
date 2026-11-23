@@ -61,7 +61,7 @@ internal static class XboxInterfaces
     private static readonly ForwardedSlot[] AllocatorSlots = [Same(8)];
 
     /// <summary>
-    /// ID3D12GraphicsCommandList: 8 to 25 in desktop order; 33 to 40 and 50 to 52 four slots later; 70 is
+    /// ID3D12GraphicsCommandList: 8 to 25 in desktop order (20, IASetPrimitiveTopology, is a handler); 33 to 40 and 50 to 52 four slots later; 70 is
     /// OMSetDepthBounds; 139 is Reset with a third argument (allocator, null, 0 when a pooled list is reused). Slots taking GPU addresses (41 to 48) wait for the address translation and stay stubs.
     /// </summary>
     private static readonly ForwardedSlot[] ListSlots =
@@ -69,7 +69,7 @@ internal static class XboxInterfaces
         Same(8), Same(9), Unwrapped(10, ArgumentRegisters.Rdx | ArgumentRegisters.R8), Unwrapped(11, ArgumentRegisters.Rdx),
         Same(12), Same(13), Same(14), Unwrapped(15, ArgumentRegisters.Rdx | ArgumentRegisters.R9),
         Unwrapped(17, ArgumentRegisters.Rdx | ArgumentRegisters.R8), Unwrapped(19, ArgumentRegisters.Rdx | ArgumentRegisters.R9),
-        Same(20), Same(21), Same(22), Same(23), Same(24), Unwrapped(25, ArgumentRegisters.Rdx),
+        Same(21), Same(22), Same(23), Same(24), Unwrapped(25, ArgumentRegisters.Rdx),
         Moved(33, 29), Moved(34, 30), Moved(35, 31), Moved(36, 32), Moved(37, 33), Moved(38, 34), Moved(39, 35), Moved(40, 36),
         Moved(50, 46), Moved(51, 47), Moved(52, 48), Moved(70, 62),
         new(ResetXSlot, 10, false, ArgumentRegisters.Rdx | ArgumentRegisters.R8),

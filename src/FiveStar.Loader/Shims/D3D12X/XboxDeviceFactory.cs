@@ -329,6 +329,8 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         Objects.SetHandler(XboxInterfaceKind.DescriptorHeap, HeapCpuStartSlot, (nint)cpuStart);
         Objects.SetHandler(XboxInterfaceKind.DescriptorHeap, HeapGpuStartSlot, (nint)gpuStart);
 
+        delegate* unmanaged<XboxObject*, uint, void> topology = &PrimitiveTopologies.SetPrimitiveTopology;
+        Objects.SetHandler(XboxInterfaceKind.CommandList, PrimitiveTopologies.SetPrimitiveTopologySlot, (nint)topology);
         PresentSlots.Bind(Objects);
     }
 

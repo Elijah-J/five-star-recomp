@@ -76,6 +76,12 @@ internal sealed record HostOptions
     /// <summary>With the debug layer, also GPU-based validation (<c>--d3d12-gpu-validation</c>).</summary>
     public bool D3D12GpuValidation { get; set; }
 
+    /// <summary>D3D12.X slots that do nothing, to bisect GPU faults (<c>--d3d12-skip list:51,queue:35</c>).</summary>
+    public List<string> D3D12Skips { get; } = [];
+
+    /// <summary>Queue submissions, signals and waits in the log (<c>--d3d12-trace-queues</c>).</summary>
+    public bool D3D12TraceQueues { get; set; }
+
     /// <summary>Present a test pattern instead of the game's frame (<c>--present-test</c>).</summary>
     public bool PresentTest { get; set; }
 
