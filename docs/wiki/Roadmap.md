@@ -28,7 +28,7 @@ The executable is in hand; `fivestar exe analyze` reports its imports and GDK ca
 |---|---|
 | BCPack | BC1 decodes (all 102,725 pages); BC7 (5,167 pages) and BC3, BC4, BC5, BC6H (713 pages) are open ([details](Textures-and-BCPack.md)) |
 | Type names | PSO structures are identified by hashes; naming them needs lists of engine class names |
-| Geometry | drawables decode (meshlets, packed positions, normals, texture coordinates); skinning, the other vertex streams and the meshlet culling data are not ([details](https://github.com/ThatRecompDev/five-star-recomp/blob/main/docs/models.md)) |
+| Geometry | drawables decode with tangents, four texture coordinate sets, skin influences and inverse binds; open: an export that carries skinning (glTF), the ped bone palette, head skin streams and the meshlet culling data ([details](https://github.com/ThatRecompDev/five-star-recomp/blob/main/docs/models.md)) |
 | BVH data | ray tracing needs acceleration structures in AMD's layout ([details](Shader-Translation.md#ray-tracing)) |
 
 ## Engineering
