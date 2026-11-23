@@ -29,6 +29,7 @@ internal sealed unsafe class StandInPipelines
     private int _created;
     private int _ready;
     private long _skipped;
+    private long _recorded;
 
     /// <param name="budget">How long a creation may take before the game gets a stand-in.</param>
     /// <param name="builds">The threads that call the driver (started by the caller).</param>
@@ -42,8 +43,8 @@ internal sealed unsafe class StandInPipelines
         _self = GCHandle.Alloc(this, GCHandleType.Weak);
     }
 
-    /// <summary>Stand-ins handed out, how many have their pipeline, and the work skipped meanwhile.</summary>
-    public string Summary => $"{Volatile.Read(ref _created)} stand-in pipelines ({Volatile.Read(ref _ready)} built since), {Interlocked.Read(ref _skipped)} draws and dispatches skipped";
+    /// <summary>Stand-ins handed out, how many have their pipeline, the work skipped meanwhile and the work recorded.</summary>
+    public string Summary => $"{Volatile.Read(ref _created)} stand-in pipelines ({Volatile.Read(ref _ready)} built since), {Interlocked.Read(ref _skipped)} draws and dispatches skipped, {Interlocked.Read(ref _recorded)} recorded";
 
     /// <summary>
     /// Runs <paramref name="create"/> and writes its pipeline to <paramref name="result"/>; when it takes longer than
@@ -101,6 +102,13 @@ internal sealed unsafe class StandInPipelines
         pending = desktop == 0;
 
         return desktop;
+    }
+
+    /// <summary>Counts a draw or dispatch a command list recorded (draws per frame: its growth over the presents).</summary>
+    [HotPath]
+    public void Recorded()
+    {
+        Interlocked.Increment(ref _recorded);
     }
 
     /// <summary>Counts a dispatch a command list dropped because its pipeline is still a stand-in.</summary>

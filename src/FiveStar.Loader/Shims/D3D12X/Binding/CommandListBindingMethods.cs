@@ -246,12 +246,17 @@ internal static unsafe class CommandListBindingMethods
         execute(inner, objects.Unwrap(signature), maxCount, objects.Unwrap(arguments), argumentOffset, objects.Unwrap(count), countOffset);
     }
 
-    /// <summary>True while the list's pipeline is a stand-in the driver has not built: its draw or dispatch is skipped and counted.</summary>
+    /// <summary>
+    /// True while the list's pipeline is a stand-in the driver has not built: its draw or dispatch is skipped and
+    /// counted; otherwise it is counted as recorded.
+    /// </summary>
     [HotPath]
     private static bool PipelinePending(XboxObject* self)
     {
         if (CommandListBindings.Of(self)->PipelinePending == 0)
         {
+            ShimContext.Runtime.D3D12X.Pipelines?.StandIns.Recorded();
+
             return false;
         }
 
