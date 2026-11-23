@@ -18,6 +18,9 @@ internal sealed class TranslationState
     // Mesh shaders without numthreads in their PSV0 run 128 threads (NGG groups hold up to 128 vertices).
     private const int DefaultMeshThreads = 128;
 
+    // Compute programs without numthreads in their header run 64 threads (as the entry point declares).
+    private const int DefaultComputeThreads = 64;
+
     private int _temporaries;
 
     public TranslationState(ShaderProgram program, IReadOnlyList<Instruction> instructions, ShaderStage stage, bool copyShader)
@@ -34,6 +37,19 @@ internal sealed class TranslationState
         var threads = program.PipelineState?.NumThreads;
         var meshThreads = threads is null ? DefaultMeshThreads : threads.Value.X;
         MeshThreads = stage == ShaderStage.Mesh ? meshThreads : 0;
+        GroupThreads = MeshThreads;
+
+        if (stage == ShaderStage.Compute)
+        {
+            var compute = program.Config.Compute?.NumThreads;
+            GroupThreads = DefaultComputeThreads;
+
+            if (compute is not null)
+            {
+                GroupThreads = compute.Value.X * compute.Value.Y * compute.Value.Z;
+            }
+        }
+
         Masks.Add(SpecialRegisters.Exec);
     }
 
@@ -55,6 +71,9 @@ internal sealed class TranslationState
 
     public int MeshThreads { get; }
 
+    /// <summary>The threads of a mesh or compute thread group (0 for other stages).</summary>
+    public int GroupThreads { get; }
+
     public bool IsWave64 => Config.WaveSize == Wave64;
 
     /// <summary>The console wave size the program was compiled for.</summary>
@@ -63,7 +82,7 @@ internal sealed class TranslationState
     /// <summary>Wave operations keep console lane numbers on any hardware wave size (see TranslationOptions).</summary>
     public bool EmulateWaves { get; init; }
 
-    /// <summary>Mesh superstep form: wave operations exchange through groupshared memory, one group step each.</summary>
+    /// <summary>Superstep form (mesh or compute): wave operations exchange through groupshared memory, one group step each.</summary>
     public bool Supersteps { get; init; }
 
     /// <summary>Superstep form: temporaries declared at function scope because a step cuts their block.</summary>

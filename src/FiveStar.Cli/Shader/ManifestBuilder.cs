@@ -70,10 +70,32 @@ internal static class ManifestBuilder
 
         if (result.Status == ProgramStatus.OkMeshFallback || notes.Contains(CorpusTranslator.MeshFallbackReady))
         {
-            fallback = Fallback(folder, result.Name);
+            fallback = WideFallbacks(folder, result.Name, facts.ProgramWave, notes, Fallback(folder, result.Name));
         }
 
         return new ProgramVariants(result.Name, result.Stage!, dxil, facts.ProgramWave, facts.Floor, facts.WavePin, groupWave, fallback);
+    }
+
+    /// <summary>The fallback with its compute shader pinned to the console wave and its superstep form, where they compiled.</summary>
+    private static MeshFallbackFiles? WideFallbacks(string folder, string name, int? wave, string[] notes, MeshFallbackFiles? fallback)
+    {
+        if (fallback is null)
+        {
+            return null;
+        }
+
+        if (wave is not null && notes.Contains(CorpusTranslator.PinnedFallbackNote(wave.Value) + CorpusTranslator.ReadySuffix))
+        {
+            var pinned = Existing(folder, Path.ChangeExtension(name + MeshFallbackCompiler.PinnedComputeSuffix(wave.Value), ".dxil"));
+            fallback = fallback with { PinnedCompute = pinned, PinnedLanes = wave };
+        }
+
+        if (notes.Contains(CorpusTranslator.SuperstepFallbackReady))
+        {
+            fallback = fallback with { Supersteps = Fallback(folder, Path.ChangeExtension(name + CorpusTranslator.GroupWaveSuffix, null)) };
+        }
+
+        return fallback;
     }
 
     /// <summary>The wave facts: the floor is on the first line; a compute program's pin is above its entry point.</summary>

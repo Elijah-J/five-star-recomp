@@ -118,6 +118,16 @@ uint vw_read(uint x, uint lane) {   // x of program lane `lane` (AMD uses the lo
     return WaveReadLaneAt(x, lane);
 #endif
 }
+uint vw_read_fill(uint x, uint lane, uint fill) {   // vw_read where a missing lane holds fill (a lane without a pixel)
+#if VW_EMULATE && !VW_GROUP_LANES
+    lane &= VW_WAVE - 1u;
+    uint hw = vw_origin() + lane, count = WaveGetLaneCount();
+    uint v = WaveReadLaneAt(x, min(hw, count - 1u));
+    return hw < count ? v : fill;
+#else
+    return vw_read(x, lane);
+#endif
+}
 uint2 vw_ballot(bool c) {   // lane mask in program lanes (y = lanes 32..63)
 #if VW_GROUP_WAVE
     return vw_group_ballot(c);

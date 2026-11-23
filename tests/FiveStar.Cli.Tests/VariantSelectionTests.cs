@@ -18,6 +18,12 @@ public sealed class VariantSelectionTests
     private static readonly ProgramVariants WidePixel = new("ps", "ps", "ps.dxil", 64, 64, null, null, null);
     private static readonly ProgramVariants WideMesh = new("wm", "ms", "wm.dxil", 64, 64, null, "wm.w32.dxil", null);
 
+    // Over the mesh output limit, floor 64: the fallback pinned to 64 lanes, or the fallback of its superstep form.
+    private static readonly ProgramVariants WideFallback = new("wf", "ms", null, 64, 64, null, null, new MeshFallbackFiles("wf.msfb_cs.dxil", "wf.msfb_vs.dxil")
+    {
+        PinnedCompute = "wf.msfb_cs.w64.dxil", PinnedLanes = 64, Supersteps = new MeshFallbackFiles("wf.w32.msfb_cs.dxil", "wf.w32.msfb_vs.dxil"),
+    });
+
     [Fact]
     public void Wave_pins_mesh_support_and_floors_pick_the_form()
     {
@@ -33,6 +39,11 @@ public sealed class VariantSelectionTests
 
         // A mesh program that needs its whole console wave runs its superstep form on 32-lane waves.
         Assert.Equal((ChoiceOutcome.Variant, "wm.w32.dxil"), Pick(Nvidia, WideMesh));
+
+        // A fallback below its floor runs pinned where 64-lane waves exist, else in supersteps.
+        Assert.Equal((ChoiceOutcome.Fallback, "wf.msfb_cs.w64.dxil"), Pick(Amd, WideFallback));
+        Assert.Equal((ChoiceOutcome.Fallback, "wf.w32.msfb_cs.dxil"), Pick(Nvidia, WideFallback));
+        Assert.Equal((ChoiceOutcome.Fallback, "wf.w32.msfb_cs.dxil"), Pick(AdapterProfiles.IntelXe2, WideFallback));
     }
 
     private static (ChoiceOutcome Outcome, string File) Pick(AdapterInfo adapter, ProgramVariants program)

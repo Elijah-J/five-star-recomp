@@ -90,7 +90,12 @@ internal sealed class BodyWriter
             }
         }
 
-        if (stage == ShaderStage.Compute)
+        if (stage == ShaderStage.Compute && _state.Supersteps)
+        {
+            // Console waves are consecutive group indices, as for a mesh program.
+            lines.Add($"  {WaveOps.GroupLane} = in_gi & (VW_WAVE - 1u);");
+        }
+        else if (stage == ShaderStage.Compute)
         {
             // The wave32 variant of a wave64 program (HlslTranslator.GroupWaveVariant) runs the group as the wave.
             lines.AddRange(["#if VW_GROUP_WAVE", "  vw_begin(in_gi);", "#endif"]);

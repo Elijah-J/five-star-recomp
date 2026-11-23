@@ -20,10 +20,16 @@ public sealed partial class CorpusTranslator
     public const string GroupWaveSuffix = ".w32.hlsl";
 
     /// <summary>The reason of a wave64-pinned compute program whose wave32 variant compiled.</summary>
-    public const string GroupWaveReady = GroupWaveNote + " ok";
+    public const string GroupWaveReady = GroupWaveNote + ReadySuffix;
 
     /// <summary>The reason of a mesh program whose fallback also compiled (<see cref="CorpusOptions.MeshFallbacks"/>).</summary>
-    public const string MeshFallbackReady = MeshFallbackNote + " ok";
+    public const string MeshFallbackReady = MeshFallbackNote + ReadySuffix;
+
+    /// <summary>The note of a mesh program whose superstep form also compiled as a fallback.</summary>
+    public const string SuperstepFallbackReady = SuperstepFallbackNote + ReadySuffix;
+
+    /// <summary>What a note of a form that compiled ends with.</summary>
+    public const string ReadySuffix = " ok";
 
     /// <summary>Between the notes of a mesh program with a superstep form and a fallback.</summary>
     public const string ReasonSeparator = "; ";
@@ -34,6 +40,7 @@ public sealed partial class CorpusTranslator
     private const int NarrowestHardwareWave = 4;
     private const string GroupWaveNote = "wave32 variant";
     private const string MeshFallbackNote = "fallback";
+    private const string SuperstepFallbackNote = "superstep fallback";
 
     private const int ShortReasonLength = 40;
     private const int CrashReasonLength = 80;
@@ -147,31 +154,88 @@ public sealed partial class CorpusTranslator
         }
 
         var (status, reason) = Compile(_compiler, hlslPath, translated.Hlsl, translated);
+        var notes = new List<string>();
 
         if (status == ProgramStatus.Ok && translated.GroupWave is not null)
         {
             var variantPath = Path.Combine(options.OutputFolder, translated.Name + GroupWaveSuffix);
-            reason = CompileGroupWave(_compiler, variantPath, translated, translated.GroupWave);
+            notes.Add(CompileGroupWave(_compiler, variantPath, translated, translated.GroupWave));
         }
 
-        if (status == ProgramStatus.Ok && translated.Stage == ShaderStage.Mesh && options.MeshFallbacks && _fallback is not null)
+        if (translated.Stage == ShaderStage.Mesh && _fallback is not null && status is ProgramStatus.Ok or ProgramStatus.OkMeshFallback)
         {
-            var fallback = MeshFallbackReason(_fallback.Compile(hlslPath, translated.Hlsl, translated.Hlsl.Length > _compiler.Options.LargeSourceLength));
-            reason = string.Join(ReasonSeparator, new[] { reason, fallback }.OfType<string>());
+            notes.AddRange(MeshFallbacks(_fallback, options, status, hlslPath, translated));
+        }
+
+        if (notes.Count > 0)
+        {
+            reason = string.Join(ReasonSeparator, notes);
         }
 
         return new ProgramResult(translated.Name, stageName, status, reason);
     }
 
-    /// <summary>The reason of an ok mesh program whose fallback was also compiled: <c>fallback ok</c> or why it failed.</summary>
-    private static string MeshFallbackReason(string? error)
+    /// <summary>
+    /// The fallbacks of a mesh program, as notes for its reason: the plain one (with <see cref="CorpusOptions.MeshFallbacks"/>;
+    /// an ok-msfb program has it already), and for a program that needs wide waves the plain compute shader pinned to the
+    /// console wave and the fallback of its superstep form.
+    /// </summary>
+    private List<string> MeshFallbacks(MeshFallbackCompiler fallback, CorpusOptions options, string status, string hlslPath, TranslatedProgram program)
+    {
+        var notes = new List<string>();
+        var hlsl = program.Hlsl!;
+        var large = hlsl.Length > _compiler!.Options.LargeSourceLength;
+
+        if (status == ProgramStatus.Ok)
+        {
+            if (!options.MeshFallbacks)
+            {
+                return notes;
+            }
+
+            var error = fallback.Compile(hlslPath, hlsl, large);
+            notes.Add(FallbackReason(MeshFallbackNote, error));
+
+            if (error is not null)
+            {
+                return notes;
+            }
+        }
+
+        var wave = Analysis.WaveFacts.Read(hlsl).ProgramWave;
+
+        if (!NeedsWideWaves(hlsl) || wave is null)
+        {
+            return notes;
+        }
+
+        notes.Add(FallbackReason(PinnedFallbackNote(wave.Value), fallback.CompilePinned(hlslPath, hlsl, large, wave.Value)));
+
+        if (program.GroupWave?.Hlsl is not null)
+        {
+            var path = Path.Combine(options.OutputFolder, program.Name + GroupWaveSuffix);
+            File.WriteAllText(path, program.GroupWave.Hlsl);
+            notes.Add(FallbackReason(SuperstepFallbackNote, fallback.Compile(path, program.GroupWave.Hlsl, large)));
+        }
+
+        return notes;
+    }
+
+    /// <summary>The note of a mesh fallback that was compiled: <c>&lt;note&gt; ok</c> or why it failed.</summary>
+    private static string FallbackReason(string note, string? error)
     {
         if (error is null)
         {
-            return MeshFallbackReady;
+            return note + ReadySuffix;
         }
 
-        return Cut($"{MeshFallbackNote}: {error}", CompileReasonLength);
+        return Cut($"{note}: {error}", CompileReasonLength);
+    }
+
+    /// <summary>The note of the fallback compute shader pinned to <paramref name="lanes"/>-lane waves.</summary>
+    public static string PinnedFallbackNote(int lanes)
+    {
+        return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"wave{lanes} fallback");
     }
 
     /// <summary>The translation from the cache when it has one; otherwise a new one, kept when it is final.</summary>
@@ -263,6 +327,19 @@ public sealed partial class CorpusTranslator
 
             return new GroupWaveVariant(HlslTranslator.GroupWaveVariant(structured), null);
         }
+        catch (UnsupportedProgramException)
+        {
+            // Several console waves in the group, or a wave operation under a per-lane condition: supersteps.
+            return Supersteps(program, options);
+        }
+    }
+
+    private static GroupWaveVariant Supersteps(ShaderProgram program, TranslationOptions options)
+    {
+        try
+        {
+            return new GroupWaveVariant(HlslTranslator.SuperstepVariant(program, options), null);
+        }
         catch (UnsupportedProgramException exception)
         {
             return new GroupWaveVariant(null, Cut($"{GroupWaveNote}: {exception.Message}", CompileReasonLength));
@@ -271,25 +348,24 @@ public sealed partial class CorpusTranslator
 
     /// <summary>
     /// The superstep form of a mesh program whose floor is above the narrowest hardware wave
-    /// (<see cref="HlslTranslator.MeshSuperstepVariant"/>): console results on any wave; null for the others.
+    /// (<see cref="HlslTranslator.SuperstepVariant"/>): console results on any wave; null for the others.
     /// </summary>
     private static GroupWaveVariant? MeshSupersteps(ShaderProgram program, string hlsl, TranslationOptions options)
     {
-        var floor = Analysis.WaveFacts.Read(hlsl).Floor;
-
-        if (floor is null || floor <= NarrowestHardwareWave)
+        if (!NeedsWideWaves(hlsl))
         {
             return null;
         }
 
-        try
-        {
-            return new GroupWaveVariant(HlslTranslator.MeshSuperstepVariant(program, options), null);
-        }
-        catch (UnsupportedProgramException exception)
-        {
-            return new GroupWaveVariant(null, Cut($"{GroupWaveNote}: {exception.Message}", CompileReasonLength));
-        }
+        return Supersteps(program, options);
+    }
+
+    /// <summary>Whether a mesh program's floor is above the narrowest hardware wave.</summary>
+    private static bool NeedsWideWaves(string hlsl)
+    {
+        var floor = Analysis.WaveFacts.Read(hlsl).Floor;
+
+        return floor is not null && floor > NarrowestHardwareWave;
     }
 
     /// <summary>Writes and compiles <c>name.w32.hlsl</c>; the outcome becomes the reason of the ok result.</summary>

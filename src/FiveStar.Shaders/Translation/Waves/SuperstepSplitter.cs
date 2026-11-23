@@ -41,9 +41,18 @@ internal sealed partial class SuperstepSplitter
     {
         var parts = new List<(int Address, List<string> Lines)> { (block.Address, []) };
 
-        foreach (var line in block.Lines)
+        // A compound statement split over lines is one memory step: a step may not stop inside its braces. One with a
+        // wave operation is cut line by line, as before.
+        foreach (var statement in Statements(block.Lines))
         {
-            Cut(parts, line);
+            if (WaveCallPattern().IsMatch(statement))
+            {
+                statement.Split('\n').ToList().ForEach(line => Cut(parts, line));
+            }
+            else
+            {
+                Cut(parts, statement);
+            }
         }
 
         Hoist(parts);
@@ -64,13 +73,41 @@ internal sealed partial class SuperstepSplitter
         return blocks;
     }
 
+    /// <summary>The block's lines joined into statements whose braces balance.</summary>
+    private static List<string> Statements(IReadOnlyList<string> lines)
+    {
+        var statements = new List<string>();
+        var open = new List<string>();
+        var depth = 0;
+
+        foreach (var line in lines)
+        {
+            open.Add(line);
+            depth += line.Count(character => character == '{') - line.Count(character => character == '}');
+
+            if (depth <= 0)
+            {
+                statements.Add(string.Join("\n", open));
+                open.Clear();
+                depth = 0;
+            }
+        }
+
+        if (open.Count > 0)
+        {
+            statements.Add(string.Join("\n", open));
+        }
+
+        return statements;
+    }
+
     /// <summary>Appends a statement to the last part, first stopping where it needs a step.</summary>
     private void Cut(List<(int Address, List<string> Lines)> parts, string line)
     {
         var calls = WaveCallPattern().Matches(line);
         var shared = SharedPattern().IsMatch(line);
 
-        if (calls.Count > 1 || ((calls.Count > 0 || shared) && (line.Contains('\n', StringComparison.Ordinal) || LoopPattern().IsMatch(line))))
+        if (calls.Count > 1 || (calls.Count > 0 && line.Contains('\n', StringComparison.Ordinal)) || ((calls.Count > 0 || shared) && LoopPattern().IsMatch(line)))
         {
             throw new UnsupportedProgramException($"superstep: cannot stop inside {line.Trim()}");
         }

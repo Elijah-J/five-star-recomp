@@ -77,7 +77,7 @@ public sealed class MeshSuperstepRunner
     /// <summary>The superstep form.</summary>
     public string Supersteps()
     {
-        return HlslTranslator.MeshSuperstepVariant(Build(), new TranslationOptions(StructuredControlFlow: false, PinWaveSize: false, EmulateWaveSize: true));
+        return HlslTranslator.SuperstepVariant(Build(), new TranslationOptions(StructuredControlFlow: false, PinWaveSize: false, EmulateWaveSize: true));
     }
 
     /// <summary>Runs the superstep form; the mismatches against the console waves.</summary>

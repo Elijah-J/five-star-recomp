@@ -33,7 +33,51 @@ public static class PixelLaneCases
             RowShift(),
             HelperExecInitial(),
             HelperExecWholeQuad(),
+            WholeWaveReductions(),
         ];
+    }
+
+    // Whole-wave-mode minimum and sum of x + 16 * y, as compiled wave reductions do: lanes without a pixel hold the
+    // identity (-1, 0), read across the wave by permlanex16 and readlane 20. On a 4-lane wave those lanes are missing,
+    // so the result is the quad's, as on a console wave holding only this quad.
+    private static PixelCase WholeWaveReductions()
+    {
+        const string Program = PixelValue + """
+
+            s_mov_b32 s2, 0
+            s_mov_b32 s3, 0
+            s_or_saveexec_b32 s10, -1
+            v_cndmask_b32_e64 v13, -1, v12, s10
+            v_cndmask_b32_e64 v15, 0, v12, s10
+            v_mov_b32_dpp v14, v13 quad_perm:[1,0,3,2] row_mask:0xf bank_mask:0xf
+            v_mov_b32_dpp v16, v15 quad_perm:[1,0,3,2] row_mask:0xf bank_mask:0xf
+            v_min_u32_e32 v13, v13, v14
+            v_add_nc_u32_e32 v15, v15, v16
+            v_mov_b32_dpp v14, v13 quad_perm:[2,3,0,1] row_mask:0xf bank_mask:0xf
+            v_mov_b32_dpp v16, v15 quad_perm:[2,3,0,1] row_mask:0xf bank_mask:0xf
+            v_min_u32_e32 v13, v13, v14
+            v_add_nc_u32_e32 v15, v15, v16
+            v_readlane_b32 s5, v13, 20
+            v_readlane_b32 s7, v15, 20
+            v_permlanex16_b32 v14, v13, s2, s3
+            v_permlanex16_b32 v16, v15, s2, s3
+            v_min_u32_e32 v13, v13, v14
+            v_add_nc_u32_e32 v15, v15, v16
+            v_readlane_b32 s4, v13, 0
+            v_readlane_b32 s6, v15, 0
+            s_min_u32 s4, s4, s5
+            s_add_u32 s6, s6, s7
+            s_mov_b32 exec_lo, s10
+            v_mov_b32 v20, s4
+            v_mov_b32 v21, s6
+            """;
+
+        return new PixelCase("whole_wave_reductions", Program, 2, pixel =>
+        {
+            var values = Enumerable.Range(0, 4).Select(slot => Value(pixel, slot)).ToList();
+
+            return [values.Min(), values.Aggregate(0u, (sum, value) => sum + value)];
+        });
     }
 
     private static uint Value(PixelContext pixel, int slot)

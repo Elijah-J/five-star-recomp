@@ -38,6 +38,21 @@ public sealed class ComputeShaderTests : IClassFixture<WarpFixture>
         Assert.True(mismatches.Count == 0, $"{mismatches.Count} mismatches:\n{string.Join("\n", mismatches.Take(16))}");
     }
 
+    // Raw programs number their threads for 64-thread groups; ds_permute's loop over lanes has no superstep form.
+    public static TheoryData<string> SuperstepCases =>
+        [.. ComputeWaveCases.All().Concat(ComputeWaveCases.FullWave())
+            .Where(testCase => testCase.Wave == 64 && !testCase.Raw && !testCase.Name.StartsWith("cs_ds_permute", StringComparison.Ordinal))
+            .Select(testCase => testCase.Name)];
+
+    [WarpTheory]
+    [MemberData(nameof(SuperstepCases))]
+    public void A_wave64_program_runs_in_supersteps_with_several_waves_per_group(string name)
+    {
+        var mismatches = new ComputeCaseRunner(_fixture).RunSupersteps(ComputeCases.Find(name));
+
+        Assert.True(mismatches.Count == 0, $"{mismatches.Count} mismatches:\n{string.Join("\n", mismatches.Take(16))}");
+    }
+
     [WarpTheory]
     [MemberData(nameof(Cases))]
     [MemberData(nameof(FullWaveCases), Skip = FullWaveReason)]

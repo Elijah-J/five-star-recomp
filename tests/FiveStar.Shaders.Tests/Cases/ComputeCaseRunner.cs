@@ -29,7 +29,7 @@ public sealed class ComputeCaseRunner
 
     public IReadOnlyList<string> Run(ComputeCase testCase)
     {
-        return Run(testCase, groupWave: false);
+        return Run(testCase, null);
     }
 
     /// <summary>
@@ -38,12 +38,31 @@ public sealed class ComputeCaseRunner
     /// </summary>
     public IReadOnlyList<string> RunGroupWave(ComputeCase testCase)
     {
-        return Run(testCase, groupWave: true);
+        return Run(testCase, GroupWave);
     }
 
-    private List<string> Run(ComputeCase testCase, bool groupWave)
+    /// <summary>
+    /// Runs a case in the superstep form (HlslTranslator.SuperstepVariant) with groups of two console waves, which
+    /// branch apart: every thread is compared with full-wave expectations.
+    /// </summary>
+    public IReadOnlyList<string> RunSupersteps(ComputeCase testCase)
     {
-        var shader = Build(testCase, groupWave);
+        var options = new TranslationOptions(StructuredControlFlow: false, PinWaveSize: false, EmulateWaveSize: true);
+
+        return Run(testCase with { Threads = (2 * testCase.Wave, 1, 1) }, program => HlslTranslator.SuperstepVariant(program, options));
+    }
+
+    private static string GroupWave(ShaderProgram program)
+    {
+        // As the corpus builds it: structured (WARP's shader compiler crashes on barriers in the dispatch switch).
+        var structured = HlslTranslator.Translate(program, new TranslationOptions(StructuredControlFlow: true, PinWaveSize: true, EmulateWaveSize: true));
+
+        return HlslTranslator.GroupWaveVariant(structured.Hlsl);
+    }
+
+    private List<string> Run(ComputeCase testCase, Func<ShaderProgram, string>? variant)
+    {
+        var shader = Build(testCase, variant);
         uint[] user = [.. ComputeCase.Descriptor(ComputeCase.OutputHeap), .. testCase.SecondDescriptor, .. testCase.User, .. new uint[ComputeCase.UserSgprCount]];
         var output = new BufferResource(ComputeCase.OutputHeap, [.. Enumerable.Repeat(testCase.Fill, testCase.TotalThreads * testCase.Outputs)], Writable: true);
         var bindings = new Bindings { UserSgprs = user[..ComputeCase.UserSgprCount], Buffers = [output, .. testCase.Buffers] };
@@ -52,7 +71,7 @@ public sealed class ComputeCaseRunner
 
         var wave = Math.Min(_fixture.ComputeWaveSize, testCase.Wave);
 
-        if (groupWave)
+        if (variant is not null)
         {
             wave = testCase.Wave;
         }
@@ -60,7 +79,7 @@ public sealed class ComputeCaseRunner
         return Compare(testCase, result.Buffers, wave);
     }
 
-    private byte[] Build(ComputeCase testCase, bool groupWave)
+    private byte[] Build(ComputeCase testCase, Func<ShaderProgram, string>? variant)
     {
         var assembled = _fixture.Workbench.Assemble(testCase.Name, Source(testCase), testCase.Wave);
         var groupIds = testCase.GroupAxes.Select((axis, index) => new GroupIdSgpr(axis, ComputeCase.UserSgprCount + index)).ToList();
@@ -85,12 +104,9 @@ public sealed class ComputeCaseRunner
         };
         var program = new ShaderProgram(ShaderStage.Compute, assembled.Instructions, assembled.Code, ShaderSignatures.None, config, null);
 
-        if (groupWave)
+        if (variant is not null)
         {
-            // As the corpus builds it: structured (WARP's shader compiler crashes on barriers in the dispatch switch).
-            var structured = HlslTranslator.Translate(program, new TranslationOptions(StructuredControlFlow: true, PinWaveSize: true, EmulateWaveSize: true));
-
-            return _fixture.Workbench.Compile(testCase.Name + "_w32", HlslTranslator.GroupWaveVariant(structured.Hlsl), "cs");
+            return _fixture.Workbench.Compile($"{testCase.Name}_w32_{testCase.ThreadsPerGroup}", variant(program), "cs");
         }
 
         return _fixture.Workbench.Compile(testCase.Name, ShaderWorkbench.Translate(program), "cs");

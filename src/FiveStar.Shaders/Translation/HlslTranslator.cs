@@ -89,15 +89,16 @@ public static partial class HlslTranslator
     }
 
     /// <summary>
-    /// The superstep form of a mesh program for hardware waves narrower than its floor: every wave operation is a step of
-    /// the whole thread group through groupshared memory (rdna_superstep.hlsli), so the program gives console results on
-    /// any hardware wave. Throws <see cref="UnsupportedProgramException"/> when a statement cannot be cut into steps.
+    /// The superstep form of a mesh or compute program for hardware waves narrower than its console wave: every wave
+    /// operation is a step of the whole thread group through groupshared memory (rdna_superstep.hlsli), so the program
+    /// gives console results on any hardware wave, also when its group holds several console waves that branch apart.
+    /// Throws <see cref="UnsupportedProgramException"/> when a statement cannot be cut into steps.
     /// </summary>
-    public static string MeshSuperstepVariant(ShaderProgram program, TranslationOptions options)
+    public static string SuperstepVariant(ShaderProgram program, TranslationOptions options)
     {
-        if (program.Stage != ShaderStage.Mesh)
+        if (program.Stage is not (ShaderStage.Mesh or ShaderStage.Compute))
         {
-            throw new UnsupportedProgramException("superstep: not a mesh program");
+            throw new UnsupportedProgramException("superstep: not a mesh or compute program");
         }
 
         return ProgramTranslator.TranslateSupersteps(program, options);

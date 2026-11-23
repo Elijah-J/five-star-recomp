@@ -166,7 +166,7 @@ strip. The record size `GS_VTX_DW` is derived from the LDS write offsets between
 
 | Limit | Handling |
 |---|---|
-| Mesh output over 32 KB (D3D12 PC limit), or a GPU without mesh shaders | rewritten as a compute shader plus a vertex-pulling vertex shader (`MeshComputeFallback`, files `.msfb_cs.hlsl` / `.msfb_vs.hlsl`); `--mesh-fallbacks` builds it for every mesh program |
+| Mesh output over 32 KB (D3D12 PC limit), or a GPU without mesh shaders | rewritten as a compute shader plus a vertex-pulling vertex shader (`MeshComputeFallback`, files `.msfb_cs.hlsl` / `.msfb_vs.hlsl`); `--mesh-fallbacks` builds it for every mesh program, and for a program with a floor above 4 also the compute shader pinned to the console wave (`.msfb_cs.w64.hlsl`) and the fallback of its superstep form (`.w32.msfb_cs.hlsl` / `.w32.msfb_vs.hlsl`) |
 | HLSL over 2,500,000 characters | compiled with `-Od` (dxc's optimizer needs minutes on the largest programs) |
 | Wave size | AMD lane numbers are kept. Pixel, vertex and mesh programs emulate the console wave on any hardware wave size (see Wave size). A compute program that reads other lanes by number gets `[WaveSize(32 or 64)]` (`TranslationOptions.PinWaveSize`, on in `fivestar shader translate`), so it fails to load on a GPU without that wave size instead of computing wrong results |
 | f32 → f16 | `f32tof16_rne` (round to nearest even, as AMD) |
@@ -205,7 +205,7 @@ program wave of W lanes:
 |---|---|---|
 | H = W | the native operations | console results |
 | H > W | every aligned W-lane segment is one program wave: reads add the segment's first lane, masks are cut out of the ballot, `any`, `count` and branch conditions are per segment | console results |
-| H < W, pixel and vertex | the hardware wave is program lanes 0 .. H-1, a partly filled console wave; a lane at H or above is missing and reads 0 | console results when no read leaves aligned groups of H lanes |
+| H < W, pixel and vertex | the hardware wave is program lanes 0 .. H-1, a partly filled console wave; a lane at H or above is missing and reads 0, or the value the missing-lane analysis found (`vw_read_fill`) | console results when no read leaves aligned groups of H lanes, or every read that does reads a value known on a lane without a pixel |
 | H < W, mesh | the hardware wave is program lanes k·H .. k·H+H-1 of the wave (64 consecutive threads, `VW_GROUP_LANES`) | reads inside the window are right; masks, counts, branch conditions and first lanes see only the window, while the console sees all 64 live threads; console results when the window analysis below finds that never matters |
 
 The choice between paths depends only on `WaveGetLaneCount()`, which is a constant once the driver compiles the
@@ -222,6 +222,19 @@ The floor is the widest aligned lane group a cross-lane read reaches: quads 4, `
 `v_permlane16` 16, `v_permlanex16` and `BITMASK_PERM` 32, `SWAP`/`REVERSE`/`BROADCAST` their group, `v_readlane` of a
 constant lane c the next power of two above c, of a lane found in a lane mask (`s_ff1`) 1, of any other lane
 (`v_readlane` from an SGPR, `ds_bpermute`, `ds_permute`) the whole wave.
+
+**Missing lanes** (`Translation/Waves/MissingLaneAnalysis`, pixel and vertex). The lanes a narrower hardware wave lacks
+are console lanes without a pixel (or vertex): EXEC clear, and in whole-wave mode (`s_or_saveexec -1`) they compute what
+the program gives them. Compiled wave reductions give them the identity (`v_cndmask` with the saved EXEC: 0 for a sum
+or OR, all ones for a minimum) before reading across the wave. A forward pass tracks, per class of missing lanes (lanes
+H·2^k .. H·2^(k+1)-1, aligned so a group no larger stays inside), which variables hold a known value there; integer and
+bool operations are computed, floats only through bit casts and selects. Below the reach, a hardware wave of H lanes
+gives console results when every read that may reach lane H or above reads one known value there; that read becomes
+`vw_read_fill(x, lane, value)`. A store a missing lane may make, or a read whose value differs between the waves checked,
+keeps the floor. When the floor stays above 4, the second header line names why (`// narrower hardware waves differ:
+...`). On the corpus this takes nearly every wave32 reduction (permlanex16, readlane 0) to floor 16 and wave64 ones
+(readlane 32) to 16; floor 8 needs the exact lanes of DPP and permlane patterns, which the analysis approximates by
+their aligned group.
 
 **Mesh windows** (`Translation/Waves/WindowAnalysis`). The other lanes of a mesh console wave are live threads in
 other hardware waves, so a narrower hardware wave (a window) sees only its part of every mask. The analysis runs over
@@ -247,7 +260,7 @@ in which phase outputs are written. Programs that share LDS or memory between la
 windows of one console wave run unordered between barriers. The first header line names the floor; when it is the whole
 wave, the second line names the first reason (`// narrower hardware waves differ: ...`).
 
-**Mesh supersteps** (`HlslTranslator.MeshSuperstepVariant`, `rdna_superstep.hlsli`). For a mesh program with a floor
+**Supersteps** (`HlslTranslator.SuperstepVariant`, `rdna_superstep.hlsli`). For a mesh program with a floor
 above 4, `fivestar shader translate` also writes `<name>.w32.hlsl`/`.dxil`, which gives console results on any hardware
 wave. The blocks are cut at every wave operation: the thread deposits its value and bit in groupshared memory and
 stops; when every thread of the group has stopped (at an operation, an `s_barrier` or the end), one group barrier
@@ -257,7 +270,8 @@ it together. The group's console waves may be at different operations in one ste
 part. Every thread enters the dispatch loop each step (a stopped one through an idle case): WARP otherwise waits at
 one copy of the step barrier for threads that are at another. A statement with two wave operations, or a temporary of
 resource type read across a cut, gets no superstep form. Every wave operation costs a group barrier, so this form is
-only for adapters whose waves are narrower than the floor.
+only for adapters whose waves are narrower than the floor. The same form serves compute programs (below) and, rewritten
+by `MeshComputeFallback`, the mesh fallback.
 
 **Compute programs** keep native wave operations and are pinned. A wave64 program whose group has at most 32 threads
 is pinned to 32 lanes instead, since lanes 32..63 never exist. For a program pinned to 64 lanes, which GPUs with only
@@ -267,9 +281,10 @@ is pinned to 32 lanes instead, since lanes 32..63 never exist. For a program pin
 with `InterlockedOr`), so it is right on any hardware wave. A barrier needs every thread of the group, which holds
 because each branch condition is itself such an operation and so is the same on every thread; a program that calls
 one under a per-lane condition (`if (active)`, `&&`, `||`, `?:` before the call) gets no variant. The variant is built
-from the structured form, since WARP's shader compiler crashes on barriers inside the dispatch `switch`. The result's
-reason says `wave32 variant ok` or why there is none. Groups of several console waves (more than 64 threads)
-need a GPU with 64-lane waves: their waves branch apart, so a group barrier cannot stand in for a wave.
+from the structured form, since WARP's shader compiler crashes on barriers inside the dispatch `switch`. A program whose
+group holds several console waves (they branch apart, so one barrier cannot stand in for a wave) or that calls a wave
+operation under a per-lane condition gets the superstep form instead: console waves are consecutive group indices, as
+on RDNA. The result's reason says `wave32 variant ok` or why there is none.
 
 **Variant selection** (`FiveStar.Graphics.Programs.VariantSelector`). `fivestar shader translate` writes
 `<out>/variants.json` (`ShaderManifest`): per compiled program its stage, native DXIL, console wave, floor, pinned
@@ -288,45 +303,53 @@ flowchart TD
   stage -->|"ms"| mn{"mesh shaders and<br/>native DXIL compiled?"}
   mn -->|"no"| fb{"mesh fallback compiled?<br/>(--mesh-fallbacks)"}
   fb -->|"no"| msbad["native, fails: incorrect"]
-  fb -->|"yes"| fallback["fallback"]
+  fb -->|"yes"| ffloor{"floor above<br/>WaveLaneCountMin?"}
+  ffloor -->|"no"| fallback["fallback"]
+  ffloor -->|"yes"| wide
   mn -->|"yes"| native["native"]
   stage -->|"ps, vs, gs"| native
   native --> floor{"floor above<br/>WaveLaneCountMin?"}
-  fallback --> floor
-  floor -->|"no"| ok["ok / fallback"]
-  floor -->|"yes"| ss{"native mesh program<br/>with a superstep form?"}
+  floor -->|"no"| ok["ok"]
+  floor -->|"yes"| ss{"mesh program<br/>with a superstep form?"}
   ss -->|"yes"| msvar["name.w32.dxil: variant"]
+  ss -->|"no, mesh with a fallback"| wide{"adapter offers the console wave?"}
   ss -->|"no"| floorbad["incorrect"]
+  wide -->|"yes"| pinned["name.msfb_cs.w64.dxil: fallback"]
+  wide -->|"no"| ssfb{"superstep fallback?"}
+  ssfb -->|"yes"| ssfallback["name.w32.msfb_*.dxil: fallback"]
+  ssfb -->|"no"| floorbad
 ```
 
 The driver picks a graphics wave anywhere between `WaveLaneCountMin` and `Max`, so a floor counts only as met when
-`WaveLaneCountMin` reaches it. `fivestar shader plan` prints the counts per adapter and `fivestar shader pso` creates
+`WaveLaneCountMin` reaches it. The fallback is a compute shader, so it can ask for the console wave: on a GPU with
+64-lane waves (AMD) it runs pinned to them, natively and with console results whatever its floor.
+`fivestar shader plan` prints the counts per adapter and `fivestar shader pso` creates
 the form each program runs on its adapter.
 
 Corpus (lane-indexed programs, by floor):
 
 | Programs | 4 | 8 | 16 | 32 | 64 |
 |---|---|---|---|---|---|
-| ps wave32 (959) | 31 | 1 | 2 | 925 | |
-| ps wave64 (907) | 368 | 41 | 49 | 4 | 445 |
-| vs wave64 (1) | | | | | 1 |
+| ps wave32 (959) | 31 | 1 | 924 | 3 | |
+| ps wave64 (906) | 368 | 41 | 482 | 4 | 11 |
+| vs wave64 (1) | | | 1 | | |
 | ms wave64 (115) | | | | | 115 |
 
 All 1,982 compile (115 mesh programs, 15 of them through the fallback). Of all 8,765 mesh programs (structured
 form), 6,217 now have floor 4 and 2,548 the whole wave (first reasons: a first-lane read of a per-lane value in an
 output or GS_ALLOC_REQ 1,338, an integer VCC branch 588, a VCC branch whose mask lost its relation to EXEC 304, an
 execz path that cannot be skipped 246); 2,511 of those get a superstep form that compiles, the other 37 compile only
-through the fallback. On the RTX 4090 every mesh program but those 37 now gives console results (before: none). Of the 203 compute programs pinned to 64 lanes,
-3 have groups of at most 32 threads and are pinned to 32, 181 get a variant that NVIDIA (RTX 4090) accepts, and 19
-have groups of 128 to 512 threads.
+through the fallback; those get a superstep fallback that compiles. Of the 203 compute programs pinned to 64 lanes, 3
+have groups of at most 32 threads and are pinned to 32, and every other one gets a variant: 181 the group-wave form,
+19 (groups of 36 to 512 threads) the superstep form. WARP and the RTX 4090 accept them.
 
 What cannot be emulated:
 
 - Pixel and vertex waves narrower than the program wave cannot read a missing lane: those stages have no groupshared
   memory and no barrier, so the value exists in no wave that could share it. Example: a wave64 reduction that ends with
   `v_readlane 32` or `63` on a 32-lane GPU.
-- Mesh programs the window analysis rejects run correctly on narrower waves only in the superstep form, which needs
-  mesh shaders (there is no superstep form of the mesh fallback).
+- Mesh programs the window analysis rejects run correctly on narrower waves only in the superstep form or, without
+  mesh shaders, the pinned or superstep fallback.
 - Mesh lane numbers assume `SV_GroupIndex` fills hardware lanes in order. Drivers do this; D3D12 does not promise it.
 
 ## Runtime headers
@@ -411,7 +434,7 @@ breaks when a wave64 program runs on 32-lane waves or the reverse. For a run wit
 lane-indexed programs by floor (see Wave size).
 
 ```
-fivestar shader pso <out> [--adapter <index | name part>] [--stages ps,vs,cs,ms,gs] [--limit N] [--step K]
+fivestar shader pso <out> [--adapter <index | name part | warp>] [--stages ps,vs,cs,ms,gs] [--limit N] [--step K]
                     [--jobs N] [--timeout S] [--max-memory GB] [--debug-layer] [--recheck] [--dxc <path>]
 fivestar shader pso --list-adapters
 ```
@@ -474,12 +497,21 @@ ends with the peak private memory, counts per kind and result, the pinned comput
 largest error groups (numbers in messages replaced by `#`).
 
 ```
-fivestar shader plan <out> [--adapter <index | name part>]
+fivestar shader plan <out> [--adapter <index | name part | warp>] [--profile <name,... | all>]
 ```
 
 Prints, for every adapter with a D3D12 device (or the chosen one), how many compiled programs run natively (`ok`), as
 a wave32 variant, through the mesh fallback or incorrectly, and the most common reasons. It reads `variants.json` and
-builds it from `results.json` when that is newer.
+builds it from `results.json` when that is newer. `warp` is the software adapter (Microsoft Basic Render Driver).
+`--profile` plans for GPUs not in the machine (`AdapterProfiles`, each value with its source or marked as an
+assumption):
+
+| Profile | Wave lanes | Mesh shaders |
+|---|---|---|
+| `ada` (NVIDIA RTX 40) | 32-32 | tier 1 |
+| `rdna2` (AMD RX 6000) | 32-64 | tier 1 |
+| `intel-xe2` (Lunar Lake Arc 140V, Battlemage) | 16-32 | tier 1 |
+| `intel-xe-lpg` (Meteor Lake Arc, Arc A-series) | 8-32 | tier 1 |
 
 ```
 fivestar shader link <out> <shaders.rpf | cache blob> [--programs <fssm folder>] [--adapter <index | name part>]
@@ -517,7 +549,7 @@ of the mesh program whose 4-lane waves skip regions their console wave runs (an 
 inside) is classified as right on 4 lanes and draws the reference; small programs check that an SGPR read after a
 skipped region or a first-lane read of a per-lane value keep the whole wave as floor. Supersteps: the mesh program in
 the superstep form, and a 128-thread group whose two console waves branch apart (first lane under EXEC, readlane 63, a
-ballot count, a readlane only one wave runs), give console results on 4-lane waves. Pair-time linking is
+ballot count, a readlane only one wave runs), give console results on 4-lane waves; the mesh program also through the fallback of its superstep form, and every wave64 compute case in groups of two console waves. Missing lanes: a pixel shader with whole-wave minimum and sum reductions (permlanex16, readlane 20) is classified as right on 4 lanes and gives the quad's results there. Pair-time linking is
 checked with a VS whose two float2 outputs share a register while the PS reads one of them flat: unlinked the
 pipeline fails, linked it draws the flat value of the provoking vertex. Test
 classes run one at a time (`xunit.runner.json`): WARP crashes the test host when they run in parallel.

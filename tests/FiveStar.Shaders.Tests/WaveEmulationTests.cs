@@ -66,6 +66,8 @@ public sealed class WaveEmulationTests : IClassFixture<WarpFixture>
     [InlineData("v_readlane_b32 s4, v0, 5", 8)]
     [InlineData("v_readlane_b32 s4, v0, s2", 64)]
     [InlineData("s_ff1_i32_b64 s2, exec\nv_readlane_b32 s4, v0, s2", 4)]
+    [InlineData("s_or_saveexec_b64 s[10:11], -1\nv_cndmask_b32_e64 v1, -1, v0, s[10:11]\nv_readlane_b32 s4, v1, 40\ns_mov_b64 exec, s[10:11]", 4)]
+    [InlineData("s_or_saveexec_b64 s[10:11], -1\nv_readlane_b32 s4, v0, 40\ns_mov_b64 exec, s[10:11]", 64)]
     public void A_pixel_program_states_the_narrowest_wave_with_console_results(string code, int floor)
     {
         var assembled = _fixture.Workbench.Assemble($"floor_{floor}_{code.Length}", code + "\ns_endpgm", 64);

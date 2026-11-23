@@ -22,6 +22,7 @@ internal static class PsoCommand
     private const string DebugFlag = "debug-layer";
     private const string RecheckFlag = "recheck";
     private const string PassThroughFolder = "pso-vs";
+    private const string WarpAlias = "warp";
     private const int DefaultTimeoutSeconds = 600;
     private const int DefaultMemoryGigabytes = 16;
     private const long BytesPerGigabyte = 1L << 30;
@@ -129,7 +130,10 @@ internal static class PsoCommand
         return Success;
     }
 
-    /// <summary>The adapter by index or by a name substring; by default the first hardware adapter with a D3D12 device.</summary>
+    /// <summary>
+    /// The adapter by index, by a name substring or <c>warp</c> (the software adapter, named Microsoft Basic Render
+    /// Driver); by default the first hardware adapter with a D3D12 device.
+    /// </summary>
     internal static AdapterInfo SelectAdapter(string? choice)
     {
         var adapters = AdapterCatalog.List().Where(adapter => adapter.ShaderModel is not null).ToList();
@@ -138,6 +142,10 @@ internal static class PsoCommand
         if (choice is null)
         {
             selected = adapters.FirstOrDefault(adapter => !adapter.Software);
+        }
+        else if (choice.Equals(WarpAlias, StringComparison.OrdinalIgnoreCase))
+        {
+            selected = adapters.FirstOrDefault(adapter => adapter.Software);
         }
         else if (int.TryParse(choice, out var index))
         {

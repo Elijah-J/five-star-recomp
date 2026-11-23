@@ -34,8 +34,11 @@ public sealed partial class MeshStageRunner
     /// </summary>
     public const string Windows = "ms_ngg_windows";
 
-    /// <summary>The program in the superstep form (HlslTranslator.MeshSuperstepVariant): its barrier and both phases as steps.</summary>
+    /// <summary>The program in the superstep form (HlslTranslator.SuperstepVariant): its barrier and both phases as steps.</summary>
     public const string Supersteps = "ms_ngg_supersteps";
+
+    /// <summary>The superstep form through the mesh-to-compute fallback (GPUs without mesh shaders and narrow waves).</summary>
+    public const string SuperstepFallback = "msfb_ngg_supersteps";
 
     private const string RoundTrip = """
         v_xor_b32_e32 v30, 1, v1
@@ -124,7 +127,7 @@ public sealed partial class MeshStageRunner
         _fixture = fixture;
     }
 
-    public static IReadOnlyList<string> Variants => [Native, FallbackTable, FallbackRoot, FallbackOverflow, Supersteps];
+    public static IReadOnlyList<string> Variants => [Native, FallbackTable, FallbackRoot, FallbackOverflow, Supersteps, SuperstepFallback];
 
     public IReadOnlyList<string> Run(string variant)
     {
@@ -202,9 +205,9 @@ public sealed partial class MeshStageRunner
         var pipeline = new PipelineStateInfo { Stage = "ms", NumThreads = new ThreadGroupSize(64, 1, 1), MaxVertices = MaxOutputs, MaxPrimitives = MaxOutputs };
         var program = new ShaderProgram(ShaderStage.Mesh, assembled.Instructions, assembled.Code, ShaderSignatures.None, config, pipeline);
 
-        if (variant == Supersteps)
+        if (variant is Supersteps or SuperstepFallback)
         {
-            return HlslTranslator.MeshSuperstepVariant(program, new TranslationOptions(StructuredControlFlow: false, PinWaveSize: false, EmulateWaveSize: true));
+            return HlslTranslator.SuperstepVariant(program, new TranslationOptions(StructuredControlFlow: false, PinWaveSize: false, EmulateWaveSize: true));
         }
 
         return ShaderWorkbench.Translate(program);

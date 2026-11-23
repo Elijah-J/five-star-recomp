@@ -20,10 +20,13 @@ internal static class ProgramTranslator
         return Emit(new TranslationState(program, instructions, stage, copyShader) { EmulateWaves = emulate }, options);
     }
 
-    /// <summary>The superstep form of a mesh program (see Waves.SuperstepSplitter): console results on any hardware wave.</summary>
+    /// <summary>
+    /// The superstep form of a mesh or compute program (see Waves.SuperstepSplitter): console results on any hardware
+    /// wave.
+    /// </summary>
     public static string TranslateSupersteps(ShaderProgram program, TranslationOptions options)
     {
-        var state = new TranslationState(program, program.Instructions, ShaderStage.Mesh, false) { EmulateWaves = true, Supersteps = true };
+        var state = new TranslationState(program, program.Instructions, program.Stage, false) { EmulateWaves = true, Supersteps = true };
 
         return Emit(state, options with { StructuredControlFlow = false });
     }

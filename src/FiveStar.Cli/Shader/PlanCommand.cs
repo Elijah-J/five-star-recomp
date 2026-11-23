@@ -16,6 +16,7 @@ internal static class PlanCommand
     private const int Success = 0;
     private const int ReasonsShown = 8;
     private const int CountWidth = 7;
+    private const string AllProfiles = "all";
 
     private static readonly (ChoiceOutcome Outcome, string Label)[] Columns =
     [
@@ -29,13 +30,13 @@ internal static class PlanCommand
 
         if (arguments.Positional.Count != 1)
         {
-            throw new ArgumentException("plan <translate-out> [--adapter <index|name>]");
+            throw new ArgumentException("plan <translate-out> [--adapter <index|name|warp>] [--profile <name,...|all>]");
         }
 
         var manifest = ManifestBuilder.Load(arguments.Positional[0]);
         Console.WriteLine($"{manifest.Programs.Count} compiled programs");
 
-        foreach (var adapter in Adapters(arguments.Option("adapter")))
+        foreach (var adapter in Adapters(arguments.Option("adapter"), arguments.Option("profile")))
         {
             Print(adapter, VariantSelector.Plan(adapter, manifest.Programs));
         }
@@ -43,21 +44,45 @@ internal static class PlanCommand
         return Success;
     }
 
-    private static IReadOnlyList<AdapterInfo> Adapters(string? choice)
+    /// <summary>The chosen adapter and profiles; every adapter with a D3D12 device when neither is chosen.</summary>
+    private static IReadOnlyList<AdapterInfo> Adapters(string? choice, string? profiles)
     {
+        var adapters = new List<AdapterInfo>();
+
         if (choice is not null)
         {
-            return [PsoCommand.SelectAdapter(choice)];
+            adapters.Add(PsoCommand.SelectAdapter(choice));
+        }
+
+        if (profiles is not null)
+        {
+            adapters.AddRange(Profiles(profiles));
+        }
+
+        if (adapters.Count > 0)
+        {
+            return adapters;
         }
 
         return AdapterCatalog.List().Where(adapter => adapter.ShaderModel is not null).ToList();
+    }
+
+    private static IEnumerable<AdapterInfo> Profiles(string list)
+    {
+        if (list.Equals(AllProfiles, StringComparison.OrdinalIgnoreCase))
+        {
+            return AdapterProfiles.All.Values;
+        }
+
+        return list.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(name => AdapterProfiles.Find(name) ?? throw new ArgumentException($"no profile '{name}' (profiles: {string.Join(", ", AdapterProfiles.All.Keys)})"));
     }
 
     private static void Print(AdapterInfo adapter, IReadOnlyList<ProgramChoice> choices)
     {
         var counts = Columns.Select(column => $"{column.Label} {Count(choices.Count(choice => choice.Outcome == column.Outcome))}");
         Console.WriteLine();
-        Console.WriteLine($"{adapter.Index}  {adapter.Name}: wave lanes {adapter.WaveLaneCountMin}-{adapter.WaveLaneCountMax}, mesh {adapter.MeshShaderTier}");
+        Console.WriteLine($"{Label(adapter)}  {adapter.Name}: wave lanes {adapter.WaveLaneCountMin}-{adapter.WaveLaneCountMax}, mesh {adapter.MeshShaderTier}");
         Console.WriteLine("   " + string.Join(", ", counts));
 
         // The fallback runs as a compute and a vertex shader; it can also be incorrect for its floor.
@@ -79,6 +104,16 @@ internal static class PlanCommand
             var label = Columns.First(column => column.Outcome == group.Key.Outcome).Label;
             Console.WriteLine($"{Count(group.Count()).PadLeft(CountWidth)} {label} {group.Key.Stage}: {group.Key.Reason}");
         }
+    }
+
+    private static string Label(AdapterInfo adapter)
+    {
+        if (adapter.Index < 0)
+        {
+            return "profile";
+        }
+
+        return Count(adapter.Index);
     }
 
     private static string Count(int value)

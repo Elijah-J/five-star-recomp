@@ -103,10 +103,23 @@ internal sealed partial class ProgramEmitter
         if (_state.Supersteps)
         {
             // Every wave operation exchanges through groupshared memory; quads stay native.
-            lines.AddRange(["#define VW_GROUP_LANES 1", $"#define VW_GROUP_THREADS {_state.MeshThreads}u"]);
+            lines.AddRange(["#define VW_GROUP_LANES 1", $"#define VW_GROUP_THREADS {_state.GroupThreads}u"]);
             lines.Insert(0, WaveOps.FloorLine(wave, WaveOps.NarrowestHardwareWave));
 
             return lines;
+        }
+
+        if (_state.Stage is ShaderStage.Pixel or ShaderStage.Vertex && floor > WaveOps.NarrowestHardwareWave)
+        {
+            // Lanes a narrower wave lacks are console lanes without a pixel or vertex; reads of them may hold.
+            var analysis = new MissingLaneAnalysis(_state.Blocks, _state.Prologue, wave);
+            floor = analysis.Floor(floor);
+            analysis.Rewrite(_state.Blocks);
+
+            if (analysis.Reason is not null)
+            {
+                lines.Insert(0, WaveOps.NarrowerLine(analysis.Reason));
+            }
         }
 
         if (_state.Stage == ShaderStage.Mesh)
