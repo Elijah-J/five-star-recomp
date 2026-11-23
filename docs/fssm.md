@@ -93,7 +93,7 @@ A register read before any write is a hardware input:
 | Stage | SGPRs | VGPRs |
 |---|---|---|
 | PS | s0.. user data; s[user] PRIM_MASK; s[user + 1] POPS collision wave id when POPS is on | input layout above |
-| VS | s0.. user data (s[4:5] = fetch-shader PC) | v0 VertexID, v2 PrimitiveID, v3 InstanceID, fetched attributes |
+| VS | s0.. user data (for the fetch shader: s[0:1] vertex-buffer table, s2 base vertex, s[4:5] its PC; [pipeline-cache.md](pipeline-cache.md#shaders)) | v0 VertexID, v2 PrimitiveID, v3 InstanceID, fetched attributes |
 | CS | s0.. user data, then group id x, y, z (enabled ones, in order), then group size | v0 / v1 / v2 thread id x / y / z (separate) |
 | NGG | s0..s7 system (s3 bits 24..27 wave index in the group), user data from s8 | v5 ES vertex id |
 | GS | s0..s7 system (s3 wave info), s[8:9] ring table, user data from s8 | v0, v1, v3 ES vertex offset pairs, v2 primitive id, v4 instance id |

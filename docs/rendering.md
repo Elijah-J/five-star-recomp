@@ -73,8 +73,9 @@ stage. The values the sample puts in the tables are its own: constants that make
 A draw with several textures gets one table per texture, 0x80 bytes apart, and sets s8 per batch; the buffers are
 shared.
 
-The cache's shader metadata (tag 0x41 entries) lists the same registers (PS: s14 sampler, t13 buffer, t0 texture;
-VS: t7 buffer, b0), but its byte offsets belong to the cache's second compile, not to the FSSM programs.
+The cache's shader metadata (tag 0x41 entries) lists the same bindings: root parameter 0 is the table at s8 with
+t13 at dword 0 and t0 at dword 16 (PS), t7 at dword 8 and b0 at dword 24 (VS); s14 is static sampler 2
+([pipeline-cache.md](pipeline-cache.md#bindings)).
 
 ## Shader fixes this needed
 
