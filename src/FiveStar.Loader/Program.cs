@@ -42,7 +42,7 @@ public static class Program
 
         if (options.ClassifyInput is not null)
         {
-            return ClassifyCommand.Run(options.ClassifyInput, options.ClassifyOutput);
+            return ClassifyCommand.Run(options);
         }
 
         if (options.Loads.Count == 0)

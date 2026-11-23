@@ -14,6 +14,9 @@ internal static class ReportMarkdown
     private const int TopImports = 40;
     private const int TopReferences = 40;
 
+    /// <summary>The loader verdicts where a shim, a package module or the PC host answers the import.</summary>
+    private static readonly string[] ResolvedKinds = ["Shim", "Package", "Host"];
+
     public static string Build(ExeAnalysis analysis)
     {
         var text = new StringBuilder();
@@ -180,14 +183,10 @@ internal static class ReportMarkdown
         text.Append('\n');
     }
 
+    /// <summary>0 for a gap (an Xbox stub, a missing module, unclassified), 1 for an import something real answers.</summary>
     private static int GapRank(ImportGap import)
     {
-        if (string.Equals(import.Kind, "Shim", StringComparison.Ordinal))
-        {
-            return 1;
-        }
-
-        if (string.Equals(import.Kind, "Host", StringComparison.Ordinal))
+        if (ResolvedKinds.Contains(import.Kind))
         {
             return 1;
         }

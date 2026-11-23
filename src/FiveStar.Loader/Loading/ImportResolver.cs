@@ -12,8 +12,9 @@ namespace FiveStar.Loader.Loading;
 
 /// <summary>
 /// Binds an image's imports and delay imports (delay imports eagerly), by name and by ordinal. Resolution order:
-/// (1) the shim table, (2) an image this loader mapped or maps now (a manual module), (3) System32 through
-/// LoadLibraryEx. Export forwarders are followed through the same order.
+/// (1) the shim table, (2) an image this loader mapped or maps now (a manual module, or a module of the search
+/// directories that the PC host does not have), (3) System32 through LoadLibraryEx. Export forwarders are followed
+/// through the same order.
 /// </summary>
 internal sealed unsafe class ImportResolver
 {
@@ -242,20 +243,31 @@ internal sealed unsafe class ImportResolver
         return new ImportRecord(module, symbol, ResolutionSource.Image, $"{target.Name}+0x{(long)export.Address - (long)target.Base:x}", export.Address, delay);
     }
 
+    /// <summary>A mapped image, or one mapped now: a manual module, or a package module the PC host does not have.</summary>
     private LoadedImage? FindOrMapTarget(string key)
     {
         var mapped = _loader.FindMapped(key);
 
-        if (mapped is not null || !_options.ManualModules.Contains(key))
+        if (mapped is not null)
         {
             return mapped;
+        }
+
+        bool manual = _options.ManualModules.Contains(key);
+
+        if (!manual && HostModules.IsPresent(key))
+        {
+            return null;
         }
 
         string? file = _loader.FindModuleFile(key);
 
         if (file is null)
         {
-            _log.Warn($"{key} is configured as manual but was not found in search dirs; falling back to System32");
+            if (manual)
+            {
+                _log.Warn($"{key} is configured as manual but was not found in search dirs; falling back to System32");
+            }
 
             return null;
         }
