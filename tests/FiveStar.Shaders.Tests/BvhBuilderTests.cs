@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Numerics;
+using System.Runtime.InteropServices;
 using FiveStar.Shaders.Bvh;
 using FiveStar.Shaders.Tests.Reference;
 using Xunit;
@@ -45,6 +46,62 @@ public sealed class BvhBuilderTests
 
         Assert.True(hits > RayCount / 2, $"only {hits} rays hit");
         Assert.Equal(TriangleCount, image.TriangleNodes);
+    }
+
+    /// <summary>
+    /// A BLAS built from an indexed mesh (R16 indices, f32 positions, a 3x4 transform) in the console layout: the root
+    /// comes from the header at 0x30 and a ray down onto each transformed triangle finds that triangle.
+    /// </summary>
+    [Fact]
+    public void Runtime_blas_from_buffers_is_traversed_from_its_header_root()
+    {
+        const int Grid = 4;
+        var vertices = new List<float>();
+        var indices = new List<ushort>();
+
+        for (int y = 0; y <= Grid; y++)
+        {
+            for (int x = 0; x <= Grid; x++)
+            {
+                vertices.AddRange([x, y, 0f]);
+            }
+        }
+
+        for (int y = 0; y < Grid; y++)
+        {
+            for (int x = 0; x < Grid; x++)
+            {
+                ushort corner = (ushort)((y * (Grid + 1)) + x);
+                indices.AddRange([corner, (ushort)(corner + 1), (ushort)(corner + Grid + 1)]);
+                indices.AddRange([(ushort)(corner + 1), (ushort)(corner + Grid + 2), (ushort)(corner + Grid + 1)]);
+            }
+        }
+
+        float[] transform = [2, 0, 0, 10, 0, 2, 0, -3, 0, 0, 1, 7];
+        var triangles = new List<BvhTriangle>();
+        var buffers = new TriangleBuffers(
+            MemoryMarshal.AsBytes(vertices.ToArray().AsSpan()), 12, 6, (uint)(vertices.Count / 3),
+            MemoryMarshal.AsBytes(indices.ToArray().AsSpan()), 57, (uint)indices.Count, transform, 0, 1);
+        Assert.True(TriangleDecoder.Append(triangles, buffers));
+
+        var structure = XdxrBlas.Build(triangles);
+        var memory = Load(structure);
+        uint root = memory.ReadWord(XdxrBlas.RootOffset);
+        var descriptor = BvhReference.Descriptor(0, sort: false, grow: 0, returnBarycentrics: false);
+
+        Assert.Equal(AmdBvhLayout.NodePointer(XdxrBlas.HeaderSize, AmdBvhLayout.Box32Type), root);
+        Assert.Equal((ulong)structure.Length, XdxrBlas.Size(structure));
+        Assert.Equal(2 * Grid * Grid, triangles.Count);
+
+        foreach (var triangle in triangles)
+        {
+            var target = (triangle.V0 + triangle.V1 + triangle.V2) / 3f;
+            var ray = new BvhRay(Extent, Vertex(target + new Vector3(0, 0, 5)), [0, 0, -1], [float.PositiveInfinity, float.PositiveInfinity, -1]);
+            var (primitive, distance) = Walk(memory, descriptor, root, ray);
+
+            Assert.Equal(triangle.PrimitiveIndex, primitive);
+            Assert.Equal(5f, BitConverter.UInt32BitsToSingle(distance), 3);
+        }
     }
 
     private static (uint Primitive, uint Distance) Walk(BvhMemory memory, uint[] descriptor, uint root, BvhRay ray)

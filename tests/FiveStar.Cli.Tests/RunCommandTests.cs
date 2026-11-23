@@ -59,7 +59,7 @@ public sealed class RunCommandTests : IDisposable
 
         Assert.Equal(["gdk", "disk", "debug layer"], Failed(host.Check(plan)));
 
-        var library = Path.Combine(Folder(@"pf86\Microsoft GDK\261000\GRDK\gameKit\Lib\amd64"), "xgameruntime.lib");
+        var library = Path.Combine(Folder(Path.Combine("pf86", "Microsoft GDK", "261000", "GRDK", "gameKit", "Lib", "amd64")), "xgameruntime.lib");
         File.WriteAllBytes(library, []);
         File.WriteAllBytes(Path.Combine(system, Prerequisites.DebugLayer), []);
         var checks = host.Check(plan with { FreeBytes = long.MaxValue });

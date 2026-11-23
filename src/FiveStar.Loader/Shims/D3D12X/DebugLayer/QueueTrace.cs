@@ -17,7 +17,6 @@ internal static unsafe class QueueTrace
     /// <summary>X queue slots Signal and Wait: desktop ID3D12CommandQueue 14 and 15, two slots later (d3d12.h).</summary>
     public const int QueueSignalSlot = 16;
     public const int QueueWaitSlot = 17;
-    private const int DesktopQueueSignalSlot = 14;
     private const int DesktopQueueWaitSlot = 15;
     private const int DesktopGetDescSlot = 18;
 
@@ -63,7 +62,7 @@ internal static unsafe class QueueTrace
         nint inner = ShimContext.Runtime.D3D12X.Objects.Unwrap(fence);
         Write($"queue {QueueId(self)}: signal fence {FenceId(fence)} = {value} (completed {Completed(inner)})");
 
-        return ((delegate* unmanaged<nint, nint, ulong, int>)ComObject.Slot(self->Inner, DesktopQueueSignalSlot))(self->Inner, inner, value);
+        return FenceValueMirror.Signal(self, fence, value);
     }
 
     [UnmanagedCallersOnly]
