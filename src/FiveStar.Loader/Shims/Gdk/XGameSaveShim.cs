@@ -11,7 +11,7 @@ namespace FiveStar.Loader.Shims.Gdk;
 /// <c>bool XGameSaveContainerInfoCallback(const XGameSaveContainerInfo*, void* context)</c> and
 /// <c>bool XGameSaveBlobInfoCallback(const XGameSaveBlobInfo*, void* context)</c>.
 /// </summary>
-internal static unsafe class XGameSaveShim
+internal static unsafe partial class XGameSaveShim
 {
     /// <summary>HRESULT XGameSaveInitializeProvider(XUserHandle, const char* configurationId, bool syncOnDemand, XGameSaveProviderHandle*).</summary>
     [Shim(GdkModule.Name, "XGameSaveInitializeProvider")]

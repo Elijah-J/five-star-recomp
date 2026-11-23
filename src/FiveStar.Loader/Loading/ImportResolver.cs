@@ -212,7 +212,7 @@ internal sealed unsafe class ImportResolver
 
         if (entry is not null)
         {
-            return new ImportRecord(module, symbol, ResolutionSource.Shim, $"{entry.Method.DeclaringType!.Name}.{entry.Method.Name}", entry.Address, delay);
+            return new ImportRecord(module, symbol, ResolutionSource.Shim, $"{entry.DeclaringType}.{entry.MethodName}", entry.Address, delay);
         }
 
         var fallback = _shims.TryFallback(key, name, ordinal);

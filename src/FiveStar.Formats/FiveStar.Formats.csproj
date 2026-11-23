@@ -3,6 +3,8 @@
   <PropertyGroup>
     <!-- MappedFileSource hands out spans over memory-mapped archives of up to 80 GB; the BCPack lane engines use pointers. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Part of fivestar-loader: trim and AOT analysis on every build (docs/aot.md). -->
+    <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
 
   <ItemGroup>

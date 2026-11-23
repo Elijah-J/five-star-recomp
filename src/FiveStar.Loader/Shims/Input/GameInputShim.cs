@@ -13,7 +13,7 @@ namespace FiveStar.Loader.Shims.Input;
 /// a QueryApiImpl slot to it.
 /// </summary>
 [ShimModule(GameInputLayout.Module, UnresolvedReturn = HResult.NotImplemented, AliasPattern = GameInputLayout.AliasPattern, AliasSymbolPrefix = GameInputLayout.AliasSymbolPrefix)]
-internal static unsafe class GameInputShim
+internal static unsafe partial class GameInputShim
 {
     [Shim(GameInputLayout.Module, GameInputLayout.CreateFunction)]
     [Shim(GameInputLayout.Module, GameInputLayout.CreateOrdinal)]

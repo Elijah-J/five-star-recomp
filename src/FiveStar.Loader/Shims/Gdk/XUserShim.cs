@@ -10,7 +10,7 @@ namespace FiveStar.Loader.Shims.Gdk;
 /// XUser.h entry points; the work is in <see cref="UserService"/>. A token request fails (no Xbox services offline);
 /// picture and the other UI functions are in the not-implemented catalog.
 /// </summary>
-internal static unsafe class XUserShim
+internal static unsafe partial class XUserShim
 {
     /// <summary>HRESULT XUserAddAsync(XUserAddOptions options, XAsyncBlock* async).</summary>
     [Shim(GdkModule.Name, "XUserAddAsync")]

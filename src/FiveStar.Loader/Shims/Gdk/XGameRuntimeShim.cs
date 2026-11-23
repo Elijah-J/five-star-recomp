@@ -14,7 +14,7 @@ namespace FiveStar.Loader.Shims.Gdk;
 /// the gaming API sets return E_NOTIMPL.
 /// </summary>
 [ShimModule(GdkModule.Name, UnresolvedReturn = HResult.NotImplemented, AliasPattern = GdkModule.AliasPattern, AliasSymbolPrefix = GdkModule.AliasSymbolPrefix)]
-internal static unsafe class XGameRuntimeShim
+internal static unsafe partial class XGameRuntimeShim
 {
     [Shim(GdkModule.Name, "XGameRuntimeInitialize")]
     [UnmanagedCallersOnly]

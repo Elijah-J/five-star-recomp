@@ -10,7 +10,7 @@ namespace FiveStar.Loader.Shims;
 /// Entry points for module identity and dynamic loading, bound for every importing module ("*") because they come
 /// from kernel32, kernelbase or api-ms-win-core-libraryloader sets. The work is in <see cref="ModuleIdentity"/>.
 /// </summary>
-internal static unsafe class ModuleShims
+internal static unsafe partial class ModuleShims
 {
     [Shim("*", "GetModuleHandleW")]
     [UnmanagedCallersOnly]

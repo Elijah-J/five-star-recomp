@@ -10,7 +10,7 @@ namespace FiveStar.Loader.Shims.Ffx;
 /// shaders cooked for the console GPU), so the exports bind to <see cref="FidelityFxBridge"/> instead of the shipped
 /// DLL (docs/middleware.md).
 /// </summary>
-internal static unsafe class FfxShim
+internal static unsafe partial class FfxShim
 {
     [Shim(FfxLayout.Module, "ffxCreateContext")]
     [UnmanagedCallersOnly]

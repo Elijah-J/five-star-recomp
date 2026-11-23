@@ -11,7 +11,7 @@ namespace FiveStar.Loader.Shims.Gdk;
 /// voices), so XSpeechSynthesizerCreate fails with HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED) and no synthesizer or
 /// stream handle ever exists; the functions taking one return E_INVALIDARG.
 /// </summary>
-internal static unsafe class XSpeechSynthesizerShim
+internal static unsafe partial class XSpeechSynthesizerShim
 {
     /// <summary>HRESULT XSpeechSynthesizerCreate(XSpeechSynthesizerHandle* speechSynthesizer).</summary>
     [Shim(GdkModule.Name, "XSpeechSynthesizerCreate")]

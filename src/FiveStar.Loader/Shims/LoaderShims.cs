@@ -11,7 +11,7 @@ namespace FiveStar.Loader.Shims;
 /// System functions that must know the mapped images, which the OS loader does not. Bound for every importing module
 /// ("*"), because they are imported from kernel32, ntdll or different api-ms-win sets.
 /// </summary>
-internal static unsafe class LoaderShims
+internal static unsafe partial class LoaderShims
 {
     private const string UcrtLibrary = "ucrtbase.dll";
     private const string TerminateExport = "terminate";

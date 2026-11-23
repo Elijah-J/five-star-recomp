@@ -13,7 +13,7 @@ namespace FiveStar.Loader.Shims.Xg;
 /// the D3D12_RESOURCE_DESC layout; the computer reports and fills the console tiling of <see cref="XgLayoutBuilder"/>.
 /// </summary>
 [ShimModule(Module, UnresolvedReturn = HResult.NotImplemented)]
-internal static unsafe class XgModule
+internal static unsafe partial class XgModule
 {
     public const string Module = "xg_xs.dll";
 

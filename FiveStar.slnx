@@ -7,6 +7,7 @@
     <Project Path="src/FiveStar.Formats/FiveStar.Formats.csproj" />
     <Project Path="src/FiveStar.Graphics/FiveStar.Graphics.csproj" />
     <Project Path="src/FiveStar.Loader/FiveStar.Loader.csproj" />
+    <Project Path="src/FiveStar.Loader.Generators/FiveStar.Loader.Generators.csproj" />
     <Project Path="src/FiveStar.Shaders/FiveStar.Shaders.csproj" />
   </Folder>
   <Folder Name="/tests/">

@@ -11,7 +11,7 @@ namespace FiveStar.Loader.Shims.Apu;
 /// </summary>
 [ShimModule(XDspModule, UnresolvedReturn = HResult.NotImplemented)]
 [ShimModule(XApuModule, UnresolvedReturn = HResult.NotImplemented)]
-internal static class AudioHardwareModules
+internal static partial class AudioHardwareModules
 {
     public const string XDspModule = "chad.dll";
     public const string XApuModule = "xapu.dll";

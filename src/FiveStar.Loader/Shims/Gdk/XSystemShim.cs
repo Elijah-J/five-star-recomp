@@ -10,7 +10,7 @@ namespace FiveStar.Loader.Shims.Gdk;
 /// XSystem.h, XThread.h, XGame.h, XGameEvent.h, XError.h and XPersistentLocalStorage.h entry points; the work is in
 /// <see cref="SystemService"/>.
 /// </summary>
-internal static unsafe class XSystemShim
+internal static unsafe partial class XSystemShim
 {
     [Shim(GdkModule.Name, "XSystemGetDeviceType")]
     [UnmanagedCallersOnly]

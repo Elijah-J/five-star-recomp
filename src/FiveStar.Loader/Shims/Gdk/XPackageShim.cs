@@ -7,7 +7,7 @@ using FiveStar.Loader.Native;
 namespace FiveStar.Loader.Shims.Gdk;
 
 /// <summary>XPackage.h entry points; the work is in <see cref="PackageService"/>.</summary>
-internal static unsafe class XPackageShim
+internal static unsafe partial class XPackageShim
 {
     [Shim(GdkModule.Name, "XPackageIsPackagedProcess")]
     [UnmanagedCallersOnly]

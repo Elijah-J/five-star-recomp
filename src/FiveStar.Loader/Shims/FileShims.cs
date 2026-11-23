@@ -11,7 +11,7 @@ namespace FiveStar.Loader.Shims;
 /// <see cref="Mods.FileOverlay"/> for a mod file and opens that instead, else opens the path as given. A redirected
 /// ANSI call opens the mod file through the wide function. The kernel32 shims pass the system's last error through.
 /// </summary>
-internal static unsafe class FileShims
+internal static unsafe partial class FileShims
 {
     [Shim("*", "CreateFileW", SetsLastError = true)]
     [UnmanagedCallersOnly]

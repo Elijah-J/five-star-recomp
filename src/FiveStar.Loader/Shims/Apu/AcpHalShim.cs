@@ -13,7 +13,7 @@ namespace FiveStar.Loader.Shims.Apu;
 /// <see cref="AcpHalDevice"/>. They must succeed: when one fails, the game's audio start-up executes an <c>int3</c>.
 /// </summary>
 [ShimModule(Module, UnresolvedReturn = HResult.NotImplemented)]
-internal static unsafe class AcpHalShim
+internal static unsafe partial class AcpHalShim
 {
     public const string Module = "acphal.dll";
 

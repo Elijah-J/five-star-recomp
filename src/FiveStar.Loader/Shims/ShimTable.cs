@@ -1,8 +1,6 @@
 // Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-using System.Reflection;
-using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using FiveStar.Loader.Codegen;
 using FiveStar.Loader.Loading;
@@ -10,14 +8,13 @@ using FiveStar.Loader.Loading;
 namespace FiveStar.Loader.Shims;
 
 /// <summary>
-/// Every shim of this assembly, found by reflection: [Shim] methods, [ShimModule] (Xbox-only) modules with their
-/// API-set aliases, and [NotImplementedTable] catalogs. Looked up by (normalized module, symbol), then through an
-/// alias, then under "*".
+/// Every shim of this assembly: [Shim] methods, [ShimModule] (Xbox-only) modules with their API-set aliases, and
+/// [NotImplementedTable] catalogs, registered by the code FiveStar.Loader.Generators writes from those attributes
+/// (<see cref="ShimTypes"/>; no reflection, so trimming and NativeAOT keep them). Looked up by (normalized module,
+/// symbol), then through an alias, then under "*".
 /// </summary>
 internal sealed class ShimTable
 {
-    private const BindingFlags StaticMembers = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
-
     /// <summary>Microsoft x64 ABI: the first four arguments travel in rcx, rdx, r8 and r9.</summary>
     private const int RegisterArguments = 4;
 
@@ -32,12 +29,7 @@ internal sealed class ShimTable
     {
         _lastError = lastError;
 
-        foreach (var type in typeof(ShimTable).Assembly.GetTypes())
-        {
-            RegisterModules(type);
-            RegisterNotImplemented(type);
-            RegisterMethods(type);
-        }
+        ShimTypes.Register(this);
 
         // The last-error wrappers become executable.
         heap.Seal();
@@ -135,69 +127,44 @@ internal sealed class ShimTable
         return _entries.Remove((ModuleNames.NormalizeImport(specification[..bang]), specification[(bang + 1)..]));
     }
 
-    private void RegisterModules(Type type)
+    /// <summary>Declares an Xbox-only module (a [ShimModule]); called by the generated RegisterShims.</summary>
+    public void AddModule(ShimModuleAttribute module)
     {
-        foreach (var module in type.GetCustomAttributes<ShimModuleAttribute>())
-        {
-            string key = ModuleNames.NormalizeImport(module.Module);
-            _exclusiveModules.Add(key);
-            _moduleInfo[key] = module;
+        string key = ModuleNames.NormalizeImport(module.Module);
+        _exclusiveModules.Add(key);
+        _moduleInfo[key] = module;
 
-            if (module.AliasPattern is not null)
-            {
-                _aliases.Add(new ShimAlias(new Regex(module.AliasPattern, RegexOptions.IgnoreCase), module.AliasSymbolPrefix, key));
-            }
+        if (module.AliasPattern is not null)
+        {
+            _aliases.Add(new ShimAlias(new Regex(module.AliasPattern, RegexOptions.IgnoreCase), module.AliasSymbolPrefix, key));
         }
     }
 
-    private void RegisterNotImplemented(Type type)
+    /// <summary>Adds a [NotImplementedTable] catalog; called by the generated RegisterShims.</summary>
+    public void AddNotImplemented(string module, (string Name, long ReturnValue)[] catalog)
     {
-        foreach (var field in type.GetFields(StaticMembers))
+        foreach (var (name, value) in catalog)
         {
-            var table = field.GetCustomAttribute<NotImplementedTableAttribute>();
-
-            if (table is null)
-            {
-                continue;
-            }
-
-            foreach (var (name, value) in ((string Name, long ReturnValue)[])field.GetValue(null)!)
-            {
-                _notImplemented[(ModuleNames.NormalizeImport(table.Module), name)] = value;
-            }
+            _notImplemented[(ModuleNames.NormalizeImport(module), name)] = value;
         }
     }
 
-    private void RegisterMethods(Type type)
+    /// <summary>
+    /// Adds a [Shim] method under every (module, name) it answers; called by the generated RegisterShims with the
+    /// method's native entry point (the address of an [UnmanagedCallersOnly] method).
+    /// </summary>
+    public void AddMethod(nint address, int parameterCount, bool setsLastError, string type, string method, params ReadOnlySpan<ShimBinding> bindings)
     {
-        foreach (var method in type.GetMethods(StaticMembers))
+        if (setsLastError)
         {
-            var shims = method.GetCustomAttributes<ShimAttribute>().ToArray();
+            int stackArguments = Math.Max(0, parameterCount - RegisterArguments);
+            address = _lastError.Wrap(address, stackArguments);
+        }
 
-            if (shims.Length == 0)
-            {
-                continue;
-            }
-
-            if (method.GetCustomAttribute<UnmanagedCallersOnlyAttribute>() is null)
-            {
-                throw new InvalidOperationException($"[Shim] method {type.Name}.{method.Name} must be [UnmanagedCallersOnly]");
-            }
-
-            // For an [UnmanagedCallersOnly] method this is its native-callable entry point.
-            nint address = method.MethodHandle.GetFunctionPointer();
-
-            if (shims.Any(s => s.SetsLastError))
-            {
-                int stackArguments = Math.Max(0, method.GetParameters().Length - RegisterArguments);
-                address = _lastError.Wrap(address, stackArguments);
-            }
-
-            foreach (var shim in shims)
-            {
-                var key = (ModuleNames.NormalizeImport(shim.Module), shim.Name);
-                _entries[key] = new ShimEntry(key.Item1, key.Item2, address, method);
-            }
+        foreach (var binding in bindings)
+        {
+            var key = (ModuleNames.NormalizeImport(binding.Module), binding.Name);
+            _entries[key] = new ShimEntry(key.Item1, key.Item2, address, type, method);
         }
     }
 }

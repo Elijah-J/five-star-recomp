@@ -11,7 +11,7 @@ namespace FiveStar.Loader.Shims.Gdk;
 /// end as canceled (E_ABORT); consumable balances, fulfillment and the user collections/purchase ids need the store
 /// service and fail with E_GAMESTORE_NETWORK_ERROR.
 /// </summary>
-internal static unsafe class XStorePurchaseShim
+internal static unsafe partial class XStorePurchaseShim
 {
     /// <summary>HRESULT XStoreShowPurchaseUIAsync(XStoreContextHandle, const char* storeId, const char* name, const char* extendedJsonData, XAsyncBlock*).</summary>
     [Shim(GdkModule.Name, nameof(XStoreShowPurchaseUIAsync))]

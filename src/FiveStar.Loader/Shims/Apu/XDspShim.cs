@@ -10,7 +10,7 @@ namespace FiveStar.Loader.Shims.Apu;
 /// chad.dll entry points; the work is in <see cref="XDspDevice"/>. Signatures are inferred from the executable's call
 /// sites: connect, activate and submit succeed only on 0; the deactivate and disconnect results are not read.
 /// </summary>
-internal static unsafe class XDspShim
+internal static unsafe partial class XDspShim
 {
     [Shim(AudioHardwareModules.XDspModule, "XDspConnectWithMaximumStreamLimit")]
     [UnmanagedCallersOnly]

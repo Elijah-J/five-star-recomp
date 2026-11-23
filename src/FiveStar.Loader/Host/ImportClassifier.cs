@@ -39,7 +39,7 @@ internal sealed class ImportClassifier
 
         if (entry is not null)
         {
-            return new ImportClassification(ImportClassKind.Shim, $"{entry.Method.DeclaringType!.Name}.{entry.Method.Name}");
+            return new ImportClassification(ImportClassKind.Shim, $"{entry.DeclaringType}.{entry.MethodName}");
         }
 
         var fallback = _shims.TryFallback(module, name, ordinal);

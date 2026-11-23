@@ -6,7 +6,7 @@ using System.Runtime.InteropServices;
 namespace FiveStar.Loader.Shims.Gdk;
 
 /// <summary>XDisplay.h entry points; the work is in <see cref="DisplayService"/>.</summary>
-internal static unsafe class XDisplayShim
+internal static unsafe partial class XDisplayShim
 {
     [Shim(GdkModule.Name, "XDisplayTryEnableHdrMode")]
     [UnmanagedCallersOnly]

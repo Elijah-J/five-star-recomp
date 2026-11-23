@@ -1,5 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!-- Shader containers (SGD5, DXBC, XDAT, FSSM), the RDNA disassembly driver and the RDNA to HLSL translator. -->
+  <PropertyGroup>
+    <!-- Part of fivestar-loader: trim and AOT analysis on every build (docs/aot.md). -->
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="FiveStar.Shaders.Tests" />
   </ItemGroup>
