@@ -45,6 +45,22 @@ internal sealed unsafe class InputDevices : IDisposable
         return _objects[index];
     }
 
+    /// <summary>The connected device whose APP_LOCAL_DEVICE_ID is <paramref name="id"/>, else null.</summary>
+    public DeviceObject* FindConnected(ReadOnlySpan<byte> id)
+    {
+        foreach (DeviceObject* device in _objects)
+        {
+            var deviceId = new ReadOnlySpan<byte>((byte*)device->Info + GameInputLayout.InfoDeviceIdOffset, GameInputLayout.DeviceIdSize);
+
+            if ((device->Status & GameInputLayout.StatusConnected) != 0 && deviceId.SequenceEqual(id))
+            {
+                return device;
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>Sets a device's GameInputDeviceStatus and reports a change to the device callbacks.</summary>
     [HotPath]
     public void SetStatus(int index, uint status, ulong now)

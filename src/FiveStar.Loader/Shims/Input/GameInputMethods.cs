@@ -22,15 +22,17 @@ internal static unsafe class GameInputMethods
 
         delegate* unmanaged<nint, ulong, void> stop = &StopCallback;
         delegate* unmanaged<nint, ulong, ulong, byte> unregister = &UnregisterCallback;
+        delegate* unmanaged<nint, byte*, nint*, int> find = &FindDeviceFromId;
         vtable[GameInputLayout.QueryInterfaceSlot] = (nint)query;
         vtable[GameInputLayout.InputGetCurrentTimestamp] = (nint)timestamp;
         vtable[GameInputLayout.InputGetCurrentReading] = (nint)current;
-        vtable[GameInputLayout.InputGetNextReading] = (nint)next;
 
+        vtable[GameInputLayout.InputGetNextReading] = (nint)next;
         vtable[GameInputLayout.InputGetPreviousReading] = (nint)previous;
         vtable[GameInputLayout.InputRegisterDeviceCallback] = (nint)register;
         vtable[GameInputLayout.InputStopCallback] = (nint)stop;
         vtable[GameInputLayout.InputUnregisterCallback] = (nint)unregister;
+        vtable[GameInputLayout.InputFindDeviceFromId] = (nint)find;
     }
 
     [UnmanagedCallersOnly]
@@ -92,6 +94,12 @@ internal static unsafe class GameInputMethods
     private static void StopCallback(nint self, ulong token)
     {
         InputObjects.Session(self).Unregister(token);
+    }
+
+    [UnmanagedCallersOnly]
+    private static int FindDeviceFromId(nint self, byte* id, nint* device)
+    {
+        return InputObjects.Session(self).FindDevice(id, device);
     }
 
     [UnmanagedCallersOnly]

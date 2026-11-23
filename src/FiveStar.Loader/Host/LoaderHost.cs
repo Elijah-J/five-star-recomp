@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+using FiveStar.Formats.Platform;
 using FiveStar.Loader.Calls;
 using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Loading;
@@ -78,6 +79,10 @@ internal sealed class LoaderHost
         {
             _runtime.Gdk.Runtime.LoadAbiTable(_options.GdkAbiTable);
         }
+        else
+        {
+            LoadInstalledAbi();
+        }
 
         if (_options.InputConfig is not null)
         {
@@ -108,6 +113,28 @@ internal sealed class LoaderHost
         if (_options.FidelityFxLibrary is not null)
         {
             _runtime.FidelityFx.Load(_options.FidelityFxLibrary);
+        }
+    }
+
+    /// <summary>Without <c>--gdk-abi</c>, the thunk ABI of the installed PC GDK's xgameruntime.lib.</summary>
+    private void LoadInstalledAbi()
+    {
+        string? library = GdkLibraryLocator.FindInstalled(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86));
+
+        if (library is null)
+        {
+            _log.Warn("no --gdk-abi table and no installed PC GDK: every GDK thunk call returns REGDB_E_CLASSNOTREG");
+
+            return;
+        }
+
+        try
+        {
+            _runtime.Gdk.Runtime.LoadAbiLibrary(GdkThunkLibrary.Read(File.ReadAllBytes(library)), library);
+        }
+        catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            _log.Warn($"GDK library {library}: {e.Message}");
         }
     }
 

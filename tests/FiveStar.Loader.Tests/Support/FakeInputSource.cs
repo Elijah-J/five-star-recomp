@@ -5,10 +5,12 @@ using FiveStar.Loader.Shims.Input;
 
 namespace FiveStar.Loader.Tests.Support;
 
-/// <summary>One gamepad slot holding <see cref="Gamepad"/>, no keys held and a still cursor.</summary>
+/// <summary>One gamepad slot holding <see cref="Gamepad"/>, the keys of <see cref="HeldKeys"/> held and a still cursor.</summary>
 internal sealed class FakeInputSource : IGamepadSource, IDesktopSource
 {
     public GamepadState Gamepad { get; set; }
+
+    public IReadOnlyList<int> HeldKeys { get; set; } = [];
 
     public int SlotCount => 1;
 
@@ -26,6 +28,11 @@ internal sealed class FakeInputSource : IGamepadSource, IDesktopSource
     public void ReadKeys(PressedKeys keys)
     {
         keys.Clear();
+
+        foreach (int key in HeldKeys)
+        {
+            keys.Set(key, true);
+        }
     }
 
     public CursorPosition ReadCursor()
