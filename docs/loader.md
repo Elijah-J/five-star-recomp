@@ -79,7 +79,7 @@ ntdll answers only for OS-loaded modules; mapping it lets the loader bind that i
 | `acphal.dll` | APU heap: `ApuCreateHeap` commits one region for both parts; `ApuAlloc` hands out zeroed, aligned blocks of it (first fit); an APU address is the offset plus 0x10000; `ApuFree`, `ApuIsVirtualAddressValid`, `ApuMapVirtualAddress`, `ApuMapApuAddress` follow. `AcpHalCreate` and `AcpHalAllocateShapeContexts` return E_NOTIMPL (no SHAPE hardware), so audio start-up fails cleanly |
 | `chad.dll`, `xapu.dll` | XDsp and XApu connect, activate, submit, enqueue and dequeue return E_NOTIMPL; `XApuGetResultCount` 0; disconnect and deactivate 0 |
 | `xg_xs.dll` | `XGCreateTextureComputer`, `XGSuggestSwizzleMode` return E_NOTIMPL (console tiling not implemented) |
-| `xcrdapi.dll` `DStorageGetFactory` | one stub factory: IUnknown, slot 8 (the staging buffer size set at start-up) S_OK, every other slot E_NOTIMPL logged once |
+| `xcrdapi.dll` `DStorageGetFactory` | a CPU DirectStorage factory: files through the overlay, a worker thread per queue, overlapped unbuffered reads, zlib chunks inflated into system memory, status arrays; slots the game does not call return E_NOTIMPL logged once ([directstorage.md](directstorage.md)) |
 | `RtlPcToFileHeader` (any module) | the mapped image containing the address, else the real ntdll function |
 | `terminate` (any module) | logs the native stack, then calls `ucrtbase!terminate` |
 | `GetModuleHandle{A,W}`, `GetModuleHandleEx{A,W}`, `GetModuleFileName{A,W}` (any module) | NULL means the main image (`--main`; else the first mapped executable, else the first `--load`); names, handles and addresses of mapped images answer with the mapping; truncation follows Windows (size-1 characters, result size, `ERROR_INSUFFICIENT_BUFFER`); everything else goes to kernel32 |
@@ -332,8 +332,7 @@ Most of the thunk path is `QueryApiImpl`'s lookup of the (clsid, iid) object und
   attribute layout; the console protection and allocation-type bits `XMemVirtualAlloc` drops; the second argument
   of `ApuIsVirtualAddressValid`.
 - Physical page aliasing (one page mapped at two addresses) and contents following a remapped page are not emulated.
-- What the game does when its audio start-up fails; the IDStorageFactoryX vtable (slot 8 is read as
-  SetStagingBufferSize) and what the game does when a queue or file cannot be created.
+- What the game does when its audio start-up fails. DirectStorage unknowns are in [directstorage.md](directstorage.md).
 - XUser and XGameSave error HRESULT values; the members of `XPackageDetails` after `installing`; the
   `XStoreGameLicense` layout; the array sizes of `XSystemAnalyticsInfo`; the member order of
   `XPersistentLocalStorageSpaceInfo`; what the console returns as package identifier.

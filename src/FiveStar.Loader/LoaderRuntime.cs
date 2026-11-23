@@ -41,11 +41,11 @@ internal sealed class LoaderRuntime : IDisposable
         XMem = new XMemAllocator(Images, log);
         XMemPhysical = new XMemPhysicalMemory(log);
         Apu = new ApuHeap(log);
-        Storage = new DStorageFactoryStub(Stubs, CodeHeap, log);
 
         D3D12 = new D3D12Forwarder(log);
         Gdk = CreateGdk(gdk, environment.Time);
         Overlay = new FileOverlay(Gdk.Config, log);
+        Storage = new DStorageFactory(Stubs, CodeHeap, Overlay, new UnsupportedDestinationSink(log), log);
         RecipeAllocator = new RecipeAllocator();
         Input = new GameInputService(new XInputGamepads(), new DesktopInput(), InputConfigFile.Defaults(), environment.Time, Stubs, CodeHeap, log);
 
@@ -94,7 +94,7 @@ internal sealed class LoaderRuntime : IDisposable
     public ApuHeap Apu { get; }
 
     /// <summary>The DirectStorage factory XCRDAPI.dll hands out.</summary>
-    public DStorageFactoryStub Storage { get; }
+    public DStorageFactory Storage { get; }
 
     public D3D12Forwarder D3D12 { get; }
 
