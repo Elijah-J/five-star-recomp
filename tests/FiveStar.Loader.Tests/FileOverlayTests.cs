@@ -17,7 +17,7 @@ public sealed unsafe class FileOverlayTests
     private const int ErrorFileNotFound = 2;
 
     [Fact]
-    public void A_package_file_opens_from_the_first_mod_folder_that_has_it_and_else_from_the_package()
+    public void A_package_file_opens_from_the_first_mod_folder_that_has_it_and_else_from_the_package_also_through_drive_G()
     {
         string root = Path.Combine(Path.GetTempPath(), "fivestar-overlay-tests", Guid.NewGuid().ToString("N"));
         string package = Path.Combine(root, "package");
@@ -40,6 +40,10 @@ public sealed unsafe class FileOverlayTests
             Assert.Equal("low b", Open(createFile, Path.Combine(package, "data", "b.txt")));
             Assert.Equal("package c", Open(createFile, Path.Combine(package, "data", "c.txt")));
             Assert.Equal($"error {ErrorFileNotFound}", Open(createFile, Path.Combine(package, "data", "d.txt")));
+
+            // The console's package drive is the package root, mods included.
+            Assert.Equal("high a", Open(createFile, @"G:\data\a.txt"));
+            Assert.Equal("package c", Open(createFile, "g:/data/c.txt"));
         }
         finally
         {
