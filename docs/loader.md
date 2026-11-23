@@ -86,7 +86,7 @@ ntdll answers only for OS-loaded modules; mapping it lets the loader bind that i
 | `acphal.dll` | APU heap: `ApuCreateHeap` commits one region for both parts; `ApuAlloc` hands out zeroed, aligned blocks of it (first fit); an APU address is the offset plus 0x10000; `ApuFree`, `ApuIsVirtualAddressValid`, `ApuMapVirtualAddress`, `ApuMapApuAddress` follow. `AcpHalCreate` and `AcpHalAllocateShapeContexts` return E_NOTIMPL (no SHAPE hardware), so audio start-up fails cleanly |
 | `chad.dll`, `xapu.dll` | XDsp and XApu connect, activate, submit, enqueue and dequeue return E_NOTIMPL; `XApuGetResultCount` 0; disconnect and deactivate 0 |
 | `xg_xs.dll` | `XGCreateTextureComputer`, `XGSuggestSwizzleMode` return E_NOTIMPL (console tiling not implemented) |
-| `xcrdapi.dll` `DStorageGetFactory` | one stub factory: IUnknown, slot 8 (the staging buffer size set at start-up) S_OK, every other slot E_NOTIMPL logged once |
+| `xcrdapi.dll` `DStorageGetFactory` | a CPU DirectStorage factory: files through the overlay, a worker thread per queue, overlapped unbuffered reads, zlib chunks inflated into system memory, status arrays; slots the game does not call return E_NOTIMPL logged once ([directstorage.md](directstorage.md)) |
 | `RtlPcToFileHeader` (any module) | the mapped image containing the address, else the real ntdll function |
 | `AddVectoredExceptionHandler` (any module) | registered as asked; the fault reporter of `--run` then moves back in front |
 | `terminate` (any module) | logs the native stack, then calls `ucrtbase!terminate` |
@@ -362,8 +362,7 @@ Most of the thunk path is `QueryApiImpl`'s lookup of the (clsid, iid) object und
   every `acphal.dll`, `chad.dll` and `xapu.dll` function, `XGSuggestSwizzleMode`; the meaning of the
   `XMemVirtualQuery` tail (+0x30); the XALLOC attribute layout; the second argument of `ApuIsVirtualAddressValid`.
   The xmem page functions are in [physical-memory.md](physical-memory.md).
-- What the game does when its audio start-up fails; the IDStorageFactoryX vtable (slot 8 is read as
-  SetStagingBufferSize) and what the game does when a queue or file cannot be created.
+- What the game does when its audio start-up fails. DirectStorage unknowns are in [directstorage.md](directstorage.md).
 - XUser and XGameSave error HRESULT values; the members of `XPackageDetails` after `installing`; the
   `XStoreGameLicense` layout; the array sizes of `XSystemAnalyticsInfo`; the member order of
   `XPersistentLocalStorageSpaceInfo`; what the console returns as package identifier.

@@ -43,6 +43,17 @@ internal static class Win32Constants
     public const int ErrorModNotFound = 126;
     public const int ErrorProcNotFound = 127;
 
+    // winerror.h: errors of overlapped reads.
+    public const int ErrorHandleEof = 38;
+    public const int ErrorIoPending = 997;
+
+    // winnt.h / fileapi.h: CreateFile access, sharing, disposition and flags.
+    public const uint GenericRead = 0x80000000;
+    public const uint FileShareRead = 0x1;
+    public const uint OpenExisting = 3;
+    public const uint FileFlagOverlapped = 0x40000000;
+    public const uint FileFlagNoBuffering = 0x20000000;
+
     // winnt.h: DllMain reasons.
     public const uint DllProcessDetach = 0;
     public const uint DllProcessAttach = 1;
