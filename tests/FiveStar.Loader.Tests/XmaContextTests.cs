@@ -84,6 +84,38 @@ public sealed unsafe class XmaContextTests : IDisposable
         }
     }
 
+    [DumpFact]
+    public void A_voice_chained_over_two_contexts_plays_the_same_samples_as_one_context()
+    {
+        using var source = new MappedFileSource(Path.Combine(DumpFactAttribute.Folder!, "audio.rpf"));
+        var track = new AwcTrackReader(source).Read(AwcReader.TryRead(source, 0x69DBC6000)!).Single(track => track.Id == 0x026F4E1Cu);
+        var data = source.Read(track.DataOffset, (int)track.DataSize).ToArray();
+        int split = data.Length / 2048 / 2 * 2048;
+
+        var whole = new XmaVoiceDriver(_test, data, 1);
+        whole.Enable();
+        var continuous = whole.TakeAll(5);
+        whole.Disable();
+
+        // The game's chain: the first context plays the first half, hands its work buffer to the second, which then
+        // continues the overlap. A second context started without the hand-over begins from silence instead.
+        var first = whole.Chain(data.AsSpan(0, split), 1);
+        var second = first.Chain(data.AsSpan(split), 1);
+        first.Enable();
+        var head = first.TakeAll(5);
+
+        first.HandOver(second);
+        second.Enable();
+        var tail = second.TakeAll(5);
+
+        var fresh = second.Chain(data.AsSpan(split), 1);
+        fresh.Enable();
+        var alone = fresh.TakeAll(5);
+
+        Assert.Equal(continuous, head.Concat(tail).ToArray());
+        Assert.NotEqual(tail, alone);
+    }
+
     public void Dispose()
     {
         _test.Dispose();
