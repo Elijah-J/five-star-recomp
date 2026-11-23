@@ -49,7 +49,7 @@ internal sealed class LoaderRuntime : IDisposable
         Xg = new XgComputers(Stubs, CodeHeap);
 
         D3D12 = new D3D12Forwarder(log);
-        D3D12X = new XboxDeviceFactory(D3D12, Stubs, CodeHeap, log);
+        D3D12X = new XboxDeviceFactory(D3D12, Stubs, CodeHeap, XMemPhysical, Images, log);
 
         Gdk = CreateGdk(gdk, environment.Time);
         Overlay = new FileOverlay(Gdk.Config, log);

@@ -1,0 +1,78 @@
+// Copyright (c) 2026 Five Star Recomp contributors.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+using System.Runtime.InteropServices;
+using FiveStar.Loader.Native;
+
+namespace FiveStar.Loader.Shims.D3D12X;
+
+/// <summary>Command-queue slots that take an array of wrapped lists: per-frame, so allocation-free.</summary>
+internal static unsafe class XboxQueueMethods
+{
+    /// <summary>X slot 35, read as ExecuteCommandListsX: (count, lists, frame object, flags 0 or 3).</summary>
+    public const int ExecuteCommandListsXSlot = 35;
+
+    /// <summary>X slot 12: desktop ExecuteCommandLists two slots later, like the queue's other desktop methods.</summary>
+    public const int ExecuteCommandListsSlot = 12;
+
+    /// <summary>X slot 32, read as PresentX: (plane count, planes, parameters).</summary>
+    public const int PresentSlot = 32;
+
+    /// <summary>ID3D12CommandQueue::ExecuteCommandLists in the desktop vtable (d3d12.h).</summary>
+    private const int DesktopExecuteSlot = 10;
+
+    /// <summary>Lists unwrapped per desktop call; the game submits at most 256 at once (0x142481e90).</summary>
+    private const int Batch = 256;
+
+    /// <summary>
+    /// Slot 35. The frame object and the flags have no desktop counterpart: the lists are submitted in order and the
+    /// call succeeds.
+    /// </summary>
+    [HotPath]
+    [UnmanagedCallersOnly]
+    public static int ExecuteCommandListsX(XboxObject* self, uint count, nint* lists, nint frame, uint flags)
+    {
+        Execute(self, count, lists);
+
+        return HResult.Ok;
+    }
+
+    /// <summary>Slot 12, desktop ExecuteCommandLists(count, lists).</summary>
+    [HotPath]
+    [UnmanagedCallersOnly]
+    public static void ExecuteCommandLists(XboxObject* self, uint count, nint* lists)
+    {
+        Execute(self, count, lists);
+    }
+
+    [HotPath]
+    private static void Execute(XboxObject* self, uint count, nint* lists)
+    {
+        if (lists == null)
+        {
+            return;
+        }
+
+        var objects = ShimContext.Runtime.D3D12X.Objects;
+        nint inner = self->Inner;
+        var execute = (delegate* unmanaged<nint, uint, nint*, void>)ComObject.Slot(inner, DesktopExecuteSlot);
+        nint* desktop = stackalloc nint[Batch];
+
+        for (uint first = 0; first < count; first += Batch)
+        {
+            uint size = count - first;
+
+            if (size > Batch)
+            {
+                size = Batch;
+            }
+
+            for (uint i = 0; i < size; i++)
+            {
+                desktop[i] = objects.Unwrap(lists[first + i]);
+            }
+
+            execute(inner, size, desktop);
+        }
+    }
+}

@@ -26,8 +26,11 @@ internal sealed class TestRuntime : IDisposable
 
     public string SaveRoot => Path.Combine(Folder, "saves");
 
-    /// <summary>A runtime whose manual modules are <paramref name="manualModules"/> and whose package root is <paramref name="packageRoot"/>.</summary>
-    public static TestRuntime Create(IEnumerable<string>? manualModules = null, string? packageRoot = null)
+    /// <summary>
+    /// A runtime whose manual modules are <paramref name="manualModules"/>, whose package root is
+    /// <paramref name="packageRoot"/> and whose log lines go to <paramref name="log"/> (nowhere when null).
+    /// </summary>
+    public static TestRuntime Create(IEnumerable<string>? manualModules = null, string? packageRoot = null, TextWriter? log = null)
     {
         string folder = Path.Combine(Path.GetTempPath(), "fivestar-loader-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(folder);
@@ -36,7 +39,7 @@ internal sealed class TestRuntime : IDisposable
         var options = new LoaderOptions([], manual, UnresolvedMode.Stub, true, Path.Combine(folder, "work"), null, Environment.ProcessId);
         var gdk = new GdkOptions(packageRoot, Path.Combine(folder, "saves"), Path.Combine(folder, "data"), folder, SystemService.XboxScarlettAnaconda, Environment.OSVersion.Version);
         var environment = new LoaderEnvironment(Environment.SystemDirectory, TimeProvider.System, Environment.FailFast);
-        var runtime = new LoaderRuntime(options, gdk, environment, new LoaderLog(TextWriter.Null, null, false));
+        var runtime = new LoaderRuntime(options, gdk, environment, new LoaderLog(log ?? TextWriter.Null, null, false));
 
         return new TestRuntime(runtime, folder);
     }
