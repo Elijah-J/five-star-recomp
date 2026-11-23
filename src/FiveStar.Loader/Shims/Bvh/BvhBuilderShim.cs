@@ -12,7 +12,7 @@ namespace FiveStar.Loader.Shims.Bvh;
 /// Member functions take the object in rcx; the constructor returns it. The rehydration's last argument is an
 /// optional array of CPU addresses of the serialized sources (the game passes it; the descs hold GPU addresses).
 /// </summary>
-internal static unsafe class BvhBuilderShim
+internal static unsafe partial class BvhBuilderShim
 {
     public const string Module = "XboxBvhBuilder.dll";
 

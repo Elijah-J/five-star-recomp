@@ -10,7 +10,7 @@ namespace FiveStar.Loader.Shims.Gdk;
 /// <see cref="AccessibilityService"/>. Synthesis is in <see cref="XSpeechSynthesizerShim"/>; speech-to-text stays in
 /// the not-implemented catalog.
 /// </summary>
-internal static unsafe class XAccessibilityShim
+internal static unsafe partial class XAccessibilityShim
 {
     [Shim(GdkModule.Name, "XClosedCaptionGetProperties")]
     [UnmanagedCallersOnly]

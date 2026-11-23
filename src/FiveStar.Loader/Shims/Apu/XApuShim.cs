@@ -9,7 +9,7 @@ namespace FiveStar.Loader.Shims.Apu;
 /// xapu.dll entry points; the work is in <see cref="XApuDevice"/>. Signatures are inferred from the executable's call
 /// sites: XApuConnect and XApuDequeueResult are tested as HRESULTs, XApuGetResultCount as a count.
 /// </summary>
-internal static unsafe class XApuShim
+internal static unsafe partial class XApuShim
 {
     [Shim(AudioHardwareModules.XApuModule, "XApuConnect")]
     [UnmanagedCallersOnly]

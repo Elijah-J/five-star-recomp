@@ -6,7 +6,7 @@ using System.Runtime.InteropServices;
 namespace FiveStar.Loader.Shims.Gdk;
 
 /// <summary>XAsync.h and XAsyncProvider.h entry points; the work is in <see cref="AsyncService"/>.</summary>
-internal static unsafe class XAsyncShim
+internal static unsafe partial class XAsyncShim
 {
     [HotPath]
     [Shim(GdkModule.Name, "XAsyncBegin")]

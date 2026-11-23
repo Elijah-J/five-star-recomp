@@ -10,7 +10,7 @@ namespace FiveStar.Loader.Shims.Gdk;
 /// XStore.h package updates and downloads. The local package is the only version there is, so the update query finds
 /// none; downloading anything needs the store and fails with E_GAMESTORE_NETWORK_ERROR.
 /// </summary>
-internal static unsafe class XStorePackageShim
+internal static unsafe partial class XStorePackageShim
 {
     /// <summary>HRESULT XStoreQueryGameAndDlcPackageUpdatesAsync(XStoreContextHandle, XAsyncBlock*).</summary>
     [Shim(GdkModule.Name, nameof(XStoreQueryGameAndDlcPackageUpdatesAsync))]

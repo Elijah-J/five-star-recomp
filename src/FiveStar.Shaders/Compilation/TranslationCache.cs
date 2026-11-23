@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using System.Text.Json;
 using FiveStar.Shaders.Disassembly;
@@ -41,6 +42,7 @@ public sealed class TranslationCache
     /// The identity of this translator build with its disassembler and options: the in-process
     /// <see cref="RdnaDecoder"/> when <paramref name="llvm"/> is null (it is part of this assembly), else the LLVM tools.
     /// </summary>
+    [UnconditionalSuppressMessage("SingleFile", "IL3000", Justification = "Only the fivestar CLI translates; it runs from its assembly files and is not published single-file or NativeAOT.")]
     public static string Identity(LlvmToolPaths? llvm, TranslationOptions options)
     {
         var assembly = typeof(HlslTranslator).Assembly.Location;

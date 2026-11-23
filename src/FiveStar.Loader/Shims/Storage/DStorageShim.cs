@@ -13,7 +13,7 @@ namespace FiveStar.Loader.Shims.Storage;
 /// this call fails or yields null.
 /// </summary>
 [ShimModule(Module, UnresolvedReturn = HResult.NotImplemented)]
-internal static unsafe class DStorageShim
+internal static unsafe partial class DStorageShim
 {
     public const string Module = "xcrdapi.dll";
 

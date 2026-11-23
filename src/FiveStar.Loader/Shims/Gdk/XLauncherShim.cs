@@ -6,7 +6,7 @@ using System.Runtime.InteropServices;
 namespace FiveStar.Loader.Shims.Gdk;
 
 /// <summary>XLauncher.h and XGame.h launch entry points; the work is in <see cref="LauncherService"/>.</summary>
-internal static unsafe class XLauncherShim
+internal static unsafe partial class XLauncherShim
 {
     /// <summary>HRESULT XLaunchUri(XUserHandle requestingUser, const char* uri).</summary>
     [Shim(GdkModule.Name, "XLaunchUri")]

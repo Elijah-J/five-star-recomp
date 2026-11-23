@@ -14,7 +14,7 @@ namespace FiveStar.Loader.Shims;
 /// <see cref="XMemPhysicalMemory"/>.
 /// </summary>
 [ShimModule(Module)]
-internal static unsafe class XMemShim
+internal static unsafe partial class XMemShim
 {
     private const string Module = "xmem.dll";
 

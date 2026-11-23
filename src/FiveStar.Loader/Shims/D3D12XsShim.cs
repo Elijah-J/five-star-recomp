@@ -12,7 +12,7 @@ namespace FiveStar.Loader.Shims;
 /// no result would fault where the game tests the HRESULT.
 /// </summary>
 [ShimModule("d3d12_xs.dll", UnresolvedReturn = HResult.NotImplemented)]
-internal static unsafe class D3D12XsShim
+internal static unsafe partial class D3D12XsShim
 {
     [Shim("d3d12_xs.dll", "D3D12XboxCreateDevice")]
     [UnmanagedCallersOnly]

@@ -13,7 +13,7 @@ namespace FiveStar.Loader.Shims.Gdk;
 /// result of a canceled dialog. The async block is the first argument of every *Async function, so the shims ignore
 /// the arguments after the ones they read.
 /// </summary>
-internal static unsafe class XGameUiShim
+internal static unsafe partial class XGameUiShim
 {
     private const string MessageDialogApi = "XGameUiShowMessageDialogAsync";
     private const string ErrorDialogApi = "XGameUiShowErrorDialogAsync";

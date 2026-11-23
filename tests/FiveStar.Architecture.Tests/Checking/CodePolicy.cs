@@ -55,16 +55,20 @@ public static class CodePolicy
     /// <summary>Projects whose literals are their data.</summary>
     public static readonly IReadOnlyList<string> MagicNumberExemptProjects = ["*.Tests"];
 
-    /// <summary>Attributes of a source generator that needs a partial type.</summary>
+    /// <summary>
+    /// Attributes of a source generator that needs a partial type; the last three are the loader's shim registry
+    /// (FiveStar.Loader.Generators).
+    /// </summary>
     public static readonly FrozenSet<string> GeneratorAttributes =
-        new[] { "GeneratedRegex", "JsonSerializable", "LibraryImport" }.ToFrozenSet(StringComparer.Ordinal);
+        new[] { "GeneratedRegex", "JsonSerializable", "LibraryImport", "Shim", "ShimModule", "NotImplementedTable" }.ToFrozenSet(StringComparer.Ordinal);
 
     /// <summary>The projects of each layer and the projects they may reference. A test project references only its subject.</summary>
     public static readonly FrozenDictionary<string, string[]> Layers = new Dictionary<string, string[]>
     {
         ["FiveStar.Formats"] = [],
         ["FiveStar.Shaders"] = [],
-        ["FiveStar.Loader"] = ["FiveStar.Formats", "FiveStar.Shaders", "FiveStar.Graphics"],
+        ["FiveStar.Loader"] = ["FiveStar.Formats", "FiveStar.Shaders", "FiveStar.Graphics", "FiveStar.Loader.Generators"],
+        ["FiveStar.Loader.Generators"] = [],
         ["FiveStar.Graphics"] = [],
         ["FiveStar.Cli"] = ["FiveStar.Formats", "FiveStar.Graphics", "FiveStar.Shaders"],
         ["FiveStar.Benchmarks"] = ["FiveStar.Formats", "FiveStar.Loader"],

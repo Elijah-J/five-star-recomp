@@ -7,7 +7,7 @@ using FiveStar.Loader.Native;
 namespace FiveStar.Loader.Shims.Gdk;
 
 /// <summary>XAppCapture.h: capture is reported unavailable; the rest of XAppCapture is in the not-implemented catalog.</summary>
-internal static unsafe class XAppCaptureShim
+internal static unsafe partial class XAppCaptureShim
 {
     /// <summary>HRESULT XAppCaptureTakeScreenshot(XUserHandle requestingUser, XAppCaptureTakeScreenshotResult* result).</summary>
     [Shim(GdkModule.Name, "XAppCaptureTakeScreenshot")]

@@ -5,10 +5,14 @@
     <AssemblyName>fivestar-loader</AssemblyName>
     <PlatformTarget>x64</PlatformTarget>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <SelfContained>false</SelfContained>
+    <!-- A NativeAOT publish (-p:PublishAot=true, docs/aot.md) is self-contained by definition. -->
+    <SelfContained Condition="'$(PublishAot)' != 'true'">false</SelfContained>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <!-- CET shadow stacks fail-fast (0x30) when SEH resumes inside manually mapped code. -->
+    <!-- CET shadow stacks fail-fast (0x30) when SEH resumes inside manually mapped code. The JIT host and the
+         NativeAOT linker (/CETCOMPAT:NO) both honour it. -->
     <CETCompat>false</CETCompat>
+    <!-- Trim and AOT analysis on every build, so the JIT build already fails on what NativeAOT cannot run. -->
+    <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
 
   <ItemGroup>
@@ -18,6 +22,9 @@
     <ProjectReference Include="..\FiveStar.Shaders\FiveStar.Shaders.csproj" />
     <!-- Pipeline creation: the root signature of translated programs. -->
     <ProjectReference Include="..\FiveStar.Graphics\FiveStar.Graphics.csproj" />
+    <!-- Lists the shim types at compile time (Shims/ShimTable.cs). It runs inside the compiler, so it is built without
+         the publish settings of the loader. -->
+    <ProjectReference Include="..\FiveStar.Loader.Generators\FiveStar.Loader.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" GlobalPropertiesToRemove="PublishAot;SelfContained;RuntimeIdentifier" />
   </ItemGroup>
 
   <ItemGroup>

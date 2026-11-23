@@ -10,7 +10,7 @@ namespace FiveStar.Loader.Shims.Gdk;
 /// XStore.h product queries: the offline user owns no add-ons and the catalog is unreachable, so every query returns
 /// an empty, single-page XStoreProductQueryHandle.
 /// </summary>
-internal static unsafe class XStoreProductShim
+internal static unsafe partial class XStoreProductShim
 {
     /// <summary>HRESULT XStoreQueryAssociatedProductsAsync(XStoreContextHandle, XStoreProductKind, uint32_t maxItemsToRetrievePerPage, XAsyncBlock*).</summary>
     [Shim(GdkModule.Name, nameof(XStoreQueryAssociatedProductsAsync))]

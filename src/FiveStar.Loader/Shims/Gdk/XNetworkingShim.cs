@@ -10,7 +10,7 @@ namespace FiveStar.Loader.Shims.Gdk;
 /// XNetworking.h entry points with offline answers (<see cref="NetworkingService"/>). Change notifications register
 /// and never fire. URL security queries and certificate checks fail with HRESULT_FROM_WIN32(ERROR_NETWORK_UNREACHABLE).
 /// </summary>
-internal static unsafe class XNetworkingShim
+internal static unsafe partial class XNetworkingShim
 {
     [Shim(GdkModule.Name, "XNetworkingGetConnectivityHint")]
     [UnmanagedCallersOnly]

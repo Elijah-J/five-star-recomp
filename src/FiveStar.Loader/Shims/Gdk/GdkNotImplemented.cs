@@ -10,7 +10,7 @@ namespace FiveStar.Loader.Shims.Gdk;
 /// that returns the listed value and logs its first call: E_NOTIMPL for HRESULT functions, 0 (false, nothing) for
 /// bool, count and void ones, and E_GAMESTREAMING_NOT_INITIALIZED for game streaming, which is never initialized.
 /// </summary>
-internal static class GdkNotImplemented
+internal static partial class GdkNotImplemented
 {
     private const long NotImplemented = HResult.NotImplemented;
     private const long Zero = 0;

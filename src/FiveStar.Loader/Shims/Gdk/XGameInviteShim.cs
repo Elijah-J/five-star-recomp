@@ -9,7 +9,7 @@ namespace FiveStar.Loader.Shims.Gdk;
 /// XGameInvite.h, XGameActivation.h and XGameProtocol.h: offline there are no invites and nothing activates the game,
 /// so each Register* hands out a token whose callback never runs. The accept functions stay in the catalog.
 /// </summary>
-internal static unsafe class XGameInviteShim
+internal static unsafe partial class XGameInviteShim
 {
     /// <summary>HRESULT XGameInviteRegisterForEvent(XTaskQueueHandle, void* context, XGameInviteEventCallback*, XTaskQueueRegistrationToken*).</summary>
     [Shim(GdkModule.Name, "XGameInviteRegisterForEvent")]

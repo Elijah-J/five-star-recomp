@@ -159,7 +159,7 @@ internal sealed unsafe class ModuleIdentity
 
         if (star is not null && star.Module == ModuleNames.AnyModule)
         {
-            Trace($"GetProcAddress(0x{module:x}, {symbol}) -> shim {star.Method.Name}");
+            Trace($"GetProcAddress(0x{module:x}, {symbol}) -> shim {star.MethodName}");
 
             return star.Address;
         }

@@ -9,7 +9,7 @@ namespace FiveStar.Loader.Shims.Gdk;
 /// XTaskQueue.h entry points; the work is in <see cref="TaskQueueService"/>. Callbacks are
 /// <c>void XTaskQueueCallback(void* context, bool canceled)</c>; a registration token is one 64-bit value.
 /// </summary>
-internal static unsafe class XTaskQueueShim
+internal static unsafe partial class XTaskQueueShim
 {
     [Shim(GdkModule.Name, "XTaskQueueCreate")]
     [UnmanagedCallersOnly]

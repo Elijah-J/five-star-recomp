@@ -309,7 +309,8 @@ sensitivity × speed / 1000 px/s, clamped to 1, then raised to the curve exponen
 ## Running it
 
 To boot the game from a dump, use `fivestar run <dump>` ([running.md](running.md)): it builds the shaders and
-picks these options. The loader on its own:
+picks these options. The loader runs on the JIT; a NativeAOT build compiles but cannot run the game
+([aot.md](aot.md)). The loader on its own:
 
 ```powershell
 dotnet build FiveStar.slnx
@@ -400,6 +401,9 @@ fail-fasts (0x30).
 | XAsync round trip: `XAsyncRun`, work and completion dispatched on a manual queue, `XAsyncGetStatus` | 308 ns | 576 B |
 | a callback submitted to a thread-pool queue, waited for until a pool thread ran it | 841 ns | 56 B |
 | `XMemAlloc` and `XMemFree` of 64 bytes | 74 ns | 56 B |
+| a D3D12.X wrapper call forwarded to the desktop slot by the generated thunk (direct desktop call: 3.1 ns) | 3.3 ns | 0 |
+| the same thunk unwrapping a wrapped argument in rdx | 5.0 ns | 0 |
+| the same forward as a managed `[UnmanagedCallersOnly]` handler | 12.2 ns | 0 |
 
 Most of the thunk path is `QueryApiImpl`'s lookup of the (clsid, iid) object under a lock; the shim behind it is the
 6.5 ns path.

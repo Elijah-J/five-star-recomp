@@ -10,7 +10,7 @@ namespace FiveStar.Loader.Shims.Gdk;
 /// XStore.h contexts, licenses and license events; the work is in <see cref="StoreService"/>. Acquiring an add-on or
 /// package license needs the store, so it fails with E_GAMESTORE_NETWORK_ERROR and no license handle is issued.
 /// </summary>
-internal static unsafe class XStoreShim
+internal static unsafe partial class XStoreShim
 {
     /// <summary>HRESULT XStoreCreateContext(XUserHandle user, XStoreContextHandle* storeContextHandle).</summary>
     [Shim(GdkModule.Name, "XStoreCreateContext")]
