@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Native;
@@ -40,6 +41,13 @@ internal sealed unsafe class TlsHostAttacher
         }
 
         var template = ReadTemplate(image, (byte*)image.Va(directory.Rva));
+
+        // A NativeAOT host keeps its own thread statics (the managed thread, its id, lock ownership) in slot 0, which
+        // TlsSlotZero hands to the mapped executable: every thread would lose them (docs/aot.md).
+        if (template.OwnsSlotZero && !RuntimeFeature.IsDynamicCodeSupported)
+        {
+            throw new NotSupportedException($"{image.Name} has implicit TLS in slot 0, which the NativeAOT loader's runtime owns; use the JIT build");
+        }
         string path = Path.Combine(_workDirectory, $"tlshost_{Path.GetFileNameWithoutExtension(image.Name)}_{_processId}.dll");
         System.IO.Directory.CreateDirectory(_workDirectory);
         File.WriteAllBytes(path, TlsHostBuilder.Build(template));
