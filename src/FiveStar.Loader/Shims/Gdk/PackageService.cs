@@ -8,7 +8,8 @@ namespace FiveStar.Loader.Shims.Gdk;
 
 /// <summary>
 /// XPackage.h: one installed, fully available game package rooted at the package root, with the identity from
-/// MicrosoftGame.config. No DLC; chunks are always ready; installation monitors report 100%.
+/// MicrosoftGame.config. No DLC; chunks are always ready; installation monitors report 100% and tell each progress
+/// callback so once.
 /// </summary>
 internal sealed unsafe class PackageService
 {
@@ -17,13 +18,15 @@ internal sealed unsafe class PackageService
     private const string UserLocale = "en-US";
 
     private readonly HandleTable<string> _mounts = new("XPKMOUNT");
-    private readonly HandleTable<string> _monitors = new("XPKMONIT");
+    private readonly HandleTable<InstallationMonitor> _monitors = new("XPKMONIT");
     private readonly GdkConfig _config;
+    private readonly TaskQueueService _taskQueues;
     private long _token;
 
-    public PackageService(GdkConfig config)
+    public PackageService(GdkConfig config, TaskQueueService taskQueues)
     {
         _config = config;
+        _taskQueues = taskQueues;
     }
 
     /// <summary>
@@ -151,21 +154,24 @@ internal sealed unsafe class PackageService
         return HResult.Ok;
     }
 
-    public int CreateInstallationMonitor(byte* id, nint* monitor)
+    public int CreateInstallationMonitor(byte* id, nint queue, nint* monitor)
     {
         if (monitor == null)
         {
             return HResult.Pointer;
         }
 
-        int hr = CreateMonitor(Utf8Text.Read((nint)id), out nint created);
+        int hr = CreateMonitor(Utf8Text.Read((nint)id), queue, out nint created);
         *monitor = created;
 
         return hr;
     }
 
-    /// <summary>An installation monitor of the game package, already complete; E_NOTFOUND for another package.</summary>
-    public int CreateMonitor(string? id, out nint monitor)
+    /// <summary>
+    /// An installation monitor of the game package, already complete, whose callbacks run on <paramref name="queue"/>;
+    /// E_NOTFOUND for another package.
+    /// </summary>
+    public int CreateMonitor(string? id, nint queue, out nint monitor)
     {
         monitor = 0;
 
@@ -174,7 +180,7 @@ internal sealed unsafe class PackageService
             return HResult.NotFound;
         }
 
-        monitor = _monitors.Add(id ?? PackageId);
+        monitor = _monitors.Add(new InstallationMonitor(id ?? PackageId, queue));
 
         return HResult.Ok;
     }
@@ -210,17 +216,34 @@ internal sealed unsafe class PackageService
         _monitors.Remove(monitor);
     }
 
-    /// <summary>Registration succeeds; it never fires because the package is already complete.</summary>
-    public int RegisterProgressChanged(ulong* token)
+    /// <summary>
+    /// XPackageRegisterInstallationProgressChanged: the install is already complete, so the callback runs once, on the
+    /// completion port of the monitor's queue, where it reads the finished progress. Games that wait for that call
+    /// before they read the progress (the callback only marks it dirty) would otherwise wait forever.
+    /// </summary>
+    public int RegisterProgressChanged(nint monitor, nint context, nint callback, ulong* token)
     {
         if (token == null)
         {
             return HResult.Pointer;
         }
 
-        *token = (ulong)Interlocked.Increment(ref _token);
+        var watched = _monitors.Get(monitor);
 
-        return HResult.Ok;
+        if (watched is null || callback == 0)
+        {
+            return HResult.InvalidArgument;
+        }
+
+        *token = (ulong)Interlocked.Increment(ref _token);
+        var queue = _taskQueues.ResolveQueue(watched.Queue);
+
+        if (queue is null)
+        {
+            return HResult.Ok;
+        }
+
+        return queue.Completion.Submit(new TaskEntry(0, 0, new ProgressChangedStep(callback, context, monitor)), queue, 0);
     }
 
     /// <summary>XPackageEnumerateFeatures: the game declares no optional features, so the callback is never called.</summary>

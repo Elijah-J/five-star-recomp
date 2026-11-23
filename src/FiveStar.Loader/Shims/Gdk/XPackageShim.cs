@@ -160,7 +160,7 @@ internal static unsafe partial class XPackageShim
 
         try
         {
-            return gdk.Packages.CreateInstallationMonitor(id, monitor);
+            return gdk.Packages.CreateInstallationMonitor(id, queue, monitor);
         }
         catch (Exception e)
         {
@@ -195,9 +195,18 @@ internal static unsafe partial class XPackageShim
     private static int XPackageRegisterInstallationProgressChanged(nint monitor, nint context, nint callback, ulong* token)
     {
         var runtime = ShimContext.Runtime;
-        runtime.Log.Info($"  [gdk] XPackageRegisterInstallationProgressChanged(monitor 0x{monitor:x}, callback {runtime.Images.Describe(callback)}, context 0x{context:x}): never called back");
 
-        return runtime.Gdk.Packages.RegisterProgressChanged(token);
+        try
+        {
+            int hr = runtime.Gdk.Packages.RegisterProgressChanged(monitor, context, callback, token);
+            runtime.Log.Info($"  [gdk] XPackageRegisterInstallationProgressChanged(monitor 0x{monitor:x}, callback {runtime.Images.Describe(callback)}, context 0x{context:x}) -> 0x{hr:x8}, called back once (complete)");
+
+            return hr;
+        }
+        catch (Exception e)
+        {
+            return runtime.Gdk.Boundary.Failed(nameof(XPackageRegisterInstallationProgressChanged), e);
+        }
     }
 
     /// <summary>bool XPackageUnregisterInstallationProgressChanged(monitor, XTaskQueueRegistrationToken token, bool wait).</summary>
@@ -233,7 +242,7 @@ internal static unsafe partial class XPackageShim
 
         try
         {
-            return gdk.Packages.CreateInstallationMonitor(id, monitor);
+            return gdk.Packages.CreateInstallationMonitor(id, queue, monitor);
         }
         catch (Exception e)
         {
@@ -250,7 +259,8 @@ internal static unsafe partial class XPackageShim
 
         try
         {
-            var operation = new InstallChunksOperation(gdk.Packages, Utf8Text.Read((nint)id));
+            nint queue = async == 0 ? 0 : *(nint*)(async + AsyncLayout.BlockQueueOffset);
+            var operation = new InstallChunksOperation(gdk.Packages, Utf8Text.Read((nint)id), queue);
 
             return gdk.Async.BeginManaged(async, nameof(XPackageInstallChunksAsync), operation);
         }

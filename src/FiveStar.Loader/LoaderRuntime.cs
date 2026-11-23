@@ -177,7 +177,7 @@ internal sealed class LoaderRuntime : IDisposable
         var users = new UserService();
         var saves = new GameSaveService(config, new SaveStore(config, boundary, time), users, async, boundary);
 
-        var packages = new PackageService(config);
+        var packages = new PackageService(config, taskQueues);
         var system = new SystemService(config, boundary);
         var store = new StoreService(config, packages);
         var runtime = new GameRuntimeService(config, Shims, Stubs, CodeHeap, Trace, Log);
