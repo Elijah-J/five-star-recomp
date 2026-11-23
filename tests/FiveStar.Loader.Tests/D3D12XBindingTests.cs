@@ -125,12 +125,26 @@ public sealed unsafe class D3D12XBindingTests
         Assert.Equal(Marker + 1, Dispatch(test, device, heap, 0, 1, heap.Gpu, copy: table));
     }
 
+    [DxcFact]
+    public void A_table_the_game_copies_from_a_cpu_only_heap_itself_reaches_the_program()
+    {
+        using var test = TestRuntime.Create();
+        var device = new XboxDevice(test);
+        var heap = ViewHeap(device, GameViews);
+        var cpuOnly = ViewHeap(device, SmallHeap, shaderVisible: false);
+        nint table = heap.Cpu + (nint)((ulong)FarPage * heap.Increment);
+
+        // The views go into the CPU-only heap; the game copies their bytes into its table in the shader-visible heap.
+        Assert.Equal(Marker + 1, Dispatch(test, device, heap, 0, 1, heap.Gpu, copy: table, views: cpuOnly.Cpu));
+    }
+
     /// <summary>
     /// Creates an SRV of a marker buffer at game index <paramref name="read"/> and a UAV at <paramref name="write"/>
     /// through the slots, binds the table at <paramref name="table"/> and runs the program; returns what it stored.
     /// </summary>
-    private static uint Dispatch(TestRuntime test, XboxDevice device, (nint Heap, nint Cpu, ulong Gpu, uint Increment) heap, uint read, uint write, ulong table, uint between = 0, nint copy = 0)
+    private static uint Dispatch(TestRuntime test, XboxDevice device, (nint Heap, nint Cpu, ulong Gpu, uint Increment) heap, uint read, uint write, ulong table, uint between = 0, nint copy = 0, nint views = 0)
     {
+        nint at = views == 0 ? heap.Cpu : views;
         nint desktop = test.Runtime.D3D12X.Objects.DesktopDevice;
         nint rootSignature = GameRootSignature(device);
         nint source = Buffer(desktop, new HeapProperties { Type = HeapProperties.Upload }, 0, GenericRead);
@@ -140,18 +154,18 @@ public sealed unsafe class D3D12XBindingTests
         var view = BufferViewDescription.RawShaderResource(1);
         var store = BufferViewDescription.RawUnorderedAccess(1);
         var createRead = (delegate* unmanaged<nint, nint, BufferViewDescription*, nint, void>)XboxDevice.Vtable(device.Device)[CreateShaderResourceViewSlot];
-        createRead(device.Device, source, &view, heap.Cpu + (nint)((ulong)read * heap.Increment));
+        createRead(device.Device, source, &view, at + (nint)((ulong)read * heap.Increment));
 
         if (between != 0)
         {
             createRead(device.Device, source, &view, heap.Cpu + (nint)((ulong)between * heap.Increment));
         }
 
-        ((delegate* unmanaged<nint, nint, nint, BufferViewDescription*, nint, void>)XboxDevice.Vtable(device.Device)[CreateUnorderedAccessViewSlot])(device.Device, destination, 0, &store, heap.Cpu + (nint)((ulong)write * heap.Increment));
+        ((delegate* unmanaged<nint, nint, nint, BufferViewDescription*, nint, void>)XboxDevice.Vtable(device.Device)[CreateUnorderedAccessViewSlot])(device.Device, destination, 0, &store, at + (nint)((ulong)write * heap.Increment));
 
         if (copy != 0)
         {
-            System.Buffer.MemoryCopy((void*)(heap.Cpu + (nint)((ulong)read * heap.Increment)), (void*)copy, heap.Increment * TableSize, heap.Increment * TableSize);
+            System.Buffer.MemoryCopy((void*)(at + (nint)((ulong)read * heap.Increment)), (void*)copy, heap.Increment * TableSize, heap.Increment * TableSize);
             table = (ulong)copy;
         }
 
@@ -168,16 +182,22 @@ public sealed unsafe class D3D12XBindingTests
         return *(uint*)DesktopCalls.Map(destination);
     }
 
-    private static (nint Heap, nint Cpu, ulong Gpu, uint Increment) ViewHeap(XboxDevice device, uint count)
+    private static (nint Heap, nint Cpu, ulong Gpu, uint Increment) ViewHeap(XboxDevice device, uint count, bool shaderVisible = true)
     {
-        int* description = stackalloc int[] { 0, (int)count, 1, 0 };
+        int flags = shaderVisible ? 1 : 0;
+        int* description = stackalloc int[] { 0, (int)count, flags, 0 };
         Guid iid = new("8efb471d-616c-4f49-90f7-127bb763fa51");
         nint heap = 0;
         Assert.Equal(0, ((delegate* unmanaged<nint, int*, Guid*, nint*, int>)XboxDevice.Vtable(device.Device)[CreateDescriptorHeapSlot])(device.Device, description, &iid, &heap));
 
         uint increment = ((delegate* unmanaged<nint, int, uint>)XboxDevice.Vtable(device.Device)[DescriptorIncrementSlot])(device.Device, 0);
         nint cpu = ((delegate* unmanaged<nint, nint>)XboxDevice.Vtable(heap)[HeapCpuStartSlot])(heap);
-        ulong gpu = (ulong)((delegate* unmanaged<nint, nint>)XboxDevice.Vtable(heap)[HeapGpuStartSlot])(heap);
+        ulong gpu = 0;
+
+        if (shaderVisible)
+        {
+            gpu = (ulong)((delegate* unmanaged<nint, nint>)XboxDevice.Vtable(heap)[HeapGpuStartSlot])(heap);
+        }
 
         return (heap, cpu, gpu, increment);
     }
