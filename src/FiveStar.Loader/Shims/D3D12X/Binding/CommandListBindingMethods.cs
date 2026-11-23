@@ -99,7 +99,6 @@ internal static unsafe class CommandListBindingMethods
             used = MaxHeaps;
         }
 
-
         for (uint i = 0; i < used; i++)
         {
             desktop[i] = objects.Unwrap(heaps[i]);
