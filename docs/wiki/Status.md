@@ -5,8 +5,8 @@ GTA VI does not run yet. Its main executable (`game_scarlett_master.exe`, built 
 memory set-up, opening its archives through DirectStorage, the whole D3D12.X device set-up, its GPU memory pools,
 descriptor heaps, render targets and pipelines, up to its first present, which now appears in the game's own window
 through a swap chain. Nothing is drawn yet:
-it stops in the GPU driver while recording its first graphics work, because descriptor heaps are not yet bound on
-command lists (see [Roadmap](Roadmap.md)).
+its first frame's work records with real pipelines and bound descriptors, but the GPU then hangs before a second frame
+(see [Roadmap](Roadmap.md)).
 
 ![Progress](progress.svg)
 
