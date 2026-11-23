@@ -85,7 +85,7 @@ ntdll answers only for OS-loaded modules; mapping it lets the loader bind that i
 | `d3d12_xs.dll` | `D3D12SerializeRootSignature`, `D3D12SerializeVersionedRootSignature`, `D3D12Create[Versioned]RootSignatureDeserializer` forwarded to the PC `d3d12.dll`; `D3D12XboxCreateDevice` on a desktop device and `D3D12ConfigureVirtualMemoryX` as a no-op ([d3d12x-shim.md](d3d12x-shim.md)); everything else E_NOTIMPL |
 | `acphal.dll` | APU heap: `ApuCreateHeap` commits one region for both parts; `ApuAlloc` hands out zeroed, aligned blocks of it (first fit); an APU address is the offset plus 0x10000; `ApuFree`, `ApuIsVirtualAddressValid`, `ApuMapVirtualAddress`, `ApuMapApuAddress` follow. `AcpHalCreate` and `AcpHalAllocateShapeContexts` return E_NOTIMPL (no SHAPE hardware), so audio start-up fails cleanly |
 | `chad.dll`, `xapu.dll` | XDsp and XApu connect, activate, submit, enqueue and dequeue return E_NOTIMPL; `XApuGetResultCount` 0; disconnect and deactivate 0 |
-| `xg_xs.dll` | `XGCreateTextureComputer`, `XGSuggestSwizzleMode` return E_NOTIMPL (console tiling not implemented) |
+| `xg_xs.dll` | `XGCreateTextureComputer` returns a texture address computer over the console tiling: layout, tiling, copies in and out ([xg.md](xg.md)); `XGSuggestSwizzleMode` writes 0x100 + a 4 KB or 64 KB mode |
 | `xcrdapi.dll` `DStorageGetFactory` | a CPU DirectStorage factory: files through the overlay, a worker thread per queue, overlapped unbuffered reads, zlib chunks inflated into system memory, status arrays; slots the game does not call return E_NOTIMPL logged once ([directstorage.md](directstorage.md)) |
 | `RtlPcToFileHeader` (any module) | the mapped image containing the address, else the real ntdll function |
 | `AddVectoredExceptionHandler` (any module) | registered as asked; the fault reporter of `--run` then moves back in front |
@@ -359,9 +359,9 @@ Most of the thunk path is `QueryApiImpl`'s lookup of the (clsid, iid) object und
 - The names of console-only thunks the PC GDK lacks (43 in `libHttpClient.GDK.dll`, most of them XUser through a
   console-only interface id), and the API-set names the game imports GDK functions from (the alias is a pattern).
 - Signatures inferred from call sites: `InitializeApiImpl*`, `QueryApiImpl`, `XErrorReport`, `XMemVirtualQuery`,
-  every `acphal.dll`, `chad.dll` and `xapu.dll` function, `XGSuggestSwizzleMode`; the meaning of the
-  `XMemVirtualQuery` tail (+0x30); the XALLOC attribute layout; the second argument of `ApuIsVirtualAddressValid`.
-  The xmem page functions are in [physical-memory.md](physical-memory.md).
+  every `acphal.dll`, `chad.dll` and `xapu.dll` function, both `xg_xs.dll` functions and the texture computer's
+  slots ([xg.md](xg.md)); the meaning of the `XMemVirtualQuery` tail (+0x30); the XALLOC attribute layout; the second
+  argument of `ApuIsVirtualAddressValid`. The xmem page functions are in [physical-memory.md](physical-memory.md).
 - What the game does when its audio start-up fails. DirectStorage unknowns are in [directstorage.md](directstorage.md).
 - XUser and XGameSave error HRESULT values; the members of `XPackageDetails` after `installing`; the
   `XStoreGameLicense` layout; the array sizes of `XSystemAnalyticsInfo`; the member order of

@@ -12,6 +12,7 @@ using FiveStar.Loader.Shims.D3D12X;
 using FiveStar.Loader.Shims.Gdk;
 using FiveStar.Loader.Shims.Input;
 using FiveStar.Loader.Shims.Storage;
+using FiveStar.Loader.Shims.Xg;
 
 namespace FiveStar.Loader;
 
@@ -45,6 +46,7 @@ internal sealed class LoaderRuntime : IDisposable
         XMemPhysical = new XMemPhysicalMemory(log);
         XMemWorkingSet = new XMemWorkingSet(log);
         Apu = new ApuHeap(log);
+        Xg = new XgComputers(Stubs, CodeHeap);
 
         D3D12 = new D3D12Forwarder(log);
         D3D12X = new XboxDeviceFactory(D3D12, Stubs, CodeHeap, log);
@@ -111,6 +113,9 @@ internal sealed class LoaderRuntime : IDisposable
     /// <summary>The DirectStorage factory XCRDAPI.dll hands out.</summary>
     public DStorageFactory Storage { get; }
 
+    /// <summary>The texture address computers xg_xs.dll hands out.</summary>
+    public XgComputers Xg { get; }
+
     public D3D12Forwarder D3D12 { get; }
 
     /// <summary>D3D12XboxCreateDevice: the D3D12.X device on a desktop device.</summary>
@@ -127,6 +132,8 @@ internal sealed class LoaderRuntime : IDisposable
         Gdk.Dispose();
         Input.Dispose();
         Storage.Dispose();
+        Xg.Dispose();
+
         Apu.Dispose();
         LastError.Dispose();
 
