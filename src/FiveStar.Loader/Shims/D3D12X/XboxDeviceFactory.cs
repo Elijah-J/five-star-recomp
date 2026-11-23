@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Five Star Recomp contributors.
+﻿// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Text;
@@ -56,10 +56,12 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         CommandLists = new XboxCommandLists(Objects);
         ListStates = new CommandListStates();
 
-        Textures = new GpuTextures(new GameMemorySource(memory), Descriptions, log);
-        AddressViews = new AddressShaderViews(Textures, Warnings, log);
+        MemorySource = new GameMemorySource(memory);
+        Textures = new GpuTextures(MemorySource, Descriptions, log);
         PlacedResources = new XboxPlacedResources(memory, Objects, Textures, log);
         GameMemory = new XboxGameMemoryBuffers(Objects, PlacedResources.Addresses, log);
+        AddressBuffers = new AddressBufferViews(GameMemory);
+        AddressViews = new AddressShaderViews(Textures, AddressBuffers, Warnings, log);
 
         var hooks = new TitleMemoryHooks(images);
         Bindings = new XboxBindings(log, Warnings);
@@ -123,6 +125,18 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
 
     /// <summary>Desktop textures for console memory, by address (docs/gpu-resources.md).</summary>
     public GpuTextures Textures { get; }
+
+    /// <summary>Where the CPU reads console GPU memory.</summary>
+    public GameMemorySource MemorySource { get; }
+
+    /// <summary>Plane and render-target readback (<c>--capture-dir</c>); null when off.</summary>
+    public FrameCapture? Capture { get; private set; }
+
+    /// <summary>The draw trace (<c>--d3d12-trace-draws</c>); null when off.</summary>
+    public DrawTrace? DrawTrace { get; private set; }
+
+    /// <summary>Buffer SRVs at console GPU addresses (slot 70 buffer views, CBVs in the game's heaps).</summary>
+    public AddressBufferViews AddressBuffers { get; }
 
     /// <summary>Device slot 70, SRVs at console GPU addresses.</summary>
     public AddressShaderViews AddressViews { get; }
@@ -212,12 +226,27 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         _log.Detail($"  [d3d12_xs] pipeline slots on: programs {programs}, translated {translated}");
     }
 
+    /// <summary>Reads back the presents <paramref name="capture"/> names; with <paramref name="traceDraws"/> also traces draws.</summary>
+    public void EnableCapture(FrameCapture capture, bool traceDraws)
+    {
+        Capture = capture;
+        Presenter.Capture = capture;
+
+        if (traceDraws)
+        {
+            DrawTrace = new DrawTrace(capture, MemorySource, this, _log);
+            Presenter.Trace = DrawTrace;
+            DrawTraceSlots.Register(Objects);
+        }
+    }
+
     public void Dispose()
     {
         _log.Info($"  [d3d12_xs] {ListSubmissions.Waits} submission(s) waited for the list's previous run");
         Presenter.Dispose();
         Fences.Dispose();
         Textures.Dispose();
+        Capture?.Dispose();
         Debugging.Dispose();
     }
 
@@ -350,9 +379,18 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
 
         delegate* unmanaged<XboxObject*, uint, void> topology = &PrimitiveTopologies.SetPrimitiveTopology;
         Objects.SetHandler(XboxInterfaceKind.CommandList, PrimitiveTopologies.SetPrimitiveTopologySlot, (nint)topology);
+        BindInputBuffers();
         RectangleListSlots.Register(Objects);
         PresentSlots.Bind(Objects);
         ResourceBarrierSlots.Bind(Objects);
+    }
+
+    private void BindInputBuffers()
+    {
+        delegate* unmanaged<XboxObject*, VertexBufferView*, void> indexBuffer = &InputBuffers.SetIndexBuffer;
+        delegate* unmanaged<XboxObject*, uint, uint, VertexBufferView*, void> vertexBuffers = &InputBuffers.SetVertexBuffers;
+        Objects.SetHandler(XboxInterfaceKind.CommandList, InputBuffers.SetIndexBufferSlot, (nint)indexBuffer);
+        Objects.SetHandler(XboxInterfaceKind.CommandList, InputBuffers.SetVertexBuffersSlot, (nint)vertexBuffers);
     }
 
     private void BindDevice(int slot, nint handler)

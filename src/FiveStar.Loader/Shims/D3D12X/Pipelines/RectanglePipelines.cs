@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Five Star Recomp contributors.
+﻿// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Collections.Concurrent;
@@ -17,6 +17,12 @@ namespace FiveStar.Loader.Shims.D3D12X.Pipelines;
 /// </summary>
 internal sealed unsafe class RectanglePipelines
 {
+    /// <summary>D3D12_BLEND_DESC bytes a trace shows: the two flags and render target 0 (d3d12.h).</summary>
+    private const int BlendTraceBytes = 48;
+
+    /// <summary>Leading D3D12_RASTERIZER_DESC and D3D12_DEPTH_STENCIL_DESC1 bytes a trace shows (fill, cull; depth enable, write mask, function).</summary>
+    private const int StateTraceBytes = 12;
+
     private readonly nint _device2;
     private readonly nint _rootSignature;
     private readonly string _folder;
@@ -55,6 +61,26 @@ internal sealed unsafe class RectanglePipelines
         }
 
         _recipes[pipeline] = new RectangleRecipe(description, programs, vertex);
+    }
+
+    /// <summary>The programs, input layout and target formats of a remembered pipeline, for traces; null when unknown.</summary>
+    public string? Describe(nint pipeline)
+    {
+        if (!_recipes.TryGetValue(pipeline, out var recipe))
+        {
+            return null;
+        }
+
+        var description = recipe.Description;
+        string programs = string.Join(" + ", recipe.Programs.Select(program => program.Name));
+        string inputs = string.Join(", ", description.InputLayout.Select(e => $"{e.Semantic}{e.SemanticIndex} fmt {e.Format} slot {e.InputSlot} +{e.Offset}"));
+
+        string blend = Convert.ToHexString(description.Blend, 0, Math.Min(description.Blend.Length, BlendTraceBytes));
+
+        string raster = Convert.ToHexString(description.Rasterizer, 0, Math.Min(description.Rasterizer.Length, StateTraceBytes));
+        string depth = Convert.ToHexString(description.DepthStencil);
+
+        return $"{programs}; inputs [{inputs}]; targets [{string.Join(", ", description.RenderTargetFormats)}] depth {description.DepthStencilFormat}; blend {blend}; raster {raster}; depth state {depth}; sample mask 0x{description.SampleMask:x}, samples {description.SampleCount}.{description.SampleQuality}, raster all {Convert.ToHexString(description.Rasterizer)}";
     }
 
     /// <summary>The variant of a desktop pipeline, built on the first call; 0 when it has none.</summary>

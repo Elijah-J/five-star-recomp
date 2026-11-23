@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Five Star Recomp contributors.
+﻿// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using FiveStar.Formats.Platform;
@@ -8,6 +8,7 @@ using FiveStar.Loader.Loading;
 using FiveStar.Loader.Mods;
 using FiveStar.Loader.Native;
 using FiveStar.Loader.Shims.D3D12X.DebugLayer;
+using FiveStar.Loader.Shims.D3D12X.Present;
 using FiveStar.Loader.Shims.Input;
 
 namespace FiveStar.Loader.Host;
@@ -113,6 +114,11 @@ internal sealed class LoaderHost
         if (_options.D3D12TraceQueues)
         {
             QueueTrace.Enable(_runtime.D3D12X.Objects, _log);
+        }
+
+        if (_options.CaptureDirectory is not null || _options.D3D12TraceDraws)
+        {
+            _runtime.D3D12X.EnableCapture(new FrameCapture(_options.CaptureDirectory, _options.CapturePresents, _log), _options.D3D12TraceDraws);
         }
 
         foreach (string skips in _options.D3D12Skips)

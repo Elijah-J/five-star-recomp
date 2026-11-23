@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Five Star Recomp contributors.
+﻿// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Runtime.InteropServices;
@@ -29,7 +29,9 @@ internal static unsafe class XboxAddressDescriptors
             return;
         }
 
-        D3D12X.AddressViews.Create(self->Inner, resource, view, D3D12X.DescriptorHeaps.Destination(handle));
+        nint destination = D3D12X.DescriptorHeaps.Destination(handle);
+        var texture = D3D12X.AddressViews.Create(self->Inner, resource, view, destination);
+        D3D12X.DrawTrace?.AddressView(destination, resource, view, texture);
     }
 
     [HotPath]

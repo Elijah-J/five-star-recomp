@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Five Star Recomp contributors.
+﻿// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Runtime.InteropServices;
@@ -55,6 +55,16 @@ internal static unsafe class XboxDescriptorMethods
     public static void CreateConstantBufferView(XboxObject* self, ConstantBufferViewDescription* description, nint handle)
     {
         nint inner = self->Inner;
+
+        // In the game's own heaps a CBV is a V# the programs read as a ByteAddressBuffer: a raw SRV over the same bytes.
+        if (description != null && description->Location != 0 && D3D12X.DescriptorHeaps.Find(handle, out _) is not null
+            && D3D12X.AddressBuffers.CreateRaw(inner, description->Location, description->Size, Destination(handle)))
+        {
+            D3D12X.DrawTrace?.ConstantBufferView(D3D12X.DescriptorHeaps.Source(handle), description->Location, description->Size);
+
+            return;
+        }
+
         ConstantBufferViewDescription desktop = default;
         ConstantBufferViewDescription* view = null;
 
@@ -86,6 +96,7 @@ internal static unsafe class XboxDescriptorMethods
     public static void CreateShaderResourceView(XboxObject* self, nint resource, void* description, nint handle)
     {
         nint desktop = D3D12X.Objects.Unwrap(resource);
+        D3D12X.DrawTrace?.ShaderResourceView(desktop, Destination(handle));
         byte* copy = stackalloc byte[DepthViewDescriptions.ShaderResourceViewSize];
         CreateDesktopView(self, CreateShaderResourceViewSlot, desktop, DepthViewDescriptions.ShaderResourceView(desktop, description, copy), handle);
     }
@@ -94,6 +105,7 @@ internal static unsafe class XboxDescriptorMethods
     [UnmanagedCallersOnly]
     public static void CreateRenderTargetView(XboxObject* self, nint resource, void* description, nint handle)
     {
+        D3D12X.DrawTrace?.RenderTargetView(resource, Destination(handle));
         CreateView(self, CreateRenderTargetViewSlot, resource, description, handle);
     }
 
@@ -185,6 +197,15 @@ internal static unsafe class XboxDescriptorMethods
         {
             uint inside = Least(destinationHeap.Count - destinationIndex, destinationHeap.Count - sourceIndex);
             destinationHeap.CopyRecords(destinationIndex, sourceIndex, Least(count, inside));
+
+            return;
+        }
+
+        // Between the CPU-only view heaps and the shader-visible one: records name the same desktop heap.
+        if (destinationHeap is not null && sourceHeap is not null && destinationHeap.Increment == sourceHeap.Increment && !(destinationHeap.Mirrored && sourceHeap.Mirrored))
+        {
+            uint inside = Least(destinationHeap.Count - destinationIndex, sourceHeap.Count - sourceIndex);
+            destinationHeap.CopyRecords(destinationIndex, sourceHeap, sourceIndex, Least(count, inside));
 
             return;
         }

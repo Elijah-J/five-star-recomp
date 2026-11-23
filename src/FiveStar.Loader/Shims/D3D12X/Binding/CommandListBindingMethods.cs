@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Five Star Recomp contributors.
+﻿// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Runtime.InteropServices;
@@ -186,8 +186,10 @@ internal static unsafe class CommandListBindingMethods
     {
         Flush(self, false);
         ShimContext.Runtime.D3D12X.Rectangles.BeforeDraw(self);
+        ShimContext.Runtime.D3D12X.DrawTrace?.Draw(self, vertices, instances);
         nint inner = self->Inner;
         ((delegate* unmanaged<nint, uint, uint, uint, uint, void>)ComObject.Slot(inner, DesktopDrawInstanced))(inner, vertices, instances, firstVertex, firstInstance);
+        ShimContext.Runtime.D3D12X.DrawTrace?.AfterDraw(self);
     }
 
     [HotPath]
@@ -196,8 +198,10 @@ internal static unsafe class CommandListBindingMethods
     {
         Flush(self, false);
         ShimContext.Runtime.D3D12X.Rectangles.BeforeDraw(self);
+        ShimContext.Runtime.D3D12X.DrawTrace?.Draw(self, indices, instances);
         nint inner = self->Inner;
         ((delegate* unmanaged<nint, uint, uint, uint, int, uint, void>)ComObject.Slot(inner, DesktopDrawIndexedInstanced))(inner, indices, instances, firstIndex, baseVertex, firstInstance);
+        ShimContext.Runtime.D3D12X.DrawTrace?.AfterDraw(self);
     }
 
     [HotPath]
@@ -387,6 +391,11 @@ internal static unsafe class CommandListBindingMethods
         if (layout != null && parameter < (uint)layout->Count)
         {
             extent = layout->Extents[parameter];
+        }
+
+        if (extent < DescriptorWindow.MinTableRecords)
+        {
+            extent = DescriptorWindow.MinTableRecords;
         }
 
         return ShimContext.Runtime.D3D12X.DescriptorHeaps.TableAddress(handle, extent);

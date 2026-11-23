@@ -223,7 +223,8 @@ wrapper.
 
 The command-list wrapper is 4 KiB and zeroed: write pointer and limits stay 0, so every inline command calls its
 slot. Reset (10, 139), draws and dispatches (12 to 14, 61) and slots 32 to 46 are binding handlers
-([Binding](#binding)); 47 and 48 (index and vertex buffers) stay stubs until console addresses are translated.
+([Binding](#binding)); 47 and 48 (index and vertex buffers, `InputBuffers`) translate each view's console address
+to the desktop buffer over that memory (an address outside known memory unbinds the buffer, warned once).
 
 ### Handlers
 
@@ -248,6 +249,7 @@ slot. Reset (10, 139), draws and dispatches (12 to 14, 61) and slots 32 to 46 ar
 | Descriptor heap | 9, 10 | heap start handles returned in rax; for the game's shader-visible view and sampler heaps both return the title memory ([Binding](#binding)) |
 | Device | 16 | CreateRootSignature; the parameter layout is kept ([Binding](#binding)) |
 | Command list | 10, 12 to 14, 32 to 46, 61, 139 | [Binding](#binding) |
+| Command list | 47, 48 | IASetIndexBuffer, IASetVertexBuffers with console addresses translated |
 | Command list | 20 | IASetPrimitiveTopology with console topologies made desktop ones ([Rectangle lists](#rectangle-lists)) |
 | Command list | 25 | SetPipelineState, recorded for [Rectangle lists](#rectangle-lists) |
 | Command list | 9, 26 | Close and ResourceBarrier with resource states ([gpu-resources.md](gpu-resources.md#barriers)) |
@@ -321,14 +323,22 @@ flowchart LR
   1,000,000 (the tier-2 limit): 0 is a raw SRV over the descriptor window (`GPU_MEM_HEAP`), 1 a raw UAV over it, 2
   to 5 null descriptors for the mesh fallback table (root parameter 1; 5 is also what a record naming nothing
   reads), 6 a sink.
+- **CPU-only view heaps** take title memory too (the game creates eleven of 3,128 descriptors and copies their
+  32-byte records into its per-draw tables itself, 0x144d9efc0). Their records name descriptors of the desktop
+  shader-visible heap: every view written into one takes the next descriptors of a ring of 16 remap pages
+  (`DescriptorRing`, 65,536 descriptors), so a record copied earlier keeps naming the view it copied until the ring
+  wraps. They are never mirrored to the window.
 - **Remap** (`DescriptorRemap`). The game's 1,245,184 view descriptors fall into 304 pages; a page gets the next
   of the 244 desktop pages the first time a view is written in it (a lock only then; lookups read an array), and
   stays contiguous inside. Boot touches one page. Only views written past all 244 pages land in the sink (warned
   once). The sampler heap gets 2048 samplers (the game asks for 128), game index = desktop index; 2032 to 2047
   (`STATIC_SAMPLER_BASE`) hold a trilinear wrapping sampler for the programs' literal S#s.
-- **Copies (23, 24)** walk the ranges in runs both sides share. Inside one shader-visible heap they copy records;
-  into one from a CPU-only heap, a desktop copy per desktop run with the records written; out of one, a desktop copy
-  of what each record names.
+- **Copies (23, 24)** walk the ranges in runs both sides share. Inside one title-memory heap, and between the
+  CPU-only view heaps and the shader-visible one, they copy records; into a title-memory heap from a desktop heap, a
+  desktop copy per desktop run with the records written; out of one, a desktop copy of what each record names.
+- **CBVs (17)** written into a title-memory heap become raw SRVs over the same bytes (the buffer behind the
+  address, `AddressBufferViews`): programs read every V# as a `ByteAddressBuffer`, and a CBV in the heap fails
+  that read (GPU-based validation #939). Elsewhere a CBV stays a desktop CBV.
 - **SetDescriptorHeaps (32)** binds the desktop heaps behind the wrappers. A root signature set before any heap
   binds the main heaps first; a heap change sets the bindless root signature again.
 - **Root signatures (16, 33, 34).** Device slot 16 reads the RTS0 part of the blob into a `RootLayout`: parameters
@@ -348,8 +358,9 @@ flowchart LR
   first record (base + (handle - title start) / increment × record size), so a program's `MemLoad(table + k * 32)`
   reads the heap index of the table's k-th descriptor wherever the game put the table. Records are mirrored when the
   shim writes them and, for a table, at SetRootDescriptorTable: as many as the root signature's table spans (end of
-  its last range, at most 1024, unbounded ranges 1024), skipping records whose dword 0 did not change (a shadow
-  array). A handle outside both heaps reads the null table (warned once).
+  its last range, at most 1024, unbounded ranges 1024) and at least 16, skipping records whose dword 0 did not change
+  (a shadow array). The game places a table's descriptors at the offsets of its own binding entries, not where the
+  root signature's ranges say: `default_ps_tex` reads its T# at record 1 of a table whose root signature spans one. A handle outside both heaps reads the null table (warned once).
 
 The window covers only descriptors of the console's 32-bit pointer space: pointers into game memory (root
 descriptors, constants loaded through pointers) read the window, not game memory. Buffer views stay typed or
@@ -476,6 +487,18 @@ Two bisection aids: `--d3d12-skip list:20,queue:35` makes the named slots do not
 is bound before or after), and `--d3d12-trace-queues` logs the first 4000 submissions (with the X frame object and
 flags), queue Signal and Wait and CPU fence signals, numbering queues and fences as they appear. Without
 `--shader-dir` the boot reaches the first frames in about 15 s, which makes a run per bisection step cheap.
+
+Two readback aids (`DrawTrace`, `FrameCapture`; debug only, they allocate and wait for the GPU):
+
+- `--d3d12-trace-draws` logs the first 24 draws, and 8 after each captured present: pipeline (programs, input
+  layout, target formats, blend, rasterizer and depth state), render targets, viewport, scissor, depth view, vertex
+  buffers with their first vertices, the graphics user SGPRs, and the first 8 records of every table with the view
+  each names, the game's own record and a buffer's first values. After each traced draw the first render target is
+  copied inside the game's list (`DrawProbes`) and summarized two presents later (non-black pixels, their box, mean
+  colour).
+- `--capture-presents 60,300` reads the presented plane back at those present numbers once the presenting queue is
+  idle and logs the same summary; `--capture-dir <dir>` also writes `present-N.png` there. Only the plane is read,
+  never the window or the desktop.
 
 ### Boot
 

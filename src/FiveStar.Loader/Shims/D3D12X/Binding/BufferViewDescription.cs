@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Five Star Recomp contributors.
+﻿// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Runtime.InteropServices;
@@ -40,6 +40,9 @@ internal struct BufferViewDescription
 
     [FieldOffset(24)]
     public uint SrvElements;
+
+    [FieldOffset(28)]
+    public uint SrvStride;
 
     [FieldOffset(32)]
     public int SrvFlags;

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Five Star Recomp contributors.
+﻿// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 namespace FiveStar.Loader.Shims.D3D12X;
@@ -29,6 +29,22 @@ internal sealed class AddressTable
     [HotPath]
     public bool TryTranslate(ulong gameAddress, out ulong desktopAddress)
     {
+        desktopAddress = 0;
+
+        if (!TryFind(gameAddress, out var range))
+        {
+            return false;
+        }
+
+        desktopAddress = range.DesktopAddress + (gameAddress - range.GameAddress);
+
+        return true;
+    }
+
+    /// <summary>The range holding <paramref name="gameAddress"/>; false outside every known range.</summary>
+    [HotPath]
+    public bool TryFind(ulong gameAddress, out AddressRange found)
+    {
         var ranges = Volatile.Read(ref _ranges);
         int low = 0;
         int high = ranges.Length - 1;
@@ -48,13 +64,13 @@ internal sealed class AddressTable
             }
             else
             {
-                desktopAddress = range.DesktopAddress + (gameAddress - range.GameAddress);
+                found = range;
 
                 return true;
             }
         }
 
-        desktopAddress = 0;
+        found = default;
 
         return false;
     }

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Five Star Recomp contributors.
+﻿// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using FiveStar.Loader.Diagnostics;
@@ -53,6 +53,13 @@ internal sealed unsafe class XboxGameMemoryBuffers
         return _addresses.TryTranslate(address, out desktop) || (TryCover(address) && _addresses.TryTranslate(address, out desktop));
     }
 
+    /// <summary>The desktop buffer range holding console address <paramref name="address"/>; false when none covers it.</summary>
+    [HotPath]
+    public bool TryFind(ulong address, out AddressRange range)
+    {
+        return _addresses.TryFind(address, out range) || (TryCover(address) && _addresses.TryFind(address, out range));
+    }
+
     /// <summary>Covers the allocation holding <paramref name="address"/> with a buffer, once per allocation.</summary>
     private bool TryCover(ulong address)
     {
@@ -80,7 +87,7 @@ internal sealed unsafe class XboxGameMemoryBuffers
             }
 
             ulong gpu = ((delegate* unmanaged<nint, ulong>)ComObject.Slot(buffer, GetGpuAddressSlot))(buffer);
-            _addresses.Add(new AddressRange((ulong)info.AllocationBase, size, gpu));
+            _addresses.Add(new AddressRange((ulong)info.AllocationBase, size, gpu, buffer));
             _log.Detail($"  [d3d12_xs] game memory 0x{info.AllocationBase:x} (0x{size:x} bytes) on the GPU at 0x{gpu:x}");
 
             return true;
