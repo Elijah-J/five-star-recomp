@@ -526,6 +526,11 @@ compiled once into `<out>/linked/<name>.<hash>.dxil`. `--unlinked` creates the p
 for comparison. Results go to `<out>/link-<adapter>.jsonl` (`unlinked-<adapter>.jsonl`) with the fields, limits and
 resume rules of `pso`. A cache shader that matches several programs (same code) stands for the first compiled one.
 
+```nfivestar shader rect-gs <out> [--jobs N]
+```n
+Compiles the rectangle-list geometry shader of every compiled vertex program of `<out>` into `<out>/rect-gs/`, one
+file per distinct output signature ([d3d12x-shim.md](d3d12x-shim.md#rectangle-lists)).
+
 ## Testing
 
 `tests/FiveStar.Shaders.Tests` takes handwritten gfx1013 programs, assembled by llvm-mc and kept in `Assembled/` as

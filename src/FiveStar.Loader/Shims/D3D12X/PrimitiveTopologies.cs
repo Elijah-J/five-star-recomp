@@ -11,7 +11,7 @@ namespace FiveStar.Loader.Shims.D3D12X;
 /// desktop does not define hangs the GPU at the next list start (DXGI_ERROR_DEVICE_HUNG with no draw recorded).
 /// The game's inline form (0x140032570) writes the value through a table to the hardware primitive type, which shows
 /// 17 is the rectangle list (hardware 0x11); 6 and 19 the game turns into a triangle list itself. A rectangle list
-/// becomes a triangle list (its three vertices cover half the rectangle); any other value the desktop does not define
+/// becomes a triangle list, drawn with a rectangle-list pipeline variant (<see cref="RectangleDraws"/>); any other value the desktop does not define
 /// is logged once and not set.
 /// </summary>
 internal static unsafe class PrimitiveTopologies
@@ -58,6 +58,7 @@ internal static unsafe class PrimitiveTopologies
     [UnmanagedCallersOnly]
     public static void SetPrimitiveTopology(XboxObject* self, uint topology)
     {
+        ShimContext.Runtime.D3D12X.Rectangles.SetTopology(self, topology);
         topology = Desktop(topology);
 
         if (!IsDesktop(topology))

@@ -13,6 +13,7 @@ using FiveStar.Loader.Shims.D3D12X.Present;
 using FiveStar.Loader.Shims.D3D12X.Resources;
 using FiveStar.Loader.Shims.D3D12X.States;
 using FiveStar.Shaders.Cache;
+using FiveStar.Shaders.Compilation;
 
 namespace FiveStar.Loader.Shims.D3D12X;
 
@@ -65,6 +66,7 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         DescriptorHeaps = new XboxDescriptorHeaps(Objects, hooks, Bindings.Window, log, Warnings);
         CommittedResources = new XboxCommittedResources(Objects, Descriptions, hooks, log);
         Presenter = new Presenter(Objects, Warnings, log);
+        Rectangles = new RectangleDraws(log);
 
         BindDeviceSlots();
         BindObjectSlots();
@@ -94,6 +96,9 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
 
     /// <summary>The pipeline slots (55, 57, 62, 67, 86) once a device exists and the shader folders are known.</summary>
     public PipelineSlots? Pipelines { get; private set; }
+
+    /// <summary>Rectangle-list draws and their pipeline variants.</summary>
+    public RectangleDraws Rectangles { get; }
 
     /// <summary>Descriptor heaps, root signatures and root arguments on command lists.</summary>
     public XboxBindings Bindings { get; }
@@ -199,7 +204,10 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
 
         var warnings = new OnceLog(_log);
         var library = TranslatedProgramLibrary.Open(ProgramIndex.Load(programs), translated, device2, warnings, _log);
-        Pipelines = new PipelineSlots(new PipelineFactory(device2, root, library, warnings), warnings);
+        var rectangles = new RectanglePipelines(device2, root, Path.Combine(translated, RectangleGeometryShader.Folder), warnings);
+        Rectangles.Attach(rectangles);
+
+        Pipelines = new PipelineSlots(new PipelineFactory(device2, root, library, warnings, rectangles), warnings);
         PipelineSlotHandlers.Register(Objects);
         _log.Detail($"  [d3d12_xs] pipeline slots on: programs {programs}, translated {translated}");
     }
@@ -336,6 +344,7 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
 
         delegate* unmanaged<XboxObject*, uint, void> topology = &PrimitiveTopologies.SetPrimitiveTopology;
         Objects.SetHandler(XboxInterfaceKind.CommandList, PrimitiveTopologies.SetPrimitiveTopologySlot, (nint)topology);
+        RectangleListSlots.Register(Objects);
         PresentSlots.Bind(Objects);
         ResourceBarrierSlots.Bind(Objects);
     }

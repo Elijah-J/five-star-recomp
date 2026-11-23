@@ -198,6 +198,7 @@ unwrapped, so slot 55 receives the desktop pointer it registered.
 - Whether the depth view of a D16_UNORM_S8_UINT target gets the same desktop format as the pipeline
   (D32_FLOAT_S8X24_UINT); no such target has been created yet.
 - Running the mesh fallback (and linked VS forms) through pipelines, for adapters without mesh shaders.
-- What console topology type 19 and topology 6 are exactly (rectangle list and triangle fan are guesses).
+- When the console topology type 19 is used: no pipeline in boot has it (all have type 3); topology 6 is the triangle
+  fan by the hardware table (type 5).
 - Which pipelines' programs read graphics user SGPRs 0 to 7 as their own; the command list fills them with SGPRs 8
   to 15 for mesh programs ([d3d12x-shim.md](d3d12x-shim.md#binding)).

@@ -185,6 +185,7 @@ internal static unsafe class CommandListBindingMethods
     public static void DrawInstanced(XboxObject* self, uint vertices, uint instances, uint firstVertex, uint firstInstance)
     {
         Flush(self, false);
+        ShimContext.Runtime.D3D12X.Rectangles.BeforeDraw(self);
         nint inner = self->Inner;
         ((delegate* unmanaged<nint, uint, uint, uint, uint, void>)ComObject.Slot(inner, DesktopDrawInstanced))(inner, vertices, instances, firstVertex, firstInstance);
     }
@@ -194,6 +195,7 @@ internal static unsafe class CommandListBindingMethods
     public static void DrawIndexedInstanced(XboxObject* self, uint indices, uint instances, uint firstIndex, int baseVertex, uint firstInstance)
     {
         Flush(self, false);
+        ShimContext.Runtime.D3D12X.Rectangles.BeforeDraw(self);
         nint inner = self->Inner;
         ((delegate* unmanaged<nint, uint, uint, uint, int, uint, void>)ComObject.Slot(inner, DesktopDrawIndexedInstanced))(inner, indices, instances, firstIndex, baseVertex, firstInstance);
     }
@@ -227,8 +229,10 @@ internal static unsafe class CommandListBindingMethods
         var objects = ShimContext.Runtime.D3D12X.Objects;
         nint inner = self->Inner;
         var reset = (delegate* unmanaged<nint, nint, nint, int>)ComObject.Slot(inner, DesktopReset);
+        nint pipeline = objects.Unwrap(pipelineState);
+        ShimContext.Runtime.D3D12X.Rectangles.Reset(self, pipeline);
 
-        return reset(inner, objects.Unwrap(allocator), objects.Unwrap(pipelineState));
+        return reset(inner, objects.Unwrap(allocator), pipeline);
     }
 
     [HotPath]

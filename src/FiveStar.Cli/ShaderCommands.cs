@@ -39,6 +39,7 @@ internal static class ShaderCommands
         "  plan <out> [--adapter <index|name>]    count the programs each adapter runs natively, as a variant, through a fallback or incorrectly",
         "  link <out> <shaders.rpf | blob>        link the console's VS+PS and MS+PS pairs (interpolation modes) and create each pipeline",
         "        [--programs <fssm folder>] [--adapter ...] [--limit N] [--step K] [--jobs N] [--debug-layer] [--unlinked] [--recheck]",
+        "  rect-gs <out> [--jobs N]              compile the rectangle-list geometry shader of every vertex program into <out>/rect-gs",
         "  unwrap <in.dxbc> <out.dxbc>            rewrite a container whose XDAT holds bitcode as standard DXBC",
         "  psocache <shaders.rpf | blob>          summarise the driver pipeline cache and match its shaders to programs",
         "        [--programs <fssm folder>] [--out <dir>]   (programs default to FIVESTAR_SHADER_DIR; --out writes code/ and pipelines.json)",
@@ -76,6 +77,8 @@ internal static class ShaderCommands
                     return PlanCommand.Run(rest);
                 case "link":
                     return LinkCommand.Run(rest);
+                case "rect-gs":
+                    return RectangleShaderCommand.Run(rest);
                 case "unwrap":
                     return Unwrap(rest);
                 case "psocache":
