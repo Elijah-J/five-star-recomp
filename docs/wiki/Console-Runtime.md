@@ -14,7 +14,7 @@ the Windows system DLL.
 | `xcrdapi.dll` | DirectStorage: files read on worker threads and zlib chunks inflated into memory, exactly as stored |
 | `xapu.dll` | the console's Opus decoder queue, run on the CPU |
 | `acphal.dll` | the APU heap on ordinary memory and the SHAPE XMA decoder contexts (no XMA decoding yet) |
-| `chad.dll` | the audio DSP (XDsp) reports itself unavailable |
+| `chad.dll` | the audio DSP (XDsp): streams connect and commands complete where the game polls, so audio start-up succeeds; its effects (a convolution reverb and one more) return silence for now |
 | `GameInput.dll` | keyboard, mouse and gamepads |
 | `xgameruntime.dll` | offline GDK runtime (below); the game loads it at run time and gets the loader's implementation |
 
