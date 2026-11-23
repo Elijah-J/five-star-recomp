@@ -19,18 +19,21 @@ internal sealed unsafe class PipelineFactory
     private readonly nint _rootSignature;
     private readonly IProgramLibrary _programs;
     private readonly OnceLog _warnings;
+    private readonly RectanglePipelines? _rectangles;
     private readonly Dictionary<nint, GraphicsPipelineDescription> _created = [];
 
     /// <param name="device2">A desktop ID3D12Device2 (the caller keeps it alive).</param>
     /// <param name="rootSignature">The root signature of translated programs on that device (<see cref="BindlessRoot"/>).</param>
     /// <param name="programs">The translated programs.</param>
     /// <param name="warnings">Where failures are reported, once each.</param>
-    public PipelineFactory(nint device2, nint rootSignature, IProgramLibrary programs, OnceLog warnings)
+    /// <param name="rectangles">Told every graphics pipeline, for its rectangle-list variant; null for none.</param>
+    public PipelineFactory(nint device2, nint rootSignature, IProgramLibrary programs, OnceLog warnings, RectanglePipelines? rectangles)
     {
         _device2 = device2;
         _rootSignature = rootSignature;
         _programs = programs;
         _warnings = warnings;
+        _rectangles = rectangles;
     }
 
     public int Graphics(GraphicsPipelineDescription description, Guid* iid, nint* result)
@@ -62,7 +65,14 @@ internal sealed unsafe class PipelineFactory
             desktop = description with { InputLayout = InputLayoutMapping.Map(description.InputLayout, vertex) };
         }
 
-        return Remember(description, DesktopPipelineBuilder.Graphics(_device2, _rootSignature, desktop, programs, iid, result), result);
+        var hr = Remember(description, DesktopPipelineBuilder.Graphics(_device2, _rootSignature, desktop, programs, iid, result), result);
+
+        if (!HResult.Failed(hr) && *result != 0)
+        {
+            _rectangles?.Remember(*result, desktop, programs);
+        }
+
+        return hr;
     }
 
     public int Compute(ComputePipelineDescription description, Guid* iid, nint* result)

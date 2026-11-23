@@ -242,7 +242,8 @@ slot. Reset (10, 139), draws and dispatches (12 to 14, 61) and slots 32 to 46 ar
 | Descriptor heap | 9, 10 | heap start handles returned in rax; for the game's shader-visible view and sampler heaps both return the title memory ([Binding](#binding)) |
 | Device | 16 | CreateRootSignature; the parameter layout is kept ([Binding](#binding)) |
 | Command list | 10, 12 to 14, 32 to 46, 61, 139 | [Binding](#binding) |
-| Command list | 20 | IASetPrimitiveTopology with console topologies made desktop ones ([Boot](#boot)) |
+| Command list | 20 | IASetPrimitiveTopology with console topologies made desktop ones ([Rectangle lists](#rectangle-lists)) |
+| Command list | 25 | SetPipelineState, recorded for [Rectangle lists](#rectangle-lists) |
 
 ### Game memory on the GPU
 
@@ -408,6 +409,31 @@ nothing. Boot presents one plane: the 3840x2160 render target from slot 127 (R8G
 The log gets the first plane and parameter block, the swap chain, the first eight presents and the mean interval
 every 600 presents and at exit.
 
+### Rectangle lists
+
+Topology 17 is the AMD rectangle list (hardware type 0x11): three vertices per rectangle, the fourth corner made by
+the rasterizer as the sum of the corner's two neighbours minus the corner. Topologies 6 and 0x13 (hardware 5 and 0x13,
+the quad list) never reach slot 20: the game's setter passes them as 4. Every pipeline the game creates has topology
+type 3 (triangle), so a rectangle list is only known from slot 20. In boot every draw is a rectangle list: two
+`DrawInstanced(3, 1, 0, 0)` per frame, one with `VS_Blit`/`PS_BlitColour` and one with
+`sga_dr_vs_pos_color_tex`/`default_ps_tex`, both with positions from a vertex buffer.
+
+The topology becomes a triangle list and the draw runs with the pipeline's rectangle-list variant: the same pipeline
+plus a geometry shader (`RectangleGeometryShader`) whose vertex struct is the vertex program's output signature
+(PSV0), in and out, so the pixel shader links unchanged. Per triangle it takes as the corner the vertex opposite the
+longest screen-space edge, adds the fourth vertex (neighbours minus corner, every output member; render-target and
+viewport indices stay the corner's) and emits a strip of two triangles with the input's winding.
+
+| Step | Where |
+|---|---|
+| Compile one geometry shader per distinct output signature into `<translated>/rect-gs/gs_<hash>.dxil` | `fivestar shader rect-gs <translated>` (2,191 vertex programs, 211 shaders) |
+| Keep each created pipeline's description and programs | `RectanglePipelines.Remember` (pipeline factory) |
+| Record the pipeline (slot 25), the console topology (slot 20); clear on Reset | `RectangleDraws`, state at wrapper +0xF00 |
+| First draw under topology 17: build the variant once (by the same hash), bind it | `RectangleDraws.BeforeDraw` (slots 12, 13) |
+| Another topology: bind the game's pipeline again | slot 20 |
+
+A pipeline with a mesh or geometry stage, or without its `rect-gs` file, has no variant: its rectangle-list draws
+stay triangles (warned once). The log counts expanded draws every 4,096.
 ### Debug layer
 
 `--d3d12-debug` turns on the D3D12 debug layer before the device is created (`--d3d12-gpu-validation` adds
@@ -444,8 +470,8 @@ one after each present, no queue Wait, and the compute queues of slot 48 unused 
 pipelines: the hang stayed with present, clears, draws and binding skipped and went with slot 20 skipped. The
 game's inline form of the call (0x140032570) maps topologies 6 and 0x13 to 4 itself and writes the rest through a
 table to the hardware primitive type (0x1461ecf30: 17 -> 0x11, the rectangle list). The handler
-(`PrimitiveTopologies`) sets 17 as a triangle list (the three vertices then cover half the rectangle) and drops any
-other value the desktop does not define, warned once. With the GDK ABI table loaded, a 120 s boot with pipelines
+(`PrimitiveTopologies`) sets 17 as a triangle list ([Rectangle lists](#rectangle-lists)) and drops any other value the
+desktop does not define, warned once. With the GDK ABI table loaded, a 120 s boot with pipelines
 presents about 25,000 frames (4.2 ms apart, the display's refresh with sync interval 1, not the 33 ms the game
 asks device 78 for); the window stays black.
 
@@ -479,3 +505,5 @@ not done yet.
   bytes (the shim forwards the desktop's, 32 on the machine measured; the table copy at 0x144d9efc0 assumes 32);
   whether descriptors in the pool past the heap's end are bound as tables.
 - Parameter-block fields at 0x20, 0x24, 0x28 and 0x3C.
+- Which rectangle vertex the hardware takes as the corner (the variant picks the right angle, which agrees for
+  rectangles), and how flat attributes and culling apply to the derived corner; rectangle lists drawn by mesh programs.
