@@ -118,7 +118,28 @@ public static class ComputeWaveCases
             .Concat(Variants("cs_ds_bpermute", BackwardPermuteCase))
             .Concat(Variants("cs_ds_permute", ForwardPermuteCase))
             .Concat(Variants("cs_dpp", DppCase))
-            .Concat(Variants("cs_waterfall", WaterfallCase));
+            .Concat(Variants("cs_waterfall", WaterfallCase))
+            .Append(VccHighBranchCase());
+    }
+
+    // Wave64 s_cbranch_vccnz / vccz on VCC written as an integer test all 64 bits: only vcc_hi is set, then neither half.
+    private static ComputeCase VccHighBranchCase()
+    {
+        const string Program = """
+            s_mov_b32 vcc_lo, 0
+            s_mov_b32 vcc_hi, 1
+            v_mov_b32 v20, 1
+            s_cbranch_vccnz .Ltaken
+            v_mov_b32 v20, 2
+            .Ltaken:
+            s_mov_b32 vcc_hi, 0
+            v_mov_b32 v21, 3
+            s_cbranch_vccz .Lzero
+            v_mov_b32 v21, 4
+            .Lzero:
+            """;
+
+        return new ComputeCase("cs_vcc_hi_branch_w64", Program, 2, _ => [1, 3]) { Wave = 64 };
     }
 
     /// <summary>Cases that need the PC wave to be as wide as the AMD wave.</summary>

@@ -396,6 +396,14 @@ internal sealed class ControlFlowTranslator
             return $"{WaveOps.AnyTrue}({_operands.Mask(vcc)})";
         }
 
-        return $"({_operands.Read(vcc, 0)} != 0)";
+        var low = _operands.Read(vcc, 0);
+
+        if (!_state.IsWave64)
+        {
+            return $"({low} != 0)";
+        }
+
+        // A wave64 VCC held as an integer has lanes 32-63 in vcc_hi.
+        return $"(({low} | {_operands.Read(vcc, 1)}) != 0)";
     }
 }
