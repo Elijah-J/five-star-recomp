@@ -75,6 +75,50 @@ public sealed unsafe class AudioHardwareTests : IDisposable
         Assert.All(levels.Skip(2), level => Assert.InRange(level, 0.3, 0.4));
     }
 
+    [Fact]
+    public void An_xdsp_convolution_stream_completes_each_command_where_the_game_polls_and_returns_silence()
+    {
+        var connect = (delegate* unmanaged<nint, uint, uint, uint, uint, nint*, int>)_test.Shim("chad.dll", "XDspConnectWithMaximumStreamLimit");
+        var activate = (delegate* unmanaged<nint, byte*, nint*, nint*, int>)_test.Shim("chad.dll", "XDspActivate");
+        var submit = (delegate* unmanaged<nint, byte*, uint*, int>)_test.Shim("chad.dll", "XDspSubmitCommand");
+        var deactivate = (delegate* unmanaged<nint, int>)_test.Shim("chad.dll", "XDspDeactivate");
+
+        // The game's 0x60000-byte pool, zeroed, and the start-up connect with its arguments (0x18 streams, 0x80, 1).
+        var pool = new float[0x60000 / sizeof(float)];
+        nint handle;
+
+        fixed (float* memory = pool)
+        {
+            Assert.Equal(0, connect((nint)memory, 0x60000, 0x18, 0x80, 1, &handle));
+
+            // A stereo convolution config as the game fills it: kind 1, 1024 frames, 2, response length and address.
+            var config = stackalloc uint[8];
+            new Span<uint>(config, 8).Clear();
+            (config[0], config[2], config[3], config[4]) = (1, 1024, 2, 256);
+            nint status;
+            nint stream;
+            Assert.Equal(0, activate(handle, (byte*)config, &status, &stream));
+
+            // Each command: 1.0f twice, input block, output block, 0; the id it returns is the completed count.
+            pool.AsSpan(0, 2048).Fill(0.5f);
+            var command = stackalloc long[4];
+            (command[0], command[1], command[2], command[3]) = (0x3F8000003F800000, (nint)memory, (nint)(memory + 2048), 0);
+
+            for (uint expected = 1; expected <= 3; expected++)
+            {
+                uint id;
+                Assert.Equal(0, submit(stream, (byte*)command, &id));
+                Assert.Equal(expected, id);
+                Assert.Equal(id, *(uint*)(status + 0x04));
+                Assert.Equal(0u, *(uint*)(status + 0x0C));
+            }
+
+            Assert.All(pool.AsSpan(2048, 2048).ToArray(), sample => Assert.Equal(0f, sample));
+            Assert.Equal(0, deactivate(stream));
+            Assert.NotEqual(0, submit(stream, (byte*)command, null));
+        }
+    }
+
     [DumpFact]
     public void A_bank_stream_decodes_through_the_xapu_queue_to_the_audio_of_its_exported_file()
     {
