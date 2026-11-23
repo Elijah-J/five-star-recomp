@@ -9,6 +9,6 @@ internal enum XDspEffectKind
     /// <summary>A convolution with an impulse response from the game (pointer and length in the config).</summary>
     Convolution = 1,
 
-    /// <summary>Activated with 1024-frame blocks and nothing else; which DSP program it selects is not known.</summary>
+    /// <summary>Activated with 1024-frame mono blocks and nothing else (0x1443b3920); what it computes is not known.</summary>
     Block = 2,
 }
