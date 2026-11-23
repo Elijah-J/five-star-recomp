@@ -14,10 +14,17 @@ game's executable or shaders before use (docs/d3d12x-shim.md, docs/raytracing.md
 
 ## GTA6-Asset-Info
 
-https://github.com/TrinitronClient/GTA6-Asset-Info, revision `0f649eba`, GPL-3.0. Its BCPack notes
-(`formats/06-bcpack.md`) gave the lane counts and symbol widths of codecs 3 to 7 and the lane meanings of the BC4, BC5
-and BC7 block layers; each rule was checked against the reference dump before use (convergence of every page, and
-the mip checks in the wiki). No code or text was copied, and none of its fitted tables were used.
+https://github.com/TrinitronClient/GTA6-Asset-Info, revision `0f649eba78cdd6e053d7aefd333fb6e3abe9739a`, GPL-3.0.
+Its notes were leads, each checked on the dump before use; no text or code was copied.
+
+- Textures (docs/textures.md): the resource-kind and array-size fields of the descriptor, the copies of a cube map
+  and their padding, arrays stored level by level, no mip tail on a single-mip texture, the 3D brick order and the y
+  bit order of the 1-byte 64 KB block. The stored mip count we use (mip field plus `d1` bits 0-2) is our own finding.
+- Models (docs/models.md): the meshlet start wrap, the skin, tangent and extra texture-coordinate streams, the inverse
+  bind matrices and the ped bone palette. Its order of the packed position low bytes was checked and not adopted.
+- BCPack (docs/textures.md, `formats/06-bcpack.md`): the lane counts and symbol widths of codecs 3 to 7 and the lane
+  meanings of the BC4, BC5 and BC7 block layers, checked by the convergence of every page, the anchor rule and the mip
+  checks. None of its fitted tables were used.
 
 ## bcpack-rs
 

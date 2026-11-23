@@ -8,9 +8,10 @@ namespace FiveStar.Loader.Shims.Xg;
 /// <summary>
 /// Computes the console layout of a texture (docs/xg.md): per plane, array slices of one mip chain each; in a slice
 /// the mip tail block comes first and the other mips follow smallest first, each padded to whole blocks, so mip 0
-/// ends the slice. A mip is in the tail when it fits a block halved in width and at most log2(block bytes) - 4 mips
-/// remain from it to the end of the chain; inside the tail, mip k starts at the byte offset of the RDNA address
-/// library's mip tail table. A linear plane holds the mips in order from mip 0, rows padded to 256 bytes.
+/// ends the slice. A mip is in the tail when the chain has more than one mip, it fits a block halved in width and at
+/// most log2(block bytes) - 4 mips remain from it to the end of the chain; inside the tail, mip k starts at the byte
+/// offset of the RDNA address library's mip tail table. A linear plane holds the mips in order from mip 0, rows
+/// padded to 256 bytes.
 /// </summary>
 internal static class XgLayoutBuilder
 {
@@ -155,7 +156,8 @@ internal static class XgLayoutBuilder
     {
         var swizzle = plane.Swizzle;
         int tailMips = BitOperations.Log2((uint)plane.BlockBytes) - TailMipBias;
-        bool hasTail = plane.BlockBytes > XgSwizzles.MicroBlockBytes;
+        // A chain of one mip has no tail: a lone mip that would fit the tail starts at offset 0, as the shipped textures show.
+        bool hasTail = plane.BlockBytes > XgSwizzles.MicroBlockBytes && plane.MipCount > 1;
 
         for (int index = 0; hasTail && index < plane.MipCount; index++)
         {

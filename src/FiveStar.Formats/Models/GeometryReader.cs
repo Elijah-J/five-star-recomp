@@ -48,7 +48,7 @@ public static class GeometryReader
         var streams = VertexChannelTable.Read(vertices);
         var positions = Positions(vertices, streams, count);
         var normals = Normals(vertices, streams, count);
-        var texCoords = TexCoords(vertices, streams, count);
+        var texCoords = TexCoords(vertices, streams, VertexSlot.TexCoord0, count);
         var indices = Meshlets.Triangles(meshlets, count);
 
         if (Meshlets.Count(meshlets) != view.U16(info + MeshletCountOffset))
@@ -56,7 +56,53 @@ public static class GeometryReader
             throw new ModelFormatException($"meshlet info says {view.U16(info + MeshletCountOffset)} meshlets, the buffer {Meshlets.Count(meshlets)}");
         }
 
-        return new MeshGeometry(lod, offset, shader, count, Meshlets.Count(meshlets), positions, normals, texCoords, indices, streams);
+        var extras = VertexExtrasReader.Read(vertices, streams, count);
+
+        return new MeshGeometry(lod, offset, shader, count, Meshlets.Count(meshlets), positions, normals, texCoords, indices, streams, extras);
+    }
+
+    /// <summary>The texture coordinates of a slot as u, v pairs, or null when absent or of another format.</summary>
+    internal static float[]? TexCoords(ReadOnlySpan<byte> vertices, IReadOnlyList<VertexChannel> streams, int slot, int count)
+    {
+        var stream = Find(streams, slot);
+
+        if (!stream.HasValue || (stream.Value.Format != VertexFormat.Fixed16x2 && stream.Value.Format != VertexFormat.Eight))
+        {
+            return null;
+        }
+
+        return VertexAttributes.TexCoords(Slice(vertices, stream.Value, count), stream.Value.Format, count);
+    }
+
+    /// <summary>The stream's elements; throws when they run past the vertex buffer.</summary>
+    internal static ReadOnlySpan<byte> Slice(ReadOnlySpan<byte> vertices, VertexChannel stream, int count)
+    {
+        return Slice(vertices, stream, stream.ElementSize, count);
+    }
+
+    internal static ReadOnlySpan<byte> Slice(ReadOnlySpan<byte> vertices, VertexChannel stream, int elementSize, int count)
+    {
+        var length = elementSize * count;
+
+        if (stream.Offset + length > vertices.Length)
+        {
+            throw new ModelFormatException($"stream in slot {stream.Slot} runs past the vertex buffer ({count} vertices)");
+        }
+
+        return vertices.Slice(stream.Offset, length);
+    }
+
+    internal static VertexChannel? Find(IReadOnlyList<VertexChannel> streams, int slot)
+    {
+        foreach (var stream in streams)
+        {
+            if (stream.Slot == slot)
+            {
+                return stream;
+            }
+        }
+
+        return null;
     }
 
     private static ReadOnlySpan<byte> Buffer(ResourceView view, int bufferObject, ushort kind)
@@ -106,43 +152,6 @@ public static class GeometryReader
         }
 
         return VertexAttributes.OctahedralNormals(Slice(vertices, stream.Value, count), count);
-    }
-
-    private static float[]? TexCoords(ReadOnlySpan<byte> vertices, IReadOnlyList<VertexChannel> streams, int count)
-    {
-        var stream = Find(streams, VertexSlot.TexCoord0);
-
-        if (!stream.HasValue || (stream.Value.Format != VertexFormat.Fixed16x2 && stream.Value.Format != VertexFormat.Eight))
-        {
-            return null;
-        }
-
-        return VertexAttributes.TexCoords(Slice(vertices, stream.Value, count), stream.Value.Format, count);
-    }
-
-    private static ReadOnlySpan<byte> Slice(ReadOnlySpan<byte> vertices, VertexChannel stream, int count)
-    {
-        var length = stream.ElementSize * count;
-
-        if (stream.Offset + length > vertices.Length)
-        {
-            throw new ModelFormatException($"stream in slot {stream.Slot} runs past the vertex buffer ({count} vertices)");
-        }
-
-        return vertices.Slice(stream.Offset, length);
-    }
-
-    private static VertexChannel? Find(IReadOnlyList<VertexChannel> streams, int slot)
-    {
-        foreach (var stream in streams)
-        {
-            if (stream.Slot == slot)
-            {
-                return stream;
-            }
-        }
-
-        return null;
     }
 
     private static string Describe(VertexChannel? stream)

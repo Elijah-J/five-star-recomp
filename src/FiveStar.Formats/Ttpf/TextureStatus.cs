@@ -26,12 +26,12 @@ public readonly record struct TextureStatus(TextureStatusKind Kind, int Detail)
                     return "skip_fmt_" + detail;
                 case TextureStatusKind.UnsupportedMode:
                     return "skip_mode" + detail;
-                case TextureStatusKind.CubeSpan:
-                    return "skip_cube_span";
+                case TextureStatusKind.UnsupportedKind:
+                    return "skip_kind" + detail;
                 case TextureStatusKind.Size:
                     return "skip_size";
-                case TextureStatusKind.CubeMips:
-                    return "skip_cube_mips";
+                case TextureStatusKind.CubeCopies:
+                    return "skip_cube_copies";
                 case TextureStatusKind.UnsupportedCodec:
                     return "skip_unsupported_codec";
                 case TextureStatusKind.Approximate:

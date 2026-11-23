@@ -66,7 +66,7 @@ internal sealed class TextureReports
                 continue;
             }
 
-            var dds = DdsWriter.Build(descriptor.Width, descriptor.Height, descriptor.Format, data, layout.Faces);
+            var dds = DdsWriter.Build(descriptor.Width, descriptor.Height, descriptor.Format, data, layout);
             File.WriteAllBytes(Path.Combine(outputDirectory, TextureName(file, descriptor, layout) + ".dds"), dds);
         }
 

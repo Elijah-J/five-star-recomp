@@ -15,7 +15,7 @@ namespace FiveStar.Formats.Models;
 /// <item><term>then</term><description>one u32 per triangle: three 7-bit meshlet-local indices (bits 0-20), the meshlet number in bits 21-31</description></item>
 /// <item><term>then</term><description>u16 per meshlet vertex: the vertex it stands for</description></item>
 /// </list>
-/// A meshlet runs to the next meshlet's first triangle and first remap entry.
+/// A meshlet runs to the next meshlet's first triangle and first remap entry. Both starts are u16 and wrap past 65,535.
 /// </summary>
 public static class Meshlets
 {
@@ -72,33 +72,53 @@ public static class Meshlets
         var remapStart = triangleStart + (triangles * sizeof(uint));
         var indices = new int[triangles * Corners];
 
+        if (meshlets == 0)
+        {
+            return indices;
+        }
+
+        var (rawTriangle, rawVertex) = Start(data, 0);
+        var (firstTriangle, firstVertex) = ((int)rawTriangle, (int)rawVertex);
+
         for (var meshlet = 0; meshlet < meshlets; meshlet++)
         {
-            var (firstTriangle, firstVertex) = Start(data, meshlet);
             var (endTriangle, endVertex) = (triangles, remapCount);
 
             if (meshlet + 1 < meshlets)
             {
-                (endTriangle, endVertex) = Start(data, meshlet + 1);
+                var (nextTriangle, nextVertex) = Start(data, meshlet + 1);
+                endTriangle = firstTriangle + Advance(rawTriangle, nextTriangle);
+                endVertex = firstVertex + Advance(rawVertex, nextVertex);
+                (rawTriangle, rawVertex) = (nextTriangle, nextVertex);
             }
 
-            if (firstTriangle > endTriangle || endTriangle > triangles || firstVertex > endVertex || endVertex > remapCount)
+            if (endTriangle > triangles || endVertex > remapCount)
             {
                 throw new ModelFormatException($"meshlet {meshlet} spans triangles {firstTriangle}-{endTriangle} and vertices {firstVertex}-{endVertex}");
             }
 
             var range = new MeshletRange(meshlet, firstTriangle, endTriangle, firstVertex, endVertex);
             Expand(data[triangleStart..], data[remapStart..], range, vertexCount, indices);
+            (firstTriangle, firstVertex) = (endTriangle, endVertex);
         }
 
         return indices;
     }
 
-    private static (int Triangle, int Vertex) Start(ReadOnlySpan<byte> data, int meshlet)
+    /// <summary>
+    /// The starts are u16 and wrap on geometries of more than 65,535 triangles or remap entries; a meshlet holds far
+    /// fewer, so the step from one start to the next, modulo 2^16, is the meshlet's true size.
+    /// </summary>
+    private static int Advance(uint start, uint next)
+    {
+        return (int)((next - start) & LowHalf);
+    }
+
+    private static (uint Triangle, uint Vertex) Start(ReadOnlySpan<byte> data, int meshlet)
     {
         var word = BinaryPrimitives.ReadUInt32LittleEndian(data[(HeaderBytes + (meshlet * DescriptorBytes) + StartWord)..]);
 
-        return ((int)(word >> StartShift), (int)(word & LowHalf));
+        return (word >> StartShift, word & LowHalf);
     }
 
     private static void Expand(ReadOnlySpan<byte> triangles, ReadOnlySpan<byte> remap, MeshletRange range, int vertexCount, int[] indices)

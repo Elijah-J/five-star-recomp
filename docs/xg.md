@@ -85,7 +85,7 @@ of the 4 KB pattern).
 |---|---|
 | Order in a slice | the mip tail block first, then the other mips smallest first, so mip 0 ends the slice |
 | Non-tail mip | padded to whole blocks, blocks row-major |
-| First tail mip | the first mip no larger than the block halved in width, with at most log2(block bytes) - 4 mips from it to the end (8 for 4 KB, 12 for 64 KB) |
+| First tail mip | the first mip no larger than the block halved in width, with at most log2(block bytes) - 4 mips from it to the end (8 for 4 KB, 12 for 64 KB); a chain of one mip has no tail and starts at offset 0 |
 | Tail slot of tail mip k | m = log2(block bytes) - 5 - k; it starts at 16 << m bytes when m > 6, else at m x 256 |
 | Tail mip addressing | the whole block's swizzle, from the element whose index is the slot start |
 | Linear (mode 0, or a 12-byte element) | mips in order from mip 0, rows padded to 256 bytes, mips on 512 bytes |
@@ -95,9 +95,8 @@ of the 4 KB pattern).
 GetResourceTiling uses 64 KB tiles: in a 64 KB mode the mips outside the tail are standard mips and the tail block
 is the one packed tile; in other modes every mip is packed.
 
-Checked on the dump: with these rules the computed size equals the span of 309,631 of the 351,925 2D textures in
-`data/ttdb` (mip count from the descriptor or the full chain; most of the rest have spans that fit neither count).
-Each mip read back through the layout correlates with the previous mip shrunk by half (BC1 endpoint brightness:
+Checked on the dump: with these rules and the stored mip count of [textures.md](textures.md) (mip field plus `d1`
+bits 0-2) the computed size equals the span of every 2D texture. Each mip read back through the layout correlates with the previous mip shrunk by half (BC1 endpoint brightness:
 mean 0.90 for 4 KB and 0.97 for 64 KB standard mips, 0.67 to 0.94 for the first four tail mips; about 0 when the
 tail slots are moved by 512 bytes). `dotnet test` re-tiles two shipped textures byte for byte.
 
@@ -114,6 +113,9 @@ the same way. Tile indices from GetResourceTiling count 64 KB tiles of this layo
 - The XG names and meaning of slots 0 and 3-7 and of the fourth CopyFromSubresource argument; the
   `XGSuggestSwizzleMode` second argument.
 - The plane and mip fields the game does not read; whether SizeBytes of a tail mip is the tail's or the mip's.
-- The swizzle modes behind the `.ttpf` layout bases and the exact XG suggestion rule; whether XG puts a single-mip
-  texture that fits the tail at the tail slot (this layout does, as the shipped textures place mip 0).
-- Thick (3D) and MSAA layouts, and the console's pipe/bank XOR, which the shipped textures do not show.
+- The swizzle modes behind the `.ttpf` layout bases and the exact XG suggestion rule.
+- Array order: the shipped arrays are stored level by level ([textures.md](textures.md)), while this layout puts
+  slices one after another, as the single slice stride the game reads implies.
+- Thick (3D) layouts: the three shipped volumes use 4 KB 3D bricks ([textures.md](textures.md)); this layout still
+  lays depth slices out as array slices.
+- MSAA layouts and the console's pipe/bank XOR, which the shipped textures do not show.

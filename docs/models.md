@@ -76,13 +76,19 @@ parameter hashes are Jenkins one-at-a-time hashes of the lower-cased name: `Diff
 |---|---|---|
 | Drawable root | +0x18 | Skeleton (null in most props) |
 | Skeleton | +0x28, +0x6C | Pointer to the bones, u16 bone count |
+| | +0x30 | Pointer to one inverse bind matrix per bone: 16 floats, row vectors, model space to bone space; the w column holds other data (read as 0, 0, 0, 1) |
 | Bone (0x50 bytes) | +0x00 | Rotation quaternion x, y, z, w |
 | | +0x10, +0x20 | Translation, scale (3 floats each) |
 | | +0x30 | Name pointer |
 | | +0x44, +0x46 | s16 next sibling, s16 parent (-1 for the root) |
 
-Transforms are relative to the parent. Code: `SkeletonReader`. The models of a vehicle are skinned to the whole
-skeleton (model +0x14 = bone count, +0x34 = 0x1FF), and their vertices are already in model space.
+Transforms are relative to the parent. Inverting a bone's inverse bind gives the translation of its parent-chained
+transform on every one of 12,522 skeletons checked (vehicles, peds, props). Code: `SkeletonReader`.
+
+The models of a vehicle are skinned to the whole skeleton (model +0x14 = bone count, +0x34 = 0x1FF): joint indices
+are bone indices, and the vertices are already in model space. On peds model +0x14 is a palette count and +0x28
+points at that many u32 Jenkins hashes of bone names, ascending in all 1,064 ped geometries of `core_restofworld.rpf` that have one; every
+joint index is below the palette count. On vehicles +0x28 holds other data (not ascending).
 
 ## Fragments
 
@@ -140,7 +146,13 @@ high nibble is the element size in 2-byte units.
 | 2 | Normal | 0x21 packed, 0x63 three floats |
 | 3 | Texture coordinate 0 | 0x28, 0x42 two floats |
 | 4 | Texture coordinate 1 | 0x28, 0x42 |
-| 6-19 | Not identified (skinned meshes use 6-9 and 12-19) | 0x25, 0x26, 0x27, 0x28, 0x4B, 0x84 |
+| 6 | Skin weights, 4 x u8 summing to 255 (with slot 7, 8 summing to 255) | 0x26 |
+| 7 | Peds: weights of a second four joints | 0x26 |
+| 8 | Skin joints | 0x00 one joint of weight 1, u8 or u16; 0x25 4 x u8; 0x4A 4 x u16; 0x8C heads, not decoded |
+| 9 | Peds: a second four joints | 0x25 |
+| 11 | Tangent | 0x27 |
+| 12, 13, 17 | Not identified | 0x26, 0x26, 0x42 |
+| 14, 15 | Texture coordinates 2, 3 | 0x28, 0x42 |
 
 | Format | Size | Decoding |
 |---|---|---|
@@ -150,6 +162,8 @@ high nibble is the element size in 2-byte units.
 | 0x21 | 4 | Octahedral normal: x = bits 0-9, y = bits 10-19, unorm to -1..1; z = 1 - \|x\| - \|y\|, folded when negative. Bits 20-31 not decoded |
 | 0x28 | 4 | Two s16, value / 8192 |
 | 0x26 | 4 | RGBA8 |
+| 0x27 | 4 | Tangent: x, y, z = bits 0-9, 10-19, 20-29, unorm to -1..1, model space; bits 30-31 = 3 for w = -1, else 0 (w = 1). w * cross(normal, tangent) points the way v grows |
+| 0x00 | 0 | One joint index per vertex, u8, or u16 when the stream (4-byte aligned) holds at least 2 bytes per vertex |
 
 A packed position stream starts at 0x80 and has a header in the 32 bytes before it:
 
@@ -180,7 +194,9 @@ in metres, z up.
 | then | u32 per triangle: three 7-bit meshlet-local indices (bits 0-6, 7-13, 14-20), meshlet number in bits 21-31 |
 | then | u16 per meshlet vertex: the vertex buffer index it stands for |
 
-A meshlet runs to the next meshlet's first triangle and first vertex; meshlets hold at most 128 triangles in the geometries checked.
+A meshlet runs to the next meshlet's first triangle and first vertex; meshlets hold at most 128 triangles in the
+geometries checked. Both starts are u16 and wrap on geometries of more than 65,535 triangles or meshlet vertices
+(vehicle bodies, up to 91,642 triangles); the step from one start to the next, modulo 2^16, is the meshlet's size.
 Triangles are counter-clockwise seen from the side the normals face.
 
 ## Checks
@@ -192,6 +208,16 @@ Triangles are counter-clockwise seen from the side the normals face.
   caps score far lower although their triangles form clean meshes.
 - Bounds: the decoded positions of `cvar_am_toy_dog_01a` match the bounding box its model stores. Field C is on the
   shortest side in 1,987 of the 2,023 geometries.
+- Packed positions: a field's low byte is bits 8-15 of word 0 for A and bits 0-7 for B. The other order fails the
+  bounds: over 5,245 geometries (`core_restofworld.rpf` and vehicles in `levels.rpf`) the smallest A is 0 in 3,892
+  and the largest 0xFFFFFF in 3,961, against 446 and 216 with the bytes swapped.
+- Meshlet starts: the 83 geometries whose starts wrap (`levels.rpf` from 0x1000000000) all decode. The 20 of them
+  between 0x108C1CA010 and 0x10CA330010 have a median triangle edge of 0.24% of the bounds diagonal and a normal
+  agreement of 0.94 (means over the geometries), in line with the 25,300 other geometries there (0.85).
+- Tangents: on props they lie along the u direction of texture coordinate 0 (mean cosine 0.77), on most vehicle
+  geometries along that of texture coordinate 1 (0.89), some along 2 or 3.
+- Skinning: on 700 vehicle geometries every joint is below the bone count, every vertex's weights sum to 255, and
+  vertices lie nearer their joint's bone than a control bone (all 4-joint and u16 geometries, 399 of 473 u8 ones).
 - Texture coordinates: the quad of `cvar_movie_poster_01a` maps to u 0.506-1.0, v 0.008-0.997 of its 1024x1024
   texture, which holds two posters side by side.
 - Textures: the `DiffuseTex` hashes looked up are in `.ttpf` hash lists, and models drawn with them
@@ -203,7 +229,7 @@ Triangles are counter-clockwise seen from the side the normals face.
 
 | Archive | Drawables | Geometries decoded |
 |---|---|---|
-| `levels.rpf` | 343,569 | 4,053,995 of 4,056,726 |
+| `levels.rpf` | 343,569 | 4,054,076 of 4,056,726 |
 | `pack/story000/story000.rpf` | 7,461 | 177,795 of 177,796 |
 | `packs.rpf` | 27,470 | 51,107 of 51,107 |
 | `pack/shared_minigame000/shared_minigame000.rpf` | 1,296 | 15,024 of 15,024 |
@@ -211,9 +237,9 @@ Triangles are counter-clockwise seen from the side the normals face.
 | `pack/core_restofworld/core_restofworld.rpf` | 936 | 2,021 of 2,021 |
 | `pack/story000_restofworld/story000_restofworld.rpf` | 3 | 3 of 3 |
 
-In total 4,304,262 of 4,306,994 geometries (99.94%) of 383,907 drawables decode. Of the failures, 2,651 are
-carved physical segments that end before their buffers do, and 81 (in `levels.rpf`) are meshlets whose ranges run
-past their buffer.
+In total 4,304,343 of 4,306,994 geometries (99.94%) of 383,907 drawables decode. The failures are carved physical
+segments that end before their buffers do. (`levels.rpf` was re-scanned from 66 GiB to its end, where the 81
+geometries of wrapping meshlet starts lie, after their fix.)
 
 ## Commands
 
@@ -226,19 +252,21 @@ fivestar graphics draw-model <out.png> --archive <file.rpf> --from 0xOFFSET [--n
 
 `scan` prints, per level of detail, how many geometries decode and why the rest do not; `--list` adds a line per
 drawable. `export` writes `<offset>_<name>.obj` per drawable: positions, normals, texture coordinates (v flipped for
-OBJ) and the diffuse texture hash of each shader as a comment. `--from` starts at an entry's offset (as `scan --list`
+OBJ) and the diffuse texture hash of each shader as a comment; tangents, further texture coordinates and skin are
+decoded (`MeshGeometry.Extras`) but not exported. `--from` starts at an entry's offset (as `scan --list`
 prints it) instead of the start of the archive.
 
 ## Unknown
 
-- Slots 1 and 4-19 beyond their formats: skinning weights and indices, tangents, more colours.
+- Slots 1, 12, 13 and 17, and the head skin format 0x8C.
 - Bits 20-31 of a packed normal (probably the tangent).
 - Meshlet descriptor dwords 0, 2 and 3 (probably culling cone and bounds), and the float 4.0 of the position header.
 - Cables (`*_cables_*`): every triangle has zero area, so a vertex shader must widen them; slot 2 is then not a
   normal.
 - The same name in several consecutive resources (body parts, garments): whether they are levels of detail.
-- Skinning weights and indices, and the names of most shader parameters.
+- The names of most shader parameters; what vehicle model +0x28 holds.
+- The ped bone palette is not checked by position: most of its hashes name bones of a shared ped skeleton that is
+  not in the garment's drawable.
 - Where a vehicle's rims, tyres and paint are chosen.
 - Fragment children (doors, bonnet) and the rest of the fragment type and physics.
-- The 81 meshlet buffers whose descriptor ranges do not fit.
 - Meshlet header bits 16-30.

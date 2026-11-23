@@ -38,6 +38,20 @@ public static class SwizzlePatterns
         return null;
     }
 
+    /// <summary>The 4 KB brick of a volume (bits of x, y and z), or null when none is known for the element size.</summary>
+    public static string? FindVolume(int bytesPerElement)
+    {
+        switch (bytesPerElement)
+        {
+            case TwoBytes:
+                return "xzyzyxzyxzy";
+            case EightBytes:
+                return "xzyxzyxzy";
+            default:
+                return null;
+        }
+    }
+
     private static string? SmallTilePattern(int bytesPerElement)
     {
         switch (bytesPerElement)
@@ -62,7 +76,7 @@ public static class SwizzlePatterns
         switch (bytesPerElement)
         {
             case OneByte:
-                return "xxxyyyxyyxyxyxyx";
+                return "xxxy1y0yxyyxyxyxyx";
             case TwoBytes:
                 return "xxxyyyxyxyxyxyx";
             case FourBytes:

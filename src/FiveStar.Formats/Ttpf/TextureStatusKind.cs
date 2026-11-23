@@ -15,14 +15,14 @@ public enum TextureStatusKind
     /// <summary>The layout mode has no known swizzle (detail = mode).</summary>
     UnsupportedMode,
 
-    /// <summary>A cube map whose span does not split into six faces.</summary>
-    CubeSpan,
+    /// <summary>The resource kind is not known (detail = kind).</summary>
+    UnsupportedKind,
 
-    /// <summary>Mip 0 does not fit inside the texture's span.</summary>
+    /// <summary>The computed layout runs past the texture's span.</summary>
     Size,
 
-    /// <summary>A cube map with mips (face and mip interleave not known).</summary>
-    CubeMips,
+    /// <summary>A cube map with more copies than its mip chain has units.</summary>
+    CubeCopies,
 
     /// <summary>Mip 0 touches a page that cannot be decoded (a BCPack codec other than BC1).</summary>
     UnsupportedCodec,

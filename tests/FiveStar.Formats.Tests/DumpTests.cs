@@ -111,19 +111,61 @@ public sealed class DumpTests
     }
 
     [DumpFact]
-    public void The_graphics_page_file_extracts_903_textures()
+    public void The_graphics_page_file_extracts_906_textures()
     {
-        var path = Path.Combine(DumpFactAttribute.Folder!, "data", "ttdb", "graphics", "ttdb_graphics.ttpf");
-        using var source = new MappedFileSource(path);
+        using var source = new MappedFileSource(GraphicsPageFile());
         var file = new TexturePageFile(source, new ZlibInflater());
         var extractor = new TextureExtractor(file);
 
         var statuses = file.Descriptors.Select(descriptor => extractor.ReadMip0(descriptor).Status.Name).ToList();
 
         Assert.Equal(912, statuses.Count);
-        Assert.Equal(903, statuses.Count(status => status == "ok"));
-        Assert.Equal(4, statuses.Count(status => status == "skip_unsupported_codec"));
+        Assert.Equal(906, statuses.Count(status => status == "ok"));
+        Assert.Equal(6, statuses.Count(status => status == "skip_unsupported_codec"));
     }
+
+    [DumpFact]
+    public void Every_texture_layout_fits_its_span()
+    {
+        var statuses = new Dictionary<string, int>();
+
+        foreach (var path in Directory.GetFiles(DumpFactAttribute.Folder!, "*.ttpf", SearchOption.AllDirectories))
+        {
+            using var source = new MappedFileSource(path);
+            var file = new TexturePageFile(source, new ZlibInflater());
+            var extractor = new TextureExtractor(file);
+
+            foreach (var descriptor in file.Descriptors)
+            {
+                var name = extractor.Locate(descriptor).Status.Name;
+                statuses[name] = statuses.GetValueOrDefault(name) + 1;
+            }
+        }
+
+        Assert.Equal(new Dictionary<string, int> { ["ok"] = 357_115 }, statuses);
+    }
+
+    /// <summary>
+    /// Texture #901 is a 256x32x8 R16_FLOAT volume. Read as 3D bricks its depth slices are near copies of each other
+    /// (a mean step of 6 in the raw 16-bit values); read as 2D slices back to back the step is about 130.
+    /// </summary>
+    [DumpFact]
+    public void A_volume_texture_reads_as_3d_bricks()
+    {
+        using var source = new MappedFileSource(GraphicsPageFile());
+        var file = new TexturePageFile(source, new ZlibInflater());
+
+        var (status, data, layout) = new TextureExtractor(file).ReadMip0(file.Descriptors[901]);
+        var values = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, ushort>(data).ToArray();
+        var slice = layout!.BlockWidth * layout.BlockHeight;
+        var step = Enumerable.Range(0, values.Length - slice).Average(index => Math.Abs(values[index + slice] - values[index]));
+
+        Assert.True(status.IsOk);
+        Assert.Equal((TextureKind.Volume, 256, 32, 8), (layout.Kind, layout.BlockWidth, layout.BlockHeight, layout.Depth));
+        Assert.InRange(step, 0, 32);
+    }
+
+    private static string GraphicsPageFile() => Path.Combine(DumpFactAttribute.Folder!, "data", "ttdb", "graphics", "ttdb_graphics.ttpf");
 
     private static List<AwcTrack> XmaTracks(MappedFileSource source, long container) =>
         new AwcTrackReader(source).Read(AwcReader.TryRead(source, container)!).Where(track => track.Codec == AwcCodec.Xma2).ToList();

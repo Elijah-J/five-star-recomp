@@ -72,9 +72,9 @@ public sealed class TextureCoverage
             return status;
         }
 
-        for (var face = 0; face < layout.Faces; face++)
+        for (var image = 0; image < layout.Images; image++)
         {
-            var codec = BlockingCodec(layout.Start + (face * layout.FaceSpan), layout.Size);
+            var codec = BlockingCodec(layout.Start + (image * layout.ImageStride), layout.Size);
 
             if (codec.HasValue)
             {
@@ -84,9 +84,9 @@ public sealed class TextureCoverage
             }
         }
 
-        for (var face = 0; face < layout.Faces; face++)
+        for (var image = 0; image < layout.Images; image++)
         {
-            var codec = ApproximateCodec(layout.Start + (face * layout.FaceSpan), layout.Size);
+            var codec = ApproximateCodec(layout.Start + (image * layout.ImageStride), layout.Size);
 
             if (codec.HasValue)
             {
