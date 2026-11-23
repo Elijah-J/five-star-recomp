@@ -3,6 +3,7 @@
 
 using FiveStar.Loader.Calls;
 using FiveStar.Loader.Codegen;
+using FiveStar.Loader.Cpu;
 using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Loading;
 using FiveStar.Loader.Mods;
@@ -39,7 +40,9 @@ internal sealed class LoaderRuntime : IDisposable
         VirtualModules = new VirtualModules(log);
         Patcher = new ImagePatcher(Shims, log);
         Trace = new CallTrace(CodeHeap);
-        Faults = new FaultReporter(Images, Trace, CodeHeap, log);
+
+        Cpu = new AmdInstructionHandler(Images, log);
+        Faults = new FaultReporter(Images, Trace, CodeHeap, Cpu, log);
 
         Loader = new ImageLoader(options, Shims, Stubs, Images, CodeHeap, new TlsHostAttacher(options.WorkDirectory, options.ProcessId, log), Patcher, Trace, log);
         Router = new RuntimeLibraryRouter(Loader, VirtualModules, Shims, Images, log);
@@ -94,6 +97,9 @@ internal sealed class LoaderRuntime : IDisposable
 
     /// <summary>The ring of recent calls through shims and unresolved stubs, when enabled.</summary>
     public CallTrace Trace { get; }
+
+    /// <summary>The emulation of the Zen 2 instructions an Intel CPU lacks, run by the fault reporter's handler.</summary>
+    public AmdInstructionHandler Cpu { get; }
 
     /// <summary>The vectored exception handler that reports faults in mapped code.</summary>
     public FaultReporter Faults { get; }

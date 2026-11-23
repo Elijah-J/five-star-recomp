@@ -16,6 +16,8 @@ internal static class HostUsage
           --run                  run the main executable's entry point; reports faults in mapped code with the
                                  last calls through shims and stubs
           --run-timeout <s>      with --run: after s seconds report the main thread's stack and exit (code 3)
+          --cpu <host|intel>     intel: report SSE4a, CLZERO, MONITORX/MWAITX and CLWB as missing and check their
+                                 emulation through the exception handler (self-test code, not the game's)
           --trace-system         with --run: the call trace also records System32 imports
           --input-script <file>  timed key presses ("<s> <key> [hold <s>] [repeat <n> every <s>]" per line)
                                  added to the desktop keys, so the keyboard and the virtual gamepad see them

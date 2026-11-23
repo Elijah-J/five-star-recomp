@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Five Star Recomp contributors.
+// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Globalization;
@@ -145,6 +145,8 @@ internal sealed class CommandLineParser
                 return SetNetworkMode();
             case "--network-level":
                 return SetNetworkLevel();
+            case "--cpu":
+                return SetCpu();
             default:
                 throw new CommandLineException($"unknown argument {option}");
         }
@@ -436,6 +438,21 @@ internal sealed class CommandLineParser
         }
 
         _options.NetworkLevel = level;
+
+        return true;
+    }
+
+    /// <summary>--cpu host | intel.</summary>
+    private bool SetCpu()
+    {
+        string value = Next();
+
+        _options.AssumeIntelCpu = value switch
+        {
+            "host" => false,
+            "intel" => true,
+            _ => throw new CommandLineException($"--cpu {value}: expected host or intel"),
+        };
 
         return true;
     }
