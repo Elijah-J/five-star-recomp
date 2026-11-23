@@ -37,6 +37,14 @@ saves the thread's slot-0 pointer in 8 bytes added after the template and points
 last (process and thread detach) puts it back before ntdll frees the blocks. Threads that existed before the
 executable was mapped, other than the loading thread, keep the host's slot 0.
 
+**Block size.** ntdll sizes the TLS block of a LoadLibrary'd module by its raw template alone and ignores
+SizeOfZeroFill (a 16-byte-aligned block also starts 16 bytes into its heap allocation, after the allocation pointer
+LdrpFreeTls frees). The host template therefore carries the image's zero fill and the saved slot-0 pointer as zero
+bytes. With them as zero fill, every thread created after the game was mapped wrote the saved pointer over the next
+heap entry; the corruption surfaced as a fault in LdrpFreeTls when a thread exited, and the fault reporter, entered on
+that thread after its TLS array was freed, then faulted in coreclr (JIT_ReversePInvokeEnter, coreclr+0x165f05 in
+.NET 10.0.7). `TlsHostTests` checks a new thread's block against its heap allocation.
+
 **Unresolved imports.** Each gets a stub `mov rdx,[rsp]; mov rcx,id; mov rax,handler; jmp rax` in a code heap that is
 never writable and executable at once; rdx carries the caller's return address, so the first-call log line names the
 call site (`from game_scarlett_master.exe+0x...`). `--unresolved stub` (default) logs the first call and returns 0 or
@@ -349,10 +357,12 @@ entry point (the CRT startup, the static initializers, then `main`) runs on a th
   customer code) or a breakpoint whose first 12 stack frames include a mapped image, it logs the code (and the access
   and address of an access violation), the image RVA, the `.pdata` function around it, 16 code bytes, the registers,
   the stack and the last 24 traced calls; after 3 such records one line per fault, at most 64. It always continues the
-  search, so the game's own handlers still run.
+  search, so the game's own handlers still run. Its native entry skips threads without a TLS array (exiting ones):
+  managed code cannot run there.
 
 `--run-timeout <s>` suspends the main thread if the entry point has not returned after s seconds, logs the same
-record for it and exits with code 3. `--trace-system` also traces imports bound to System32 (the ring then covers far\nless time). Run boots in a child process: the CRT ends the process through `exit`.
+record for it and ends the process with code 3 (TerminateProcess, no cleanup: the game's threads still use the shims,
+and disposing the swap chain under the presenting thread crashed in dxgi). `--trace-system` also traces imports bound to System32 (the ring then covers far\nless time). Run boots in a child process: the CRT ends the process through `exit`.
 
 The loader is built with `<CETCompat>false</CETCompat>`: with CET shadow stacks, SEH resuming inside mapped code
 fail-fasts (0x30).

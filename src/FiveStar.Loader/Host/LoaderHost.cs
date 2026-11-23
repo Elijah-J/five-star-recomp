@@ -6,6 +6,7 @@ using FiveStar.Loader.Calls;
 using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Loading;
 using FiveStar.Loader.Mods;
+using FiveStar.Loader.Native;
 using FiveStar.Loader.Shims.D3D12X.DebugLayer;
 using FiveStar.Loader.Shims.Input;
 
@@ -67,6 +68,12 @@ internal sealed class LoaderHost
 
         rc = CallExports(rc);
         rc = RunMain(rc);
+
+        if (rc == ExecutableRunner.TimedOut)
+        {
+            EndTimedOutRun();
+        }
+
         Finish();
         _log.Info($"done, exit code {rc}");
 
@@ -249,6 +256,18 @@ internal sealed class LoaderHost
         }
 
         return new ExecutableRunner(_runtime.Faults, _log).Run(main, _options.RunTimeout);
+    }
+
+    /// <summary>
+    /// After <c>--run-timeout</c> the game's threads still run and use the shims (the render thread presents on the
+    /// swap chain), so disposing the runtime under them crashes. The process ends here instead, without cleanup.
+    /// </summary>
+    private void EndTimedOutRun()
+    {
+        _runtime.D3D12X.Presenter.LogSummary();
+        _log.Info($"done, exit code {ExecutableRunner.TimedOut} (the game's threads are still running: the process ends without cleanup)");
+        Console.Out.Flush();
+        _ = Kernel32.TerminateProcess(Kernel32.GetCurrentProcess(), (uint)ExecutableRunner.TimedOut);
     }
 
     private void Finish()

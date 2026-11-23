@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Runtime.InteropServices;
+using FiveStar.Loader.Codegen;
 using FiveStar.Loader.Loading;
 using FiveStar.Loader.Native;
 using FiveStar.Loader.Shims;
@@ -39,19 +40,25 @@ internal sealed unsafe class FaultReporter
     /// <summary>Faults reported at all.</summary>
     private const int MaxReports = 64;
 
+    /// <summary><c>mov rax,gs:[58h]; test rax,rax</c>: the thread's implicit-TLS array (TEB.ThreadLocalStoragePointer).</summary>
+    private static readonly byte[] TestTlsArray = [0x65, 0x48, 0x8B, 0x04, 0x25, ThreadEnvironmentBlock.ThreadLocalStoragePointer, 0, 0, 0, 0x48, 0x85, 0xC0];
+
     private readonly ImageTable _images;
     private readonly FaultRecordWriter _writer;
+    private readonly CodeHeap _heap;
     private readonly LoaderLog _log;
+    private nint _entry;
     private int _reported;
 
     /// <summary>1 while a report is written; a fault meanwhile (in the report or on another thread) is not reported.</summary>
     private int _reporting;
     private nint _handle;
 
-    public FaultReporter(ImageTable images, CallTrace trace, LoaderLog log)
+    public FaultReporter(ImageTable images, CallTrace trace, CodeHeap heap, LoaderLog log)
     {
         _images = images;
         _writer = new FaultRecordWriter(images, trace, log);
+        _heap = heap;
         _log = log;
     }
 
@@ -66,8 +73,8 @@ internal sealed unsafe class FaultReporter
             return;
         }
 
-        delegate* unmanaged<nint, int> handler = &OnException;
-        _handle = Kernel32.AddVectoredExceptionHandler(CallFirst, (nint)handler);
+        _entry = EmitEntry();
+        _handle = Kernel32.AddVectoredExceptionHandler(CallFirst, _entry);
         _log.Info("fault reporter: vectored exception handler installed");
     }
 
@@ -83,8 +90,7 @@ internal sealed unsafe class FaultReporter
         }
 
         _ = Kernel32.RemoveVectoredExceptionHandler(_handle);
-        delegate* unmanaged<nint, int> handler = &OnException;
-        _handle = Kernel32.AddVectoredExceptionHandler(CallFirst, (nint)handler);
+        _handle = Kernel32.AddVectoredExceptionHandler(CallFirst, _entry);
     }
 
     /// <summary>Reports a suspended thread's CONTEXT like a fault: where it is, its stack and the last calls.</summary>
@@ -96,6 +102,30 @@ internal sealed unsafe class FaultReporter
     public void WriteRecentCalls(string title)
     {
         _writer.WriteRecentCalls(title);
+    }
+
+    /// <summary>
+    /// The handler's native entry: <see cref="OnException"/>, except on a thread whose TLS array is gone. A thread
+    /// that faults while it exits (after ntdll's LdrpFreeTls, as on a corrupted heap) cannot enter managed code: the
+    /// runtime finds its thread through that array, and the entry would fault again inside coreclr.
+    /// </summary>
+    private nint EmitEntry()
+    {
+        delegate* unmanaged<nint, int> handler = &OnException;
+        var code = new X64Emitter();
+        code.Data(TestTlsArray);
+        int toNoThread = code.JzForward();
+        code.MovRax((ulong)handler);
+        code.JmpRax();
+
+        code.PatchJumpHere(toNoThread);
+        code.MovEax((uint)ContinueSearch);
+        code.Ret();
+
+        nint entry = _heap.Write(code.ToArray());
+        _heap.Seal();
+
+        return entry;
     }
 
     [UnmanagedCallersOnly]

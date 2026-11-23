@@ -36,7 +36,14 @@ internal static unsafe class PresentSlots
     [UnmanagedCallersOnly]
     public static int PresentX(XboxObject* self, uint count, PresentPlane* planes, uint* parameters)
     {
-        return ShimContext.Runtime.D3D12X.Presenter.Present(self->Inner, count, planes, parameters);
+        var d3d12x = ShimContext.Runtime.D3D12X;
+
+        if (count > 0 && planes != null)
+        {
+            d3d12x.Pacer.Presented(planes->Token);
+        }
+
+        return d3d12x.Presenter.Present(self->Inner, count, planes, parameters);
     }
 
     /// <summary>

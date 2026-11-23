@@ -8,7 +8,7 @@ using FiveStar.Loader.Pe;
 namespace FiveStar.Loader.Loading;
 
 /// <summary>
-/// Writes the "TLS host" DLL of an image: a DLL whose .tls template is a byte copy of the image's template and whose
+/// Writes the "TLS host" DLL of an image: a DLL whose .tls template is a byte copy of the image's template (its zero fill as zero bytes) and whose
 /// TLS callbacks are thunks into the image's callbacks. Layout:
 /// .text at 0x1000: DllMain (<c>mov eax,1; ret</c>; ntdll delivers THREAD_ATTACH only to modules with an entry
 /// point), then one thunk per callback: <c>mov eax,[rip+host _tls_index]; mov r11,&amp;image _tls_index; mov [r11],eax;
@@ -82,15 +82,19 @@ internal static class TlsHostBuilder
         return template.Callbacks.Count + extra;
     }
 
-    /// <summary>The host's zero fill: the image's, plus room for the saved slot-0 pointer of an executable.</summary>
-    private static uint ZeroFill(TlsTemplate template)
+    /// <summary>
+    /// The host's template size: the image's data and zero fill, plus the saved slot-0 pointer of an executable, all
+    /// as initialized data. ntdll sizes the block of a LoadLibrary'd module by its raw data alone and ignores
+    /// SizeOfZeroFill, so zero fill there would lie past the block's heap allocation.
+    /// </summary>
+    public static int TemplateSize(TlsTemplate template)
     {
         if (!template.OwnsSlotZero)
         {
-            return template.ZeroFill;
+            return checked(template.RawData.Length + (int)template.ZeroFill);
         }
 
-        return (uint)(TlsSlotZero.SaveOffset(template) + TlsSlotZero.SaveSize - template.RawData.Length);
+        return TlsSlotZero.SaveOffset(template) + TlsSlotZero.SaveSize;
     }
 
     private static int Align(int value, int alignment)
@@ -140,7 +144,7 @@ internal static class TlsHostBuilder
     private static (byte[] Data, ImportTableImage Imports) BuildData(TlsTemplate template, List<uint> thunkRvas, BaseRelocationBuilder relocations)
     {
         int templateOffset = Align(CallbackArrayOffset + (sizeof(ulong) * (CallbackCount(template) + 1)), DataAlignment);
-        int importOffset = Align(templateOffset + template.RawData.Length, DataAlignment);
+        int importOffset = Align(templateOffset + TemplateSize(template), DataAlignment);
         var imports = new ImportTableBuilder();
         imports.Add(ImportModule, ImportSymbol);
         var importTable = imports.Build(DataRva + (uint)importOffset);
@@ -166,10 +170,9 @@ internal static class TlsHostBuilder
         ulong start = PreferredBase + DataRva + (uint)templateOffset;
 
         BinaryPrimitives.WriteUInt64LittleEndian(directory[TlsFormat.StartAddressOfRawDataOffset..], start);
-        BinaryPrimitives.WriteUInt64LittleEndian(directory[TlsFormat.EndAddressOfRawDataOffset..], start + (uint)template.RawData.Length);
+        BinaryPrimitives.WriteUInt64LittleEndian(directory[TlsFormat.EndAddressOfRawDataOffset..], start + (uint)TemplateSize(template));
         BinaryPrimitives.WriteUInt64LittleEndian(directory[TlsFormat.AddressOfIndexOffset..], PreferredBase + DataRva + HostIndexOffset);
         BinaryPrimitives.WriteUInt64LittleEndian(directory[TlsFormat.AddressOfCallBacksOffset..], PreferredBase + DataRva + CallbackArrayOffset);
-        BinaryPrimitives.WriteUInt32LittleEndian(directory[TlsFormat.SizeOfZeroFillOffset..], ZeroFill(template));
         BinaryPrimitives.WriteUInt32LittleEndian(directory[TlsFormat.CharacteristicsOffset..], template.Characteristics);
 
         relocations.AddDir64(DataRva + DirectoryOffset + TlsFormat.StartAddressOfRawDataOffset);

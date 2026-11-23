@@ -102,6 +102,17 @@ internal sealed unsafe class Presenter : IDisposable
         return HResult.Ok;
     }
 
+    /// <summary>Logs the presents so far and their mean interval.</summary>
+    public void LogSummary()
+    {
+        long presents = Presents;
+
+        if (presents > 0)
+        {
+            _log.Info($"  [present] {presents} presents, {_skipped} skipped while minimized, {MeanInterval(_first, presents):F2} ms mean interval");
+        }
+    }
+
     public void Dispose()
     {
         if (_recorder is not null && _queue != 0)
@@ -109,11 +120,7 @@ internal sealed unsafe class Presenter : IDisposable
             _recorder.WaitIdle(_queue);
         }
 
-        if (_presents > 0)
-        {
-            _log.Info($"  [present] {_presents} presents, {_skipped} skipped while minimized, {MeanInterval(_first, _presents):F2} ms mean interval");
-        }
-
+        LogSummary();
         _swapChain?.Dispose();
         _recorder?.Dispose();
     }
