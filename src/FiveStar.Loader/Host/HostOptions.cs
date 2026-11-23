@@ -88,6 +88,9 @@ internal sealed record HostOptions
     /// <summary>XboxBvhBuilder.dll's CPU paths: console sizes and BLAS rehydration (<c>--raytracing</c>).</summary>
     public bool RayTracing { get; set; }
 
+    /// <summary>Run the XDsp convolution effects on the CPU instead of returning silence (<c>--xdsp-convolution</c>).</summary>
+    public bool XDspConvolution { get; set; }
+
     public bool Verbose { get; set; }
 
     public bool ListSafeCalls { get; set; }

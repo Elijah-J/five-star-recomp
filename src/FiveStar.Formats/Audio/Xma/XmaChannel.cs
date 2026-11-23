@@ -68,4 +68,37 @@ internal sealed class XmaChannel
         HasScaleFactors = false;
         SubframeCount = 0;
     }
+
+    /// <summary>Takes over the state <paramref name="other"/> left after its last frame, so the next frame decodes as if it followed it.</summary>
+    public void CopyFrom(XmaChannel other)
+    {
+        other.Samples.CopyTo(Samples, 0);
+        other.SubframeLengths.CopyTo(SubframeLengths, 0);
+        SubframeCount = other.SubframeCount;
+        CurrentSubframe = other.CurrentSubframe;
+        DecodedSamples = other.DecodedSamples;
+        PreviousBlockLength = other.PreviousBlockLength;
+
+        BlockOffset = other.BlockOffset;
+        CodesCoefficients = other.CodesCoefficients;
+        QuantStep = other.QuantStep;
+        VectorCoefficients = other.VectorCoefficients;
+        HasScaleFactors = other.HasScaleFactors;
+        ScaleFactorStep = other.ScaleFactorStep;
+
+        MaxScaleFactor = other.MaxScaleFactor;
+        TransmittedSet = other.TransmittedSet;
+        TransmittedBlock = other.TransmittedBlock;
+        ScaleFactors = [];
+
+        for (var set = 0; set < ScaleFactorSets.Length; set++)
+        {
+            other.ScaleFactorSets[set].CopyTo(ScaleFactorSets[set], 0);
+
+            if (ReferenceEquals(other.ScaleFactors, other.ScaleFactorSets[set]))
+            {
+                ScaleFactors = ScaleFactorSets[set];
+            }
+        }
+    }
 }

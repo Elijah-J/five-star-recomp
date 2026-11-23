@@ -124,6 +124,8 @@ internal sealed class CommandLineParser
                 return SetPresentTest();
             case "--raytracing":
                 return SetRayTracing();
+            case "--xdsp-convolution":
+                return SetXDspConvolution();
             default:
                 throw new CommandLineException($"unknown argument {option}");
         }
@@ -338,6 +340,13 @@ internal sealed class CommandLineParser
     private bool SetRayTracing()
     {
         _options.RayTracing = true;
+
+        return true;
+    }
+
+    private bool SetXDspConvolution()
+    {
+        _options.XDspConvolution = true;
 
         return true;
     }

@@ -34,8 +34,9 @@ internal static class HostUsage
           --d3d12-skip <i:n,...> D3D12.X slots that do nothing (list:51, queue:35, device:n), to bisect GPU faults
           --d3d12-trace-queues   log the first queue submissions, signals and waits (cross-queue protocol)
           --present-test         present moving color bars instead of the game's frame (checks the swap chain)
-          --raytracing           XboxBvhBuilder.dll's CPU paths: console acceleration-structure sizes and BLAS
+          --raytracing          XboxBvhBuilder.dll's CPU paths: console acceleration-structure sizes and BLAS
                                  rehydration into game memory (off: desktop sizes, nothing written)
+          --xdsp-convolution     run the XDsp convolution effects on the CPU (default: silence; response format inferred)
           --package-root <dir>  package root for XPackage / MicrosoftGame.config (default: main image directory)
           --device-type <n>      XSystemGetDeviceType result (default 7 = XboxScarlettAnaconda)
           --patches <path>       code patch file, or folder of *.fspatch files (repeatable, applied in order)
