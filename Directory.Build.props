@@ -17,7 +17,7 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <UseArtifactsOutput>true</UseArtifactsOutput>
     <ArtifactsPath>$(MSBuildThisFileDirectory)artifacts</ArtifactsPath>
-    <Authors>ThatMapleDev</Authors>
+    <Authors>ThatRecompDev</Authors>
     <Copyright>Copyright (c) 2026 Five Star Recomp</Copyright>
   </PropertyGroup>
 

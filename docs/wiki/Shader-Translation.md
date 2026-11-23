@@ -60,7 +60,7 @@ wave the GPU runs:
 Each translated program states the narrowest GPU wave on which it gives console results. Of the 1,982 lane-indexed
 pixel, vertex and mesh programs, all compile; on 32-lane GPUs 462 of the 907 wave64 pixel programs give console
 results, while 445 pixel and 1 vertex program read lanes such a GPU does not have; every mesh program that compiles natively runs correctly there, natively or in the superstep form. The [developer
-documentation](https://github.com/ThatMapleDev/five-star-recomp/blob/main/docs/shader-translation.md#wave-size) has the
+documentation](https://github.com/ThatRecompDev/five-star-recomp/blob/main/docs/shader-translation.md#wave-size) has the
 details and the limits.
 
 ## Limits

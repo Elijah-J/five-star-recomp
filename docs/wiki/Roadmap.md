@@ -16,7 +16,7 @@
 |---|---|
 | BCPack | header and entropy-coder parameters known; the data models are not ([details](Textures-and-BCPack.md)) |
 | Type names | PSO structures are identified by hashes; naming them needs lists of engine class names |
-| Geometry | drawables decode (meshlets, packed positions, normals, texture coordinates); skinning, the other vertex streams and the meshlet culling data are not ([details](https://github.com/ThatMapleDev/five-star-recomp/blob/main/docs/models.md)) |
+| Geometry | drawables decode (meshlets, packed positions, normals, texture coordinates); skinning, the other vertex streams and the meshlet culling data are not ([details](https://github.com/ThatRecompDev/five-star-recomp/blob/main/docs/models.md)) |
 | BVH data | ray tracing needs acceleration structures in AMD's layout ([details](Shader-Translation.md#ray-tracing)) |
 
 ## Engineering

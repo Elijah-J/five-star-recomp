@@ -1,4 +1,4 @@
-![Five Star Recomp](https://raw.githubusercontent.com/ThatMapleDev/five-star-recomp/main/docs/assets/banner.svg)
+![Five Star Recomp](https://raw.githubusercontent.com/ThatRecompDev/five-star-recomp/main/docs/assets/banner.svg)
 
 Five Star Recomp works toward running the Xbox Series version of **Grand Theft Auto VI** (1.0.2.1, title ID
 `7952987A`) natively on Windows, from a copy you own.
