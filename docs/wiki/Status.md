@@ -26,7 +26,7 @@ buffer the game places at a GPU address of its own choosing (see [Roadmap](Roadm
 | Audio | all 1,603,231 sounds in `audio.rpf` export as Ogg Opus or WAV (Opus, XMA2, PCM) |
 | Executable | 587 imports, all resolved: 34 by shims, 209 from the package's own libraries, 325 from Windows, 19 by Xbox-only stubs; the six Xbox libraries in the package load with all 825 of their imports resolved |
 | Boot | from the entry point through C runtime start-up, memory set-up, DirectStorage archive opening and D3D12.X device set-up (queues, command lists, frame pacing); a fault report gives the address, function, registers and last shim calls of any stop |
-| Console runtime | task queues and async run for real; user, saves, package and store work offline; the game calls 161 GDK functions, all named from the PC GDK, 96 of them shimmed |
+| Console runtime | task queues and async run for real; user, saves, package and store work offline; the game calls 161 GDK functions, all named from the PC GDK and all shimmed |
 | Console system libraries | xmem physical pages alias like the console's (shared sections mapped into placeholders); XG texture layouts match 309,631 of 351,925 shipped textures; DirectStorage reads and inflates on CPU worker queues; the audio hardware reports itself unavailable |
 | Graphics API (D3D12.X) | the game's device is a desktop D3D12 device: desktop-compatible methods forward through generated thunks, console-only ones are logged; game textures and textured models draw through the game's own translated shaders and cached pipeline state on PC; command translation, the game's pipeline creation and present are not done |
 | Setup | `fivestar setup` prepares a dump in one resumable command; a re-run with nothing changed takes under a second |

@@ -25,7 +25,7 @@ The game runs as if the console had no network: one local player, saves in folde
 | Task queues, XAsync | real queues and async calls with the console's ordering |
 | User | one signed-in player, every privilege, the first gamepad as their controller, the PC's default headset |
 | Saves, local storage | folders under the save directory, with the console's quota |
-| Package, store | one installed package, an active full license, no DLC |
+| Package, store | one installed package with every chunk present, an active full license for the base game; the store itself is unreachable, so add-on licences, entitlements, purchases and token requests fail as offline and no DLC is ever licensed |
 | System UI | dialogs close at once: the cancel button, nobody picked, text entry canceled |
 | Network | up but with no connectivity, so the game takes its offline paths |
 | Display | HDR on when Windows runs the display in HDR, with its real brightness range; the screen stays awake on request |

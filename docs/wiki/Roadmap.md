@@ -13,7 +13,6 @@ The executable is in hand; `fivestar exe analyze` reports its imports and GDK ca
 | Pipeline creation | the game's five pipeline-creation methods build desktop pipelines from the translated shaders and the console pipeline cache |
 | Pipeline state | whole root signatures (the cache lists only the bindings each shader uses, with their user SGPRs) and the shader constants layout; blend, depth, raster state, render-target and depth formats and vertex formats already come from the driver's pipeline cache |
 | Present | the queue's present and frame-event methods, on a swap chain for the game's own window |
-| GDK | 65 of the 161 GDK functions the game calls have no shim yet: store, speech, package chunks, user tokens, certificate checks |
 | Audio | the console's audio hardware reports itself unavailable; what the game falls back to is not known yet |
 | Archive file table | names and exact entry boundaries stay encrypted; the game opens and reads its archives itself at run time |
 
