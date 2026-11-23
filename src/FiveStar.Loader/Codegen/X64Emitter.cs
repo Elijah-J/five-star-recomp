@@ -30,6 +30,7 @@ internal sealed class X64Emitter
     private static readonly byte[] MovRaxFromRspDisp8 = [0x48, 0x8B, 0x44, 0x24];
     private static readonly byte[] MovRaxFromRspDisp32 = [0x48, 0x8B, 0x84, 0x24];
     private static readonly byte[] MovR9FromRspDisp32 = [0x4C, 0x8B, 0x8C, 0x24];
+    private static readonly byte[] MovRdxFromRspEncoding = [0x48, 0x8B, 0x14, 0x24];
     private static readonly byte[] MovRcxFromGsDisp32 = [0x65, 0x48, 0x8B, 0x0C, 0x25];
     private static readonly byte[] MovGsDisp32FromEcx = [0x65, 0x89, 0x0C, 0x25];
     private static readonly byte[] MovGsDisp32QwordImm32 = [0x65, 0x48, 0xC7, 0x04, 0x25];
@@ -164,6 +165,12 @@ internal sealed class X64Emitter
     public void LoadRaxFromStack(byte displacement)
     {
         Emit(MovRaxFromRspDisp8, displacement);
+    }
+
+    /// <summary><c>mov rdx,[rsp]</c>: at a function's first instruction, its return address.</summary>
+    public void LoadRdxFromStackTop()
+    {
+        Emit(MovRdxFromRspEncoding);
     }
 
     /// <summary><c>mov rax,[rsp+disp32]</c>.</summary>
