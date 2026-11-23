@@ -35,14 +35,14 @@ internal static unsafe class BvhBuilderShim
     [UnmanagedCallersOnly]
     private static void BuildBatched(nint self, nint list, uint count, void* descs)
     {
-        ShimContext.Runtime.BvhBuilder.Note("BuildRaytracingAccelerationStructureBatched2X (no build)");
+        ShimContext.Runtime.BvhBuilder.Build(count, descs);
     }
 
     [Shim(Module, "?CopyRaytracingAccelerationStructure@XboxBvhBuilder@@QEAAXPEAUID3D12GraphicsCommandList4@@_K1W4D3D12_RAYTRACING_ACCELERATION_STRUCTURE_COPY_MODE@@@Z")]
     [UnmanagedCallersOnly]
     private static void Copy(nint self, nint list, ulong destination, ulong source, int mode)
     {
-        ShimContext.Runtime.BvhBuilder.Note("CopyRaytracingAccelerationStructure (no copy)");
+        ShimContext.Runtime.BvhBuilder.Copy(destination, source, mode);
     }
 
     [Shim(Module, "?GetRaytracingAccelerationStructurePrebuildInfo@XboxBvhBuilder@@QEAAXPEBUD3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS@@PEBUD3D12XBOX_XDXR_STREAM_DESC@@PEAUD3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO@@@Z")]

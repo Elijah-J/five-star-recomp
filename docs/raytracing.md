@@ -133,8 +133,10 @@ CPU (`RehydrateRaytracingAccelerationStructureX`, CPU addresses only, no device 
 |---|---|
 | Sizes | the DLL's own `GetRaytracingAccelerationStructurePrebuildInfo` with a stand-in object: CPU arithmetic that reads only its inputs and static globals, so the game allocates console-sized AMD structures (one-triangle BLAS: result 1024, scratch 16840; `--call GetRaytracingAccelerationStructurePrebuildInfo`) |
 | Rehydration | the DLL's CPU rehydration per desc, on a copy of the desc whose destination, transform, index and vertex addresses are replaced by their CPU addresses; every range is checked mapped first. The result lands in game memory, where the placed buffers and the shaders' memory window see it |
-| Dynamic BLAS / TLAS | `Bvh4Builder` (CPU) writes box32 and type-0 triangle nodes in the layout above; to be wired into the batched build with the console header, then moved to a compute shader |
-| DXR state objects | the game creates one; whether and how it dispatches rays is still to be traced before slot 101 is translated |
+| BLAS builds | the batched build on the CPU at record time (`BvhBatchBuilder`): geometry read through the CPU addresses of its vertex, index and transform buffers, built by `XdxrBlas`, written to the destination when it fits the console prebuild size; compacted-size and current-size requests get the structure size |
+| TLAS builds | skipped (logged once): the instance-node encoding is not fully known |
+| Copies | COMPACT copies the structure bytes unchanged (dword 1 gives the size; node pointers are relative to the structure) |
+| DXR state objects | not translated: no dispatch has been found |
 
 `--raytracing` turns on the DLL paths. Without it sizes come from the desktop device and nothing is written, as
 before.
@@ -145,8 +147,10 @@ before.
 longest centroid axis and gives each quarter to a child. Box nodes come first in preorder (the root is the first),
 then one triangle node per triangle written as the rehydration writes a lone triangle; pointers count from the BVH
 base, so the nodes go `nodeOffset` bytes after it.
+`XdxrBlas.Build` puts the nodes after a 64-byte header in the serialized layout: dword 1 size, 3 triangle count, 4..9 bounds, 10 box offset (0x40), 11 = 1 and 14 the copy size, 12 the root (box32 at 0x40), 13 the first triangle node, 15 = 0x7F7F7F. `TriangleDecoder` reads R16/R32 or no indices and R32G32B32_FLOAT, R32G32_FLOAT, R16G16(B16A16)_FLOAT and _SNORM positions, then the 3x4 transform.
+
 The test walks a built BVH with the reference model of the instruction and compares the closest hit of 400 rays
-with testing all 500 triangles.
+with testing all 500 triangles; a second builds an indexed, transformed mesh through the decoder and finds every triangle from the header's root. A loader test runs a batched desc as the game fills it through `BvhBatchBuilder`.
 
 ## Unknown
 

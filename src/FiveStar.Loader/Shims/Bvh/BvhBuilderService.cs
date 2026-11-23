@@ -14,7 +14,7 @@ namespace FiveStar.Loader.Shims.Bvh;
 /// What stands behind <see cref="BvhBuilderShim"/>. By default nothing is built and sizes come from the desktop
 /// device's prebuild query. With ray tracing on (<c>--raytracing</c>) the shipped DLL's CPU entry points take over:
 /// console sizes, so the game lays out AMD-format structures as on the console, and CPU rehydration of the serialized
-/// BLASes the game streams in (see docs/raytracing.md). Builds and copies stay skipped; each is logged once.
+/// BLASes the game streams in, CPU builds of bottom-level structures and compacting copies (see docs/raytracing.md).
 /// </summary>
 internal sealed unsafe class BvhBuilderService
 {
@@ -24,11 +24,16 @@ internal sealed unsafe class BvhBuilderService
     /// <summary>D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO: result, scratch and update-scratch sizes.</summary>
     private const int PrebuildInfoFields = 3;
 
+    /// <summary>D3D12_RAYTRACING_ACCELERATION_STRUCTURE_COPY_MODE_COMPACT, the only mode the DLL acts on.</summary>
+    private const int CompactMode = 1;
+
     private static readonly Guid Device5Iid = new("8b4f173b-2fea-4b80-8f58-4307191ab95d");
 
     private readonly XboxObjects _objects;
     private readonly ConsoleBvhModule _console;
     private readonly BvhRehydrator _rehydrator;
+    private readonly BvhBatchBuilder _builder;
+    private readonly GameMemorySource _memory;
     private readonly OnceLog _once;
     private nint _device5;
 
@@ -37,7 +42,9 @@ internal sealed unsafe class BvhBuilderService
         _objects = objects;
         _once = new OnceLog(log);
         _console = new ConsoleBvhModule(loader, log);
-        _rehydrator = new BvhRehydrator(_console, new GameMemorySource(memory), _once);
+        _memory = new GameMemorySource(memory);
+        _rehydrator = new BvhRehydrator(_console, _memory, _once);
+        _builder = new BvhBatchBuilder(_memory, _console, _once);
     }
 
     /// <summary>Whether the console DLL's CPU paths are used (<c>--raytracing</c>); off by default.</summary>
@@ -72,6 +79,52 @@ internal sealed unsafe class BvhBuilderService
         }
 
         return _rehydrator.Rehydrate(count, (byte*)descs, sources);
+    }
+
+    /// <summary>Builds bottom-level structures on the CPU with ray tracing on; else skips the batch.</summary>
+    public void Build(uint count, void* descs)
+    {
+        if (!Enabled || descs == null || !_console.TryBind())
+        {
+            Note("BuildRaytracingAccelerationStructureBatched2X (no build)");
+
+            return;
+        }
+
+        _builder.Build(count, (byte*)descs);
+    }
+
+    /// <summary>A compacting copy of a built or rehydrated structure with ray tracing on: its bytes, unchanged (node pointers are relative).</summary>
+    public void Copy(ulong destination, ulong source, int mode)
+    {
+        if (!Enabled || mode != CompactMode)
+        {
+            Note("CopyRaytracingAccelerationStructure (no copy)");
+
+            return;
+        }
+
+        byte* header = _memory.Find(source, SerializedBvhHeader.Size);
+
+        if (header == null || SerializedBvhHeader.IsSerialized(header))
+        {
+            Note("CopyRaytracingAccelerationStructure (source unreadable or serialized)");
+
+            return;
+        }
+
+        ulong size = SerializedBvhHeader.TotalSize(header);
+        byte* from = _memory.Find(source, size);
+        byte* to = _memory.Find(destination, size);
+
+        if (from == null || to == null)
+        {
+            Note("CopyRaytracingAccelerationStructure (range not mapped)");
+
+            return;
+        }
+
+        Buffer.MemoryCopy(from, to, size, size);
     }
 
     private void DesktopPrebuildInfo(void* inputs, ulong* info)
