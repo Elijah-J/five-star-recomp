@@ -3,6 +3,8 @@
 
 using System.Runtime.InteropServices;
 using FiveStar.Loader.Native;
+using FiveStar.Loader.Shims.D3D12X.Resources;
+using FiveStar.Loader.Shims.D3D12X.States;
 
 namespace FiveStar.Loader.Shims.D3D12X;
 
@@ -85,14 +87,18 @@ internal static unsafe class XboxDeviceCreation
         return ShimContext.Runtime.D3D12X.CommandLists.Create(self->Inner, type, allocator, pipelineState, list);
     }
 
+    /// <summary>Desktop CreateCommittedResource with the desc and clear value made desktop ones, in the resource's home state.</summary>
     [UnmanagedCallersOnly]
     public static int CreateCommittedResource(XboxObject* self, void* properties, int flags, ResourceDescription* description, int state, void* clear, Guid* iid, nint* resource)
     {
         nint inner = self->Inner;
         var desktop = Descriptions.ToDesktop(inner, description);
+        int home = ResourceStates.Home(desktop.Dimension, desktop.Flags, state);
+        byte* clearCopy = stackalloc byte[DepthViewDescriptions.ClearValueSize];
         var create = (delegate* unmanaged<nint, void*, int, ResourceDescription*, int, void*, Guid*, nint*, int>)ComObject.Slot(inner, CreateCommittedResourceSlot);
+        int hr = create(inner, properties, flags, &desktop, home, DepthViewDescriptions.ClearValue(clear, clearCopy), iid, resource);
 
-        return Objects.WrapResult(create(inner, properties, flags, &desktop, state, clear, iid, resource), XboxInterfaceKind.Resource, resource);
+        return WrapResource(hr, resource, desktop.Dimension, home);
     }
 
     [UnmanagedCallersOnly]
@@ -100,10 +106,12 @@ internal static unsafe class XboxDeviceCreation
     {
         nint inner = self->Inner;
         var desktop = Descriptions.ToDesktop(inner, description);
+        int home = ResourceStates.Home(desktop.Dimension, desktop.Flags, state);
+        byte* clearCopy = stackalloc byte[DepthViewDescriptions.ClearValueSize];
         var create = (delegate* unmanaged<nint, nint, ulong, ResourceDescription*, int, void*, Guid*, nint*, int>)ComObject.Slot(inner, CreatePlacedResourceSlot);
-        int hr = create(inner, Objects.Unwrap(heap), offset, &desktop, state, clear, iid, resource);
+        int hr = create(inner, Objects.Unwrap(heap), offset, &desktop, home, DepthViewDescriptions.ClearValue(clear, clearCopy), iid, resource);
 
-        return Objects.WrapResult(hr, XboxInterfaceKind.Resource, resource);
+        return WrapResource(hr, resource, desktop.Dimension, home);
     }
 
     [UnmanagedCallersOnly]
@@ -111,9 +119,12 @@ internal static unsafe class XboxDeviceCreation
     {
         nint inner = self->Inner;
         var desktop = Descriptions.ToDesktop(inner, description);
+        int home = ResourceStates.Home(desktop.Dimension, desktop.Flags, state);
+        byte* clearCopy = stackalloc byte[DepthViewDescriptions.ClearValueSize];
         var create = (delegate* unmanaged<nint, ResourceDescription*, int, void*, Guid*, nint*, int>)ComObject.Slot(inner, CreateReservedResourceSlot);
+        int hr = create(inner, &desktop, home, DepthViewDescriptions.ClearValue(clear, clearCopy), iid, resource);
 
-        return Objects.WrapResult(create(inner, &desktop, state, clear, iid, resource), XboxInterfaceKind.Resource, resource);
+        return WrapResource(hr, resource, desktop.Dimension, home);
     }
 
     /// <summary>
@@ -266,5 +277,18 @@ internal static unsafe class XboxDeviceCreation
         }
 
         return changed;
+    }
+
+    /// <summary>Wraps a created resource and records its dimension and home state on the wrapper.</summary>
+    private static int WrapResource(int hr, nint* resource, int dimension, int home)
+    {
+        hr = Objects.WrapResult(hr, XboxInterfaceKind.Resource, resource);
+
+        if (!HResult.Failed(hr) && resource != null)
+        {
+            ResourceStates.Record(Objects.AsResource(*resource), dimension, home);
+        }
+
+        return hr;
     }
 }

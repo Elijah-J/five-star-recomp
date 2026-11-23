@@ -5,7 +5,7 @@ using FiveStar.Loader.Native;
 
 namespace FiveStar.Loader.Shims.D3D12X.Present;
 
-/// <summary>Turns a <see cref="PresentPlane"/> into a <see cref="PlaneSource"/>: unwraps the resource and clamps the rect.</summary>
+/// <summary>Turns a <see cref="PresentPlane"/> into a <see cref="PlaneSource"/>: unwraps the resource, takes its home state and clamps the rect.</summary>
 internal static unsafe class PlaneReader
 {
     /// <summary>The size shown when a plane has no resource to take it from.</summary>
@@ -32,7 +32,7 @@ internal static unsafe class PlaneReader
         {
             var empty = new CopyBox { Right = FallbackWidth, Bottom = FallbackHeight, Back = 1 };
 
-            return new PlaneSource(0, empty, SwapChainFormats.Rgba8Unorm, SwapChainFormats.Srgb, false);
+            return new PlaneSource(0, TransitionBarrier.RenderTargetState, empty, SwapChainFormats.Rgba8Unorm, SwapChainFormats.Srgb, false);
         }
 
         ResourceDescription description;
@@ -46,7 +46,7 @@ internal static unsafe class PlaneReader
             format = SwapChainFormats.Rgba8Unorm;
         }
 
-        return new PlaneSource(resource, box, format, SwapChainFormats.ColorSpace(format, plane->ColorSpace), copyable);
+        return new PlaneSource(resource, HomeState(objects, plane->Resources[0]), box, format, SwapChainFormats.ColorSpace(format, plane->ColorSpace), copyable);
     }
 
     /// <summary>The source rect inside the resource; the whole resource without one, or when it is empty.</summary>
@@ -81,5 +81,19 @@ internal static unsafe class PlaneReader
         }
 
         return box;
+    }
+
+    /// <summary>The state the plane's resource rests in: its recorded home state, RENDER_TARGET for one the shim did not create.</summary>
+    [HotPath]
+    private static int HomeState(XboxObjects objects, nint resource)
+    {
+        var wrapper = objects.AsResource(resource);
+
+        if (wrapper == null || wrapper->Dimension == States.ResourceStates.UnknownDimension)
+        {
+            return TransitionBarrier.RenderTargetState;
+        }
+
+        return wrapper->HomeState;
     }
 }

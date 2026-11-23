@@ -3,6 +3,7 @@
 
 using System.Runtime.InteropServices;
 using FiveStar.Loader.Native;
+using FiveStar.Loader.Shims.D3D12X.Resources;
 
 namespace FiveStar.Loader.Shims.D3D12X;
 
@@ -62,7 +63,9 @@ internal static unsafe class XboxDescriptorMethods
     [UnmanagedCallersOnly]
     public static void CreateShaderResourceView(XboxObject* self, nint resource, void* description, nint handle)
     {
-        CreateView(self, CreateShaderResourceViewSlot, resource, description, handle);
+        nint desktop = D3D12X.Objects.Unwrap(resource);
+        byte* copy = stackalloc byte[DepthViewDescriptions.ShaderResourceViewSize];
+        CreateDesktopView(self, CreateShaderResourceViewSlot, desktop, DepthViewDescriptions.ShaderResourceView(desktop, description, copy), handle);
     }
 
     [HotPath]
@@ -76,7 +79,9 @@ internal static unsafe class XboxDescriptorMethods
     [UnmanagedCallersOnly]
     public static void CreateDepthStencilView(XboxObject* self, nint resource, void* description, nint handle)
     {
-        CreateView(self, CreateDepthStencilViewSlot, resource, description, handle);
+        nint desktop = D3D12X.Objects.Unwrap(resource);
+        byte* copy = stackalloc byte[DepthViewDescriptions.DepthStencilViewSize];
+        CreateDesktopView(self, CreateDepthStencilViewSlot, desktop, DepthViewDescriptions.DepthStencilView(desktop, description, copy), handle);
     }
 
     [HotPath]
@@ -137,9 +142,15 @@ internal static unsafe class XboxDescriptorMethods
     [HotPath]
     private static void CreateView(XboxObject* self, int slot, nint resource, void* description, nint handle)
     {
+        CreateDesktopView(self, slot, D3D12X.Objects.Unwrap(resource), description, handle);
+    }
+
+    [HotPath]
+    private static void CreateDesktopView(XboxObject* self, int slot, nint resource, void* description, nint handle)
+    {
         nint inner = self->Inner;
         var create = (delegate* unmanaged<nint, nint, void*, nint, void>)ComObject.Slot(inner, slot);
-        create(inner, D3D12X.Objects.Unwrap(resource), description, Handle(handle));
+        create(inner, resource, description, Handle(handle));
     }
 
     [HotPath]

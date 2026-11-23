@@ -3,6 +3,7 @@
 
 using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Native;
+using FiveStar.Loader.Shims.D3D12X.States;
 using FiveStar.Loader.Shims.Xg;
 
 namespace FiveStar.Loader.Shims.D3D12X.Resources;
@@ -48,15 +49,16 @@ internal sealed unsafe class GpuTextures : IDisposable
     public GpuTextureUploader Uploader { get; } = new();
 
     /// <summary>
-    /// Slot 133: the desktop texture for <paramref name="address"/> in the state of <paramref name="initialLayout"/>,
-    /// registered and, unless GPU-written, filled from memory. Returns the HRESULT; <paramref name="desktop"/> is the
-    /// caller's reference.
+    /// Slot 133: the desktop texture for <paramref name="address"/> in its home state <paramref name="state"/>
+    /// (<see cref="ResourceStates.Home"/> of <paramref name="initialLayout"/>), registered and, unless GPU-written,
+    /// filled from memory. Returns the HRESULT; <paramref name="desktop"/> is the caller's reference.
     /// </summary>
-    public int CreatePlaced(nint device, ulong address, ResourceDescription* description, int initialLayout, void* clear, out nint desktop)
+    public int CreatePlaced(nint device, ulong address, ResourceDescription* description, int initialLayout, void* clear, out nint desktop, out int state)
     {
         var desc = _descriptions.ToDesktop(device, description);
-        int state = BarrierLayouts.ToState(initialLayout);
-        int hr = CreateCommitted(device, &desc, state, clear, out desktop);
+        state = ResourceStates.Home(desc.Dimension, desc.Flags, BarrierLayouts.ToState(initialLayout));
+        byte* clearCopy = stackalloc byte[DepthViewDescriptions.ClearValueSize];
+        int hr = CreateCommitted(device, &desc, state, DepthViewDescriptions.ClearValue(clear, clearCopy), out desktop);
         Counters.Add(GpuResourceEvent.PlacedTexture);
 
         if (HResult.Failed(hr))
