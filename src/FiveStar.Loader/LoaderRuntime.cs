@@ -38,7 +38,7 @@ internal sealed class LoaderRuntime : IDisposable
         VirtualModules = new VirtualModules(log);
         Patcher = new ImagePatcher(Shims, log);
         Trace = new CallTrace(CodeHeap);
-        Faults = new FaultReporter(Images, Trace, log);
+        Faults = new FaultReporter(Images, Trace, CodeHeap, log);
 
         Loader = new ImageLoader(options, Shims, Stubs, Images, CodeHeap, new TlsHostAttacher(options.WorkDirectory, options.ProcessId, log), Patcher, Trace, log);
         Router = new RuntimeLibraryRouter(Loader, VirtualModules, Shims, Images, log);
