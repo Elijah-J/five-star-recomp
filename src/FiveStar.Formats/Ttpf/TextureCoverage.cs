@@ -6,8 +6,8 @@ using FiveStar.Formats.Common;
 namespace FiveStar.Formats.Ttpf;
 
 /// <summary>
-/// Decides which textures of a page file can be extracted without decoding anything: a texture counts as ok when its
-/// layout is known and no page under its mip 0 is BCPack.
+/// Decides which textures of a page file can be extracted without reading their pages: a texture counts as ok when its
+/// layout is known and every page under its mip 0 can be decoded (stored, zlib or BCPack BC1).
 /// </summary>
 public sealed class TextureCoverage
 {
@@ -37,7 +37,7 @@ public sealed class TextureCoverage
         return new CoverageReport(textures, spanBytes, blockers);
     }
 
-    /// <summary>The codec of the first BCPack page overlapping [start, start + size), or null when there is none.</summary>
+    /// <summary>The codec of the first undecodable BCPack page overlapping [start, start + size), or null when there is none.</summary>
     public int? BlockingCodec(long start, long size)
     {
         var index = Math.Max(_file.PageAt(start), 0);
@@ -46,7 +46,7 @@ public sealed class TextureCoverage
         {
             var page = _file.Pages[index];
 
-            if (page.IsBcPack && page.VirtualAddress + page.EffectiveVirtualSize > start)
+            if (!page.IsDecodable && page.VirtualAddress + page.EffectiveVirtualSize > start)
             {
                 return page.Codec;
             }

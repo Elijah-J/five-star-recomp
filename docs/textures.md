@@ -78,22 +78,50 @@ of its position. An element is a 4x4 block for BC formats and a pixel otherwise.
 
 ## Page codecs
 
-zlib pages decode with any zlib inflater. Codecs 1 and 3 to 7 are the console's BCPack format, one per BC format; no
-decoder exists. A BCPack page starts with a 48-byte header of 6 rows by 8 lanes (byte `8 * row + lane`):
+zlib pages decode with any zlib inflater. Codecs 1 and 3 to 7 are the console's BCPack format, one per BC format (the
+codec equals `DSTORAGE_BCPACK_MODE`). BC1 (codec 1) decodes; pages of the other codecs read as missing.
 
-| Row | Meaning |
+### BCPack BC1
+
+A BC1 page decodes to `virtual size / 8` BC1 blocks in the page's stored order. They replace the page's virtual
+bytes, so untiling works as for any other page. The decoder is in `src/FiveStar.Formats/Ttpf/BcPack`; it implements
+the decoder of [bcpack-rs](https://github.com/Ahmet-Dedeler/bcpack-rs), whose lanes follow the decoder module of
+Microsoft's [silicon-rans](https://github.com/microsoft/silicon-rans) (`mdu_minirans.v`). Both are MIT licensed;
+see `THIRD_PARTY_NOTICES.md`.
+
+```mermaid
+flowchart LR
+    stream["stored bytes"] --> feeder["feeder: up to 8 bytes per clock, in lane order"]
+    feeder --> lanes["12 rANS lanes"]
+    lanes --> vector["one symbol per lane = one block"]
+    vector --> block["BC1 block: endpoints + indices"]
+```
+
+| Part | Behaviour |
 |---|---|
-| 0 | Lane model byte |
-| 1 | Refill bytes the lane reads + 3 |
-| 2-5 | 32-bit rANS start state, big-endian |
+| Lane state | 32 bits, lower bound L = 2^24, renormalised one byte at a time, 16-bit probabilities |
+| Models | static tables `[alphabet index 0-8][q 0-15][segment 0-9]` of `base`, `freq`, `rf`, `rs`, `rn` (`Tables/mdu_models.json`) |
+| Fragment header | byte 0: bits 0-3 model q, bit 4 flush (state restarts at 0), bit 5 three-byte header, bits 6-7 narrow the lane's alphabet. Payload length: byte 1 + 1, or `(byte 2 << 8 | byte 1) + 257` |
+| Fragment end | the lane drains (decodes without input) until its state is L or below, then reads the next header |
+| Lane end | after one symbol per block; the final state must be L, L / 2^8 or L / 2^16 |
+| Feeder | every clock, each lane that needs a byte gets the next one, in lane order 0-11, at most 8 per clock; a lane that holds an unreleased symbol waits |
+| Release | when all 12 lanes hold a symbol, the symbols form one block |
+| Convergence | every lane ends legally and only zero bytes follow the stream |
 
-The coder renormalises byte-wise with 16-bit probabilities and lower bound 2^24. Model bytes 0xDB, 0xDC, 0xDD, 0xDE
-give one symbol the frequency 65536 - E (E = 2, 4, 8, 32) at cumulative start 1. A lane that codes only that symbol N
-times (N = blocks per page, or twice that for 16-byte blocks) has a start state that depends only on N;
-`texture bcpack` checks these lanes. The model byte splits into a family (bits 5-7) and a parameter (bits 0-4).
-After the header, every lane whose budget is not 3 reads one byte, in lane order; the budget wraps at 256, so budgets
-0-2 read too. Lanes read the shared stream in lane order from there on, but a lane's bytes go past its budget and the
-rest of the layout is not known. Research notes: `docs/wiki/Textures-and-BCPack.md`.
+| Lane | Symbol |
+|---|---|
+| 0 | Back-reference distance d (zigzag, mod 256): the endpoints start from block i - d, or from a 256-slot preset window when i - d is before block 0 |
+| 1 | Unused (always 0) |
+| 2-7 | Zigzag residuals added to R0 G0 B0 R1 G1 B1, each wrapping within its 5- or 6-bit field |
+| 8-11 | The 2x2 index groups TL, TR, BL, BR, each through a 256-entry codebook |
+
+The entropy tables are exact copies of the hardware's. The preset window (`Tables/bc1_window.json`) and the codebook
+(`Tables/bc1_quad_table.json`) were fitted to retail data by bcpack-rs; we refitted 26 window slots, including slot
+4, which upstream left empty, and swapped two codebook pairs. Each changed entry keeps the upstream value. Slot 0 is
+never read. The fits and the checks are on the wiki page Textures and BCPack.
+
+Three engines give the same bytes: AVX-512 (all lanes in one 16-lane vector), AVX2 (two 8-lane vectors) and a
+portable scalar one. The fastest one the processor supports runs.
 
 ## Duplicate table
 
@@ -114,21 +142,26 @@ FourCC `DX10`, then `DDS_HEADER_DXT10` {format, 2D, cube flag for 6 faces, array
 
 ```
 fivestar texture extract  <file.ttpf> <out dir> [--limit N] [--only i,j] [--no-dds]
-fivestar texture coverage <dir>                  textures readable without BCPack, per file and in total
+fivestar texture coverage <dir>                  textures whose pages all decode, per file and in total
 fivestar texture codecs   <dir>                  pages and stored bytes per storage kind
 fivestar texture pages    <file.ttpf>            three sample entries per flag value, then counts per flag and kind
-fivestar texture bcpack   <file.ttpf> [--limit N] [--codec C]
-fivestar texture bcpack   <dir> --stats
-fivestar texture bcpack   <dir> --models         model use per codec and lane, and the twin-lane check
+fivestar texture bcpack-scan  <file|dir>... [--every N] [--jobs N] [--engine avx512|avx2|scalar] [--hashes FILE] [--quiet]
+fivestar texture bcpack-bench <file|dir>... [--pages N] [--seconds S] [--engine avx512|avx2|scalar]
 ```
 
 Statuses: `ok`, `skip_fmt_N` (format not supported), `skip_modeN` (no swizzle known), `skip_cube_span`,
-`skip_size`, `skip_cube_mips`, `skip_unsupported_codec` (mip 0 on a BCPack page), and in `coverage`
-`bcpack_codecN`.
+`skip_size`, `skip_cube_mips`, `skip_unsupported_codec` (mip 0 on a BCPack page of codec 3 to 7), and in
+`coverage` `bcpack_codecN`.
+
+`bcpack-scan` decodes every BC1 page on all cores and prints, per file and in total, the pages that converge, fail
+or reach an unfitted window slot, with the decode speed. `--hashes` writes one line per page (path, virtual address,
+status, SHA-256 of the blocks, unfitted blocks) to compare engines or builds. `bcpack-bench` measures one core on
+sampled pages, by page size.
 
 ## Unknown
 
-- BCPack data lanes and index coding.
+- The BCPack lane layouts of codecs 3 to 7.
+- Values of the BC1 preset window and codebook that no page of this dump tests.
 - Layout base 4, and what separates bases 1, 2 and 3.
 - Mipped cube map layout.
 - `o1`, `o0` bits 21-31 and the page tag.

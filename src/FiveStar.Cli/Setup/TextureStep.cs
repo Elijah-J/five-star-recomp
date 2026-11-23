@@ -23,7 +23,7 @@ internal sealed class TextureStep : ISetupStep
     private const string MarkExtension = ".done";
     private const int BytesPerMebibyte = 1 << 20;
 
-    // Measured: the DDS files take 0.9 to 2.2 times their page file (mip 0 uncompressed, BCPack pages skipped).
+    // Measured: the DDS files take 0.9 to 2.2 times their page file (mip 0 only; BCPack pages of codecs 3 to 7 skipped).
     private const double SpaceFactor = 2;
 
     // One sampled texture is assumed to take at most 4 MiB.

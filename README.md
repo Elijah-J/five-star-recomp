@@ -24,7 +24,7 @@ that can be built and verified without it.
 |---|---|
 | Shader translation | Every shader stage the game uses is translated (vertex, pixel, compute, mesh, geometry, ray intersection), and all 25,884 programs compile. Branches become structured `if`/`else` and loops, 39% smaller than the older dispatch loop and checked to give the same results on real programs. Instruction behaviour is checked on D3D12 WARP. |
 | Archives | Contents can be extracted without the encrypted file table (no names yet). Metadata files parse completely. |
-| Textures | Most textures export; pages using the console's BCPack compression cannot be decoded yet. |
+| Textures | 99.3% of textures export, including pages in the console's BCPack BC1 format; the other BCPack formats (mostly BC7) cannot be decoded yet. |
 | Models | Drawable geometry (meshlets, packed vertices) decodes and exports as OBJ ([docs/models.md](docs/models.md)). |
 | Loader | The game's support libraries load with all imports resolved; the console runtime is implemented for offline use. |
 | Graphics API | Needs the executable to see how the game drives the GPU. A first frame works: game textures and models drawn with the game's translated unlit pass and its cached pipeline state on our own D3D12 code ([docs/rendering.md](docs/rendering.md)). |
@@ -82,6 +82,7 @@ The loader is a separate program, `fivestar-loader`; see [docs/loader.md](docs/l
 | `tests/` | tests per project, plus the code-rule checks |
 | `docs/` | one page per format and tool |
 | `docs/wiki/` | the source of the project wiki: status, roadmap and research notes |
+| `vendor/` | third-party test data, each folder with its provenance and licenses |
 
 ## Contributing
 
@@ -90,7 +91,8 @@ to submit a change.
 
 ## License
 
-GNU General Public License v3.0 or later. See [LICENSE](LICENSE).
+GNU General Public License v3.0 or later. See [LICENSE](LICENSE). Parts based on MIT-licensed projects are listed in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 Five Star Recomp is a fan project. It is not affiliated with or endorsed by Rockstar Games, Take-Two Interactive or
 Microsoft. Grand Theft Auto and Grand Theft Auto VI are trademarks of Take-Two Interactive. You need your own copy of

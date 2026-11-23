@@ -18,7 +18,7 @@ work covers everything that can be built and checked without it.
 | Translator checks | 134 tests pass, most of them on D3D12 WARP, and 4 are skipped (they need a full 32 or 64-lane wave); ray intersection is bit-exact; the built-in RDNA decoder matches LLVM on all 44 million instructions of the corpus |
 | Archives | about 68% of all archive bytes extract without the encrypted file table; file names are not known |
 | Metadata (PSO) | 6,026 metadata files and about 39,700 paged resources parse completely |
-| Textures | 315,483 of 357,115 (88.3%) export across all 57 texture files; most of the rest use BCPack pages |
+| Textures | 354,520 of 357,115 (99.3%) export across all 57 texture files; all 102,725 BCPack BC1 pages decode; 2,112 textures wait for the other BCPack codecs (mostly BC7) |
 | Models | 4,304,262 of 4,306,994 geometries (99.94%) of 383,907 drawables decode across 7 archives: meshlets, packed positions, normals, texture coordinates; OBJ export |
 | Videos | 515 Bink 2 videos extract from `movies.rpf` |
 | Audio | all 1,603,231 sounds in `audio.rpf` export as Ogg Opus or WAV (Opus, XMA2, PCM) |

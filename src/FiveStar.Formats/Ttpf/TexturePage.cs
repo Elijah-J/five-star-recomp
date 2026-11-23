@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+using FiveStar.Formats.Ttpf.BcPack;
+
 namespace FiveStar.Formats.Ttpf;
 
 /// <summary>
@@ -19,6 +21,9 @@ public sealed record TexturePage(long VirtualAddress, byte Flag, long FileOffset
     /// <summary>The virtual size assumed for a page whose size is unknown.</summary>
     public const int DefaultVirtualSize = 0x4000;
 
+    /// <summary>The codec of BCPack BC1 pages (DSTORAGE_BCPACK_MODE BC1).</summary>
+    public const int Bc1Codec = 1;
+
     private const int ZlibFlag = 0x20;
     private const int CodecShift = 2;
     private const int CodecMask = 7;
@@ -29,8 +34,28 @@ public sealed record TexturePage(long VirtualAddress, byte Flag, long FileOffset
     /// <summary>Gets the codec number (0 = stored).</summary>
     public int Codec => (Flag >> CodecShift) & CodecMask;
 
-    /// <summary>Gets a value indicating whether the page is BCPack (no decoder exists).</summary>
+    /// <summary>Gets a value indicating whether the page is BCPack.</summary>
     public bool IsBcPack => !IsZlib && Codec != 0;
+
+    /// <summary>
+    /// Gets a value indicating whether the page's bytes can be read: stored, zlib, or BCPack BC1 with a known virtual
+    /// size of whole blocks (<see cref="Bc1Decoder"/>). BCPack pages of the other codecs cannot be decoded yet.
+    /// </summary>
+    public bool IsDecodable => !IsBcPack || (Codec == Bc1Codec && Bc1Blocks > 0);
+
+    /// <summary>Gets the BC1 blocks a BCPack BC1 page decodes to, or 0 when its virtual size is unknown or not whole blocks.</summary>
+    public int Bc1Blocks
+    {
+        get
+        {
+            if (VirtualSize <= 0 || VirtualSize % Bc1Decoder.BlockSize != 0 || VirtualSize / Bc1Decoder.BlockSize > Bc1Decoder.MaxBlocks)
+            {
+                return 0;
+            }
+
+            return (int)(VirtualSize / Bc1Decoder.BlockSize);
+        }
+    }
 
     /// <summary>Gets the virtual size, with <see cref="DefaultVirtualSize"/> standing in for 0.</summary>
     public long EffectiveVirtualSize
