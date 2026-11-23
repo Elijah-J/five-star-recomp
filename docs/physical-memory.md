@@ -48,9 +48,14 @@ flowchart LR
     V -->|UnmapViewOfFile2 MEM_PRESERVE_PLACEHOLDER| P
 ```
 
-- **Pages** (`XMemPageStore`): sections of 1024 pages made with `CreateFileMapping2(SEC_COMMIT)` as pages are first
-  needed; page n is a fixed offset in one section. The store keeps a read-write view of each whole section; freed pages
-  are zeroed through it and reused first.
+- **Pages** (`XMemPageStore`): sections of 1024 pages (or a multiple, for a larger request) made with
+  `CreateFileMapping2(SEC_COMMIT)` as pages are first needed. A request for one page takes a freed page first; a
+  request for several takes fresh consecutive pages of one section (a group, `XMemPageGroup`), and which page backs
+  which of its frames is decided at the frame's first mapping: the page at the mapped address's offset from the
+  origin of the group's first mapping, the start of the game placeholder the reservation was split from. So the GPU
+  pool the game maps from one allocation, later piece first (0x141E86400), lies in address order in one section,
+  and the D3D12 shim places one buffer over it. The store keeps a read-write view of each whole section; freed pages
+  are zeroed through it.
 - **Reservations** (`XMemReservation`): MEM_64K_PAGES without MEM_COMMIT is a placeholder from
   `VirtualAlloc2(MEM_RESERVE_PLACEHOLDER)`, or the game's own placeholder piece when MEM_REPLACE_PLACEHOLDER is set.
   Mapping splits the 64 KiB slot off (`VirtualFree(MEM_RELEASE | MEM_PRESERVE_PLACEHOLDER)`) and replaces it with a
@@ -80,13 +85,13 @@ memory and used = resident set; everything else is zero. The other caller (flags
 On the console a mapped page has the same address for the GPU and the CPU. The D3D12.X shim cannot keep that on PC
 but can give the GPU the same memory:
 
-- Open each page section as a heap with `ID3D12Device3::OpenExistingHeapFromFileMapping` (`XMemPageChunk.Section`).
-  `OpenExistingHeapFromAddress` is for `VirtualAlloc` memory, not section views.
+- Open the store's whole view of each page section as a heap with `ID3D12Device3::OpenExistingHeapFromAddress`
+  (`OpenExistingHeapFromFileMapping` rejects the pagefile sections).
 - Translate a game address with `XMemPhysicalMemory.TryLocate` to (section, offset), then to the GPU address of a
   buffer placed over that heap (`CreatePlacedResource`) plus the offset. Contiguity ends at each 64 KiB page unless
   the frames are consecutive in one section.
-- For a GPU range that must stay contiguous across scattered pages, a reserved resource per reservation with
-  `UpdateTileMappings` mirrors each map and unmap: a tile is 64 KiB, the page size.
+- A reserved resource with `UpdateTileMappings` onto these heaps is refused (the runtime: no tile mappings on
+  cross-adapter heaps), so scattered pages cannot be stitched into one GPU range this way.
 - Limits: heaps opened from a file mapping are system-memory (CPU-visible) heaps read over PCIe; textures in them
   are restricted to row-major layouts, so tiled console textures need a copy into a default heap.
 
@@ -99,4 +104,3 @@ The game calls the device right after mapping (vtable +0x250 with the address an
   contiguous; mapping into 2 MiB (MEM_LARGE_PAGES) reservations, which take one frame per 32-page cluster and are
   not supported here.
 - The working-set structure beyond its first two qwords, and the 0x20000000 flag bit.
-- Whether tiled resources can map into heaps opened from file mappings.
