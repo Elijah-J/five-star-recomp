@@ -62,6 +62,57 @@ public sealed unsafe class OfflineServicesTests
         Assert.Equal(Abort, status(purchase, 1));
     }
 
+    // XStoreGameLicense (XStore.h, 104 bytes): the fields the game reads after XStoreQueryGameLicenseResult.
+    private const int LicenseSize = 104;
+    private const int LicenseIsActiveOffset = 0x12;
+    private const int LicenseTrialOwnedOffset = 0x13;
+    private const int LicenseIsTrialOffset = 0x15;
+    private const int LicenseTrialIdOffset = 0x1C;
+    private const int LicenseExpirationOffset = 0x60;
+
+    [Fact]
+    public void Game_license_is_an_active_full_license_at_the_offsets_the_game_reads()
+    {
+        using var test = TestRuntime.Create();
+        nint context = 0;
+        ((delegate* unmanaged<nint, nint*, int>)test.Gdk("XStoreCreateContext"))(0, &context);
+        nint block = TestNative.AsyncBlock(0, 0);
+
+        ((delegate* unmanaged<nint, nint, int>)test.Gdk("XStoreQueryGameLicenseAsync"))(context, block);
+        int done = ((delegate* unmanaged<nint, byte, int>)test.Gdk("XAsyncGetStatus"))(block, 1);
+        byte* license = stackalloc byte[LicenseSize];
+        new Span<byte>(license, LicenseSize).Fill(0xCC);
+        int result = ((delegate* unmanaged<nint, byte*, int>)test.Gdk("XStoreQueryGameLicenseResult"))(block, license);
+
+        Assert.Equal(0, done);
+        Assert.Equal(0, result);
+        Assert.Equal(1, license[LicenseIsActiveOffset]);
+        Assert.Equal(new byte[3], new Span<byte>(license + LicenseTrialOwnedOffset, LicenseIsTrialOffset - LicenseTrialOwnedOffset + 1).ToArray());
+        Assert.Equal(0, license[LicenseTrialIdOffset]);
+        Assert.Equal(long.MaxValue, *(long*)(license + LicenseExpirationOffset));
+    }
+
+    [Fact]
+    public void Installation_monitor_calls_its_progress_callback_once_with_the_install_complete()
+    {
+        using var test = TestRuntime.Create();
+        NativeCallbacks.Reset();
+        nint monitor = 0;
+        ((delegate* unmanaged<nint, uint, nint, uint, nint, nint*, int>)test.Gdk("XPackageCreateInstallationMonitor"))(0, 0, 0, 1000, 0, &monitor);
+        ulong token = 0;
+        nint callback = (nint)(delegate* unmanaged<nint, nint, void>)&NativeCallbacks.ProgressChanged;
+
+        int registered = ((delegate* unmanaged<nint, nint, nint, ulong*, int>)test.Gdk("XPackageRegisterInstallationProgressChanged"))(monitor, 0x77, callback, &token);
+        byte* progress = stackalloc byte[ProgressSize];
+        ((delegate* unmanaged<nint, byte*, void>)test.Gdk("XPackageGetInstallationProgress"))(monitor, progress);
+
+        Assert.Equal(0, registered);
+        Assert.NotEqual(0UL, token);
+        Assert.True(SpinWait.SpinUntil(() => !NativeCallbacks.Items.IsEmpty, TimeSpan.FromSeconds(5)));
+        Assert.Equal($"77:{monitor:x}", Assert.Single(NativeCallbacks.Items));
+        Assert.Equal(1, progress[ProgressCompletedOffset]);
+    }
+
     [Fact]
     public void Install_chunks_completes_with_a_finished_monitor_and_speech_is_unavailable()
     {

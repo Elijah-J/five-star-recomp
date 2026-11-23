@@ -152,6 +152,13 @@ internal static unsafe class NativeCallbacks
         return 1;
     }
 
+    /// <summary>XPackageInstallationProgressCallback: "context:monitor" in hex.</summary>
+    [UnmanagedCallersOnly]
+    public static void ProgressChanged(nint context, nint monitor)
+    {
+        Items.Enqueue($"{context:x}:{monitor:x}");
+    }
+
     /// <summary>XPackageEnumerationCallback: the package identifier.</summary>
     [UnmanagedCallersOnly]
     public static byte Package(nint context, nint details)
