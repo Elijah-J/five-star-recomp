@@ -6,6 +6,7 @@ using FiveStar.Loader.Codegen;
 using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Loading;
 using FiveStar.Loader.Native;
+using FiveStar.Loader.Shims.D3D12X.Binding;
 using FiveStar.Loader.Shims.D3D12X.DebugLayer;
 using FiveStar.Loader.Shims.D3D12X.Pipelines;
 using FiveStar.Loader.Shims.D3D12X.Present;
@@ -58,12 +59,14 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         GameMemory = new XboxGameMemoryBuffers(Objects, PlacedResources.Addresses, log);
 
         var hooks = new TitleMemoryHooks(images);
-        DescriptorHeaps = new XboxDescriptorHeaps(Objects, hooks, log);
+        Bindings = new XboxBindings(log, Warnings);
+        DescriptorHeaps = new XboxDescriptorHeaps(Objects, hooks, Bindings.Window, log);
         CommittedResources = new XboxCommittedResources(Objects, Descriptions, hooks, log);
         Presenter = new Presenter(Objects, Warnings, log);
 
         BindDeviceSlots();
         BindObjectSlots();
+        XboxBindings.Register(Objects);
     }
 
     /// <summary>The wrappers and their vtables; <see cref="XboxObjects.SetHandler"/> is where other shims bind slots.</summary>
@@ -86,6 +89,9 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
 
     /// <summary>The pipeline slots (55, 57, 62, 67, 86) once a device exists and the shader folders are known.</summary>
     public PipelineSlots? Pipelines { get; private set; }
+
+    /// <summary>Descriptor heaps, root signatures and root arguments on command lists.</summary>
+    public XboxBindings Bindings { get; }
 
     /// <summary>Device slot 14 and the title-memory descriptor handles.</summary>
     public XboxDescriptorHeaps DescriptorHeaps { get; }
@@ -135,6 +141,7 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
 
         Debugging.AttachDevice(inner);
         *device = Objects.WrapDevice(inner);
+        Bindings.Attach(inner);
         CreatePipelines(inner);
 
         return HResult.Ok;
@@ -176,9 +183,9 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
 
         Guid device2Iid = DesktopDevice.Device2Iid;
         nint device2 = 0;
-        nint root = 0;
+        nint root = Bindings.Root;
 
-        if (HResult.Failed(DesktopDevice.QueryInterface(inner, &device2Iid, &device2)) || HResult.Failed(BindlessRoot.Create(inner, &root)))
+        if (root == 0 || HResult.Failed(DesktopDevice.QueryInterface(inner, &device2Iid, &device2)))
         {
             _log.Warn("[d3d12_xs] pipeline slots stay stubs: no ID3D12Device2 or bindless root signature");
 
@@ -306,7 +313,7 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         delegate* unmanaged<XboxObject*, uint, nint*, void> execute = &XboxQueueMethods.ExecuteCommandLists;
         delegate* unmanaged<XboxResourceObject*, ulong> gpuAddress = &XboxObjectMethods.GetGpuVirtualAddress;
         delegate* unmanaged<XboxDescriptorHeapObject*, nint> cpuStart = &XboxObjectMethods.GetCpuHandleForHeapStart;
-        delegate* unmanaged<XboxObject*, nint> gpuStart = &XboxObjectMethods.GetGpuHandleForHeapStart;
+        delegate* unmanaged<XboxDescriptorHeapObject*, nint> gpuStart = &XboxObjectMethods.GetGpuHandleForHeapStart;
 
         Objects.SetHandler(XboxInterfaceKind.CommandQueue, XboxQueueMethods.ExecuteCommandListsXSlot, (nint)executeX);
         Objects.SetHandler(XboxInterfaceKind.CommandQueue, XboxQueueMethods.ExecuteCommandListsSlot, (nint)execute);

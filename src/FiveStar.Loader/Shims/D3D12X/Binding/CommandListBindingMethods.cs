@@ -1,0 +1,389 @@
+// Copyright (c) 2026 Five Star Recomp contributors.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+using System.Runtime.InteropServices;
+using FiveStar.Graphics.Pipelines;
+using FiveStar.Loader.Native;
+
+namespace FiveStar.Loader.Shims.D3D12X.Binding;
+
+/// <summary>
+/// The command-list slots that bind (docs/d3d12x-shim.md, Binding). Slots 33 to 46 are the desktop root methods four
+/// slots later; slot 32 is SetDescriptorHeaps (call at 0x144e4cac2 with the main view and sampler heaps). Root
+/// arguments go to the list's user data and reach the GPU as one root CBV per draw or dispatch that follows a change.
+/// </summary>
+internal static unsafe class CommandListBindingMethods
+{
+    public const int CreateRootSignatureSlot = 16;
+    public const int ResetSlot = 10;
+    public const int DrawInstancedSlot = 12;
+    public const int DrawIndexedInstancedSlot = 13;
+    public const int DispatchSlot = 14;
+    public const int SetDescriptorHeapsSlot = 32;
+    public const int SetComputeRootSignatureSlot = 33;
+    public const int SetGraphicsRootSignatureSlot = 34;
+    public const int SetComputeRootDescriptorTableSlot = 35;
+    public const int SetComputeRoot32BitConstantSlot = 37;
+    public const int SetComputeRoot32BitConstantsSlot = 39;
+    public const int FirstRootAddressSlot = 41;
+    public const int LastRootAddressSlot = 45;
+    public const int ExecuteIndirectSlot = 61;
+
+    /// <summary>Command-list slot 139: Reset with a third argument (0x142474cce).</summary>
+    public const int ResetXSlot = 139;
+
+    /// <summary>ID3D12GraphicsCommandList in the desktop vtable (d3d12.h).</summary>
+    private const int DesktopReset = 10;
+    private const int DesktopDrawInstanced = 12;
+    private const int DesktopDrawIndexedInstanced = 13;
+    private const int DesktopDispatch = 14;
+    private const int DesktopSetDescriptorHeaps = 28;
+    private const int DesktopSetComputeRootSignature = 29;
+    private const int DesktopSetGraphicsRootSignature = 30;
+    private const int DesktopSetComputeRootDescriptorTable = 31;
+    private const int DesktopSetGraphicsRootDescriptorTable = 32;
+    private const int DesktopSetComputeRootConstantBufferView = 37;
+    private const int DesktopSetGraphicsRootConstantBufferView = 38;
+    private const int DesktopExecuteIndirect = 59;
+
+    /// <summary>Root parameters of BindlessRootSignature: the user-data CBV and the mesh fallback table.</summary>
+    private const uint UserDataParameter = BindlessRootSignature.UserDataParameter;
+    private const uint FallbackTableParameter = BindlessRootSignature.FallbackTableParameter;
+
+    /// <summary>The game binds at most a view and a sampler heap.</summary>
+    private const int MaxHeaps = 2;
+
+    private static XboxBindings Bindings => ShimContext.Runtime.D3D12X.Bindings;
+
+    /// <summary>Device slot 16: the desktop root signature, whose layout is kept for the lists.</summary>
+    [UnmanagedCallersOnly]
+    public static int CreateRootSignature(XboxObject* self, uint nodeMask, void* blob, nuint size, Guid* iid, nint* rootSignature)
+    {
+        nint inner = self->Inner;
+        var create = (delegate* unmanaged<nint, uint, void*, nuint, Guid*, nint*, int>)ComObject.Slot(inner, CreateRootSignatureSlot);
+        int hr = create(inner, nodeMask, blob, size, iid, rootSignature);
+
+        if (!HResult.Failed(hr) && rootSignature != null && blob != null && !Bindings.Layouts.Register(*rootSignature, new ReadOnlySpan<byte>(blob, (int)size)))
+        {
+            Bindings.Warnings.Warn("root-layout", "[d3d12_xs] CreateRootSignature: a blob without a readable RTS0 part; its root arguments are dropped");
+        }
+
+        return hr;
+    }
+
+    [HotPath]
+    [UnmanagedCallersOnly]
+    public static int Reset(XboxObject* self, nint allocator, nint pipelineState)
+    {
+        return ResetList(self, allocator, pipelineState);
+    }
+
+    [HotPath]
+    [UnmanagedCallersOnly]
+    public static int ResetX(XboxObject* self, nint allocator, nint pipelineState, uint flags)
+    {
+        return ResetList(self, allocator, pipelineState);
+    }
+
+    /// <summary>Slot 32: the desktop heaps behind the game's heaps.</summary>
+    [HotPath]
+    [UnmanagedCallersOnly]
+    public static void SetDescriptorHeaps(XboxObject* self, uint count, nint* heaps)
+    {
+        var objects = ShimContext.Runtime.D3D12X.Objects;
+        nint* desktop = stackalloc nint[MaxHeaps];
+        uint used = count;
+
+        if (used > MaxHeaps)
+        {
+            used = MaxHeaps;
+        }
+
+        for (uint i = 0; i < used; i++)
+        {
+            desktop[i] = objects.Unwrap(heaps[i]);
+        }
+
+        BindHeaps(self, used, desktop);
+    }
+
+    [HotPath]
+    [UnmanagedCallersOnly]
+    public static void SetComputeRootSignature(XboxObject* self, nint rootSignature)
+    {
+        SetRootSignature(self, rootSignature, true);
+    }
+
+    [HotPath]
+    [UnmanagedCallersOnly]
+    public static void SetGraphicsRootSignature(XboxObject* self, nint rootSignature)
+    {
+        SetRootSignature(self, rootSignature, false);
+    }
+
+    [HotPath]
+    [UnmanagedCallersOnly]
+    public static void SetComputeRootDescriptorTable(XboxObject* self, uint parameter, ulong handle)
+    {
+        UserData.Write(CommandListBindings.Of(self), true, parameter, 0, TableAddress(handle));
+    }
+
+    [HotPath]
+    [UnmanagedCallersOnly]
+    public static void SetGraphicsRootDescriptorTable(XboxObject* self, uint parameter, ulong handle)
+    {
+        UserData.Write(CommandListBindings.Of(self), false, parameter, 0, TableAddress(handle));
+    }
+
+    [HotPath]
+    [UnmanagedCallersOnly]
+    public static void SetComputeRoot32BitConstant(XboxObject* self, uint parameter, uint value, uint offset)
+    {
+        UserData.Write(CommandListBindings.Of(self), true, parameter, offset, value);
+    }
+
+    [HotPath]
+    [UnmanagedCallersOnly]
+    public static void SetGraphicsRoot32BitConstant(XboxObject* self, uint parameter, uint value, uint offset)
+    {
+        UserData.Write(CommandListBindings.Of(self), false, parameter, offset, value);
+    }
+
+    [HotPath]
+    [UnmanagedCallersOnly]
+    public static void SetComputeRoot32BitConstants(XboxObject* self, uint parameter, uint count, uint* values, uint offset)
+    {
+        WriteConstants(CommandListBindings.Of(self), true, parameter, count, values, offset);
+    }
+
+    [HotPath]
+    [UnmanagedCallersOnly]
+    public static void SetGraphicsRoot32BitConstants(XboxObject* self, uint parameter, uint count, uint* values, uint offset)
+    {
+        WriteConstants(CommandListBindings.Of(self), false, parameter, count, values, offset);
+    }
+
+    /// <summary>Root CBV, SRV or UAV: the console GPU address goes to the parameter's SGPR pair as the game passes it.</summary>
+    [HotPath]
+    [UnmanagedCallersOnly]
+    public static void SetComputeRootAddress(XboxObject* self, uint parameter, ulong address)
+    {
+        UserData.WriteAddress(CommandListBindings.Of(self), true, parameter, address);
+    }
+
+    [HotPath]
+    [UnmanagedCallersOnly]
+    public static void SetGraphicsRootAddress(XboxObject* self, uint parameter, ulong address)
+    {
+        UserData.WriteAddress(CommandListBindings.Of(self), false, parameter, address);
+    }
+
+    [HotPath]
+    [UnmanagedCallersOnly]
+    public static void DrawInstanced(XboxObject* self, uint vertices, uint instances, uint firstVertex, uint firstInstance)
+    {
+        Flush(self, false);
+        nint inner = self->Inner;
+        ((delegate* unmanaged<nint, uint, uint, uint, uint, void>)ComObject.Slot(inner, DesktopDrawInstanced))(inner, vertices, instances, firstVertex, firstInstance);
+    }
+
+    [HotPath]
+    [UnmanagedCallersOnly]
+    public static void DrawIndexedInstanced(XboxObject* self, uint indices, uint instances, uint firstIndex, int baseVertex, uint firstInstance)
+    {
+        Flush(self, false);
+        nint inner = self->Inner;
+        ((delegate* unmanaged<nint, uint, uint, uint, int, uint, void>)ComObject.Slot(inner, DesktopDrawIndexedInstanced))(inner, indices, instances, firstIndex, baseVertex, firstInstance);
+    }
+
+    [HotPath]
+    [UnmanagedCallersOnly]
+    public static void Dispatch(XboxObject* self, uint x, uint y, uint z)
+    {
+        Flush(self, true);
+        nint inner = self->Inner;
+        ((delegate* unmanaged<nint, uint, uint, uint, void>)ComObject.Slot(inner, DesktopDispatch))(inner, x, y, z);
+    }
+
+    /// <summary>Slot 61: (signature, max count, argument buffer, offset, count buffer, offset) with wrapped objects.</summary>
+    [HotPath]
+    [UnmanagedCallersOnly]
+    public static void ExecuteIndirect(XboxObject* self, nint signature, uint maxCount, nint arguments, ulong argumentOffset, nint count, ulong countOffset)
+    {
+        Flush(self, false);
+        Flush(self, true);
+        var objects = ShimContext.Runtime.D3D12X.Objects;
+        nint inner = self->Inner;
+        var execute = (delegate* unmanaged<nint, nint, uint, nint, ulong, nint, ulong, void>)ComObject.Slot(inner, DesktopExecuteIndirect);
+        execute(inner, objects.Unwrap(signature), maxCount, objects.Unwrap(arguments), argumentOffset, objects.Unwrap(count), countOffset);
+    }
+
+    [HotPath]
+    private static int ResetList(XboxObject* self, nint allocator, nint pipelineState)
+    {
+        *CommandListBindings.Of(self) = default;
+        var objects = ShimContext.Runtime.D3D12X.Objects;
+        nint inner = self->Inner;
+        var reset = (delegate* unmanaged<nint, nint, nint, int>)ComObject.Slot(inner, DesktopReset);
+
+        return reset(inner, objects.Unwrap(allocator), objects.Unwrap(pipelineState));
+    }
+
+    [HotPath]
+    private static void BindHeaps(XboxObject* self, uint count, nint* heaps)
+    {
+        var bindings = CommandListBindings.Of(self);
+        nint inner = self->Inner;
+        ((delegate* unmanaged<nint, uint, nint*, void>)ComObject.Slot(inner, DesktopSetDescriptorHeaps))(inner, count, heaps);
+        bindings->HeapsBound = 1;
+
+        // The bindless root signature indexes the heaps directly: it is set again after a heap change.
+        if (bindings->GraphicsRoot != 0)
+        {
+            SetBindlessRoot(self, false);
+        }
+
+        if (bindings->ComputeRoot != 0)
+        {
+            SetBindlessRoot(self, true);
+        }
+    }
+
+    [HotPath]
+    private static void SetRootSignature(XboxObject* self, nint rootSignature, bool compute)
+    {
+        var bindings = CommandListBindings.Of(self);
+        var layout = Bindings.Layouts.Find(rootSignature);
+
+        if (compute)
+        {
+            bindings->ComputeLayout = layout;
+            bindings->ComputeRoot = 1;
+        }
+        else
+        {
+            bindings->GraphicsLayout = layout;
+            bindings->GraphicsRoot = 1;
+        }
+
+        if (bindings->HeapsBound == 0)
+        {
+            BindDefaultHeaps(self);
+        }
+
+        SetBindlessRoot(self, compute);
+    }
+
+    /// <summary>A list that sets a root signature before any heap gets the game's main heaps (they are the only shader-visible ones).</summary>
+    [HotPath]
+    private static void BindDefaultHeaps(XboxObject* self)
+    {
+        var window = Bindings.Window;
+        nint* heaps = stackalloc nint[MaxHeaps];
+        uint count = 0;
+
+        if (window.ViewHeap != 0)
+        {
+            heaps[count++] = window.ViewHeap;
+        }
+
+        if (window.SamplerHeap != 0)
+        {
+            heaps[count++] = window.SamplerHeap;
+        }
+
+        if (count != 0)
+        {
+            nint inner = self->Inner;
+            ((delegate* unmanaged<nint, uint, nint*, void>)ComObject.Slot(inner, DesktopSetDescriptorHeaps))(inner, count, heaps);
+            CommandListBindings.Of(self)->HeapsBound = 1;
+        }
+    }
+
+    /// <summary>The bindless root signature with the fallback table; the user data goes out again at the next draw.</summary>
+    [HotPath]
+    private static void SetBindlessRoot(XboxObject* self, bool compute)
+    {
+        var bindings = CommandListBindings.Of(self);
+        nint root = Bindings.Root;
+        nint inner = self->Inner;
+
+        if (root == 0)
+        {
+            return;
+        }
+
+        int setRoot = compute ? DesktopSetComputeRootSignature : DesktopSetGraphicsRootSignature;
+        int setTable = compute ? DesktopSetComputeRootDescriptorTable : DesktopSetGraphicsRootDescriptorTable;
+        ((delegate* unmanaged<nint, nint, void>)ComObject.Slot(inner, setRoot))(inner, root);
+
+        if (Bindings.Window.ViewHeap != 0)
+        {
+            ((delegate* unmanaged<nint, uint, ulong, void>)ComObject.Slot(inner, setTable))(inner, FallbackTableParameter, Bindings.Window.FallbackTable);
+        }
+
+        if (compute)
+        {
+            bindings->ComputeDirty = 1;
+        }
+        else
+        {
+            bindings->GraphicsDirty = 1;
+        }
+    }
+
+    /// <summary>Uploads the bind point's user data when it changed and points root parameter 0 at it.</summary>
+    [HotPath]
+    private static void Flush(XboxObject* self, bool compute)
+    {
+        var bindings = CommandListBindings.Of(self);
+        var ring = Bindings.Ring;
+        int root = compute ? bindings->ComputeRoot : bindings->GraphicsRoot;
+        int dirty = compute ? bindings->ComputeDirty : bindings->GraphicsDirty;
+
+        if (ring is null || root == 0 || dirty == 0 || Bindings.Root == 0)
+        {
+            return;
+        }
+
+        uint* data = compute ? bindings->Compute : bindings->Graphics;
+        ulong address = ring.Upload(data);
+        int slot = compute ? DesktopSetComputeRootConstantBufferView : DesktopSetGraphicsRootConstantBufferView;
+        nint inner = self->Inner;
+        ((delegate* unmanaged<nint, uint, ulong, void>)ComObject.Slot(inner, slot))(inner, UserDataParameter, address);
+
+        if (compute)
+        {
+            bindings->ComputeDirty = 0;
+        }
+        else
+        {
+            bindings->GraphicsDirty = 0;
+        }
+    }
+
+    [HotPath]
+    private static void WriteConstants(CommandListBindings* bindings, bool compute, uint parameter, uint count, uint* values, uint offset)
+    {
+        for (uint i = 0; i < count; i++)
+        {
+            UserData.Write(bindings, compute, parameter, offset + i, values[i]);
+        }
+    }
+
+    /// <summary>The window pointer of a table; a handle outside both heaps (past the desktop heap's end) reads the sink.</summary>
+    [HotPath]
+    private static uint TableAddress(ulong handle)
+    {
+        uint? address = Bindings.Window.TableAddress(handle);
+
+        if (address.HasValue)
+        {
+            return address.Value;
+        }
+
+        Bindings.Warnings.Warn("table-handle", "[d3d12_xs] SetRootDescriptorTable: a GPU handle outside the desktop heaps (past the 1,000,000 descriptors?) reads null descriptors");
+
+        return DescriptorWindow.SinkSlot * DescriptorWindow.ViewRecordBytes;
+    }
+}

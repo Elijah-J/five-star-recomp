@@ -171,4 +171,5 @@ unwrapped, so slot 55 receives the desktop pointer it registered.
 - Render-target formats of cache pipelines are the cache's guesses; the stream path carries the real ones.
 - Which variant of a program (wave32, superstep, mesh fallback, linked VS) to pick per adapter; the library takes the
   native `<name>.dxil`.
-- How the game binds root arguments, which decides how the command list fills the user data of translated programs.
+- Which pipelines' programs read graphics user SGPRs 0 to 7 as their own; the command list fills them with SGPRs 8
+  to 15 for mesh programs ([d3d12x-shim.md](d3d12x-shim.md#binding)).
