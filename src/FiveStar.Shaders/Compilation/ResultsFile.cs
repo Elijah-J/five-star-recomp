@@ -13,8 +13,6 @@ namespace FiveStar.Shaders.Compilation;
 /// </summary>
 public static class ResultsFile
 {
-    private static readonly JsonSerializerOptions StringOptions = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
-
     public static IReadOnlyList<ProgramResult> Read(string path)
     {
         using var document = JsonDocument.Parse(File.ReadAllText(path));
@@ -70,6 +68,7 @@ public static class ResultsFile
             return "null";
         }
 
-        return JsonSerializer.Serialize(text, StringOptions);
+        // The escaping JsonSerializer applies to a string, without its reflection-based serializer (trim and AOT safe).
+        return $"\"{JsonEncodedText.Encode(text, JavaScriptEncoder.UnsafeRelaxedJsonEscaping)}\"";
     }
 }
