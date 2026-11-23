@@ -12,6 +12,9 @@ public static class XmaLayout
     /// <summary>Bytes of a packet.</summary>
     public const int PacketBytes = 2048;
 
+    /// <summary>Bits of a packet, its header included.</summary>
+    public const int PacketBits = PacketBytes * 8;
+
     /// <summary>The packet header: frame count (6 bits), first frame offset (15), metadata (3), packet skip (8).</summary>
     public const int PacketHeaderBits = 32;
 

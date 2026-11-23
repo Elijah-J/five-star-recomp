@@ -13,7 +13,7 @@ the Windows system DLL.
 | `xg_xs.dll` | texture layout computers over the console's tiling (sizes, mip offsets, tiling, copies in and out) |
 | `xcrdapi.dll` | DirectStorage: files read on worker threads and zlib chunks inflated into memory, exactly as stored |
 | `xapu.dll` | the console's Opus decoder queue, run on the CPU |
-| `acphal.dll` | the APU heap on ordinary memory and the SHAPE XMA decoder contexts (no XMA decoding yet) |
+| `acphal.dll` | the APU heap on ordinary memory and the SHAPE XMA decoder contexts, decoded on the CPU when the game enables them |
 | `chad.dll` | the audio DSP (XDsp): streams connect and commands complete where the game polls, so audio start-up succeeds; its effects (a convolution reverb and one more) return silence for now |
 | `GameInput.dll` | GameInput v0, as the game uses it: gamepads and the keyboard, with the mouse on a virtual gamepad's right stick (the game never reads the mouse itself); every method the game calls is implemented |
 | `xgameruntime.dll` | offline GDK runtime (below); the game loads it at run time and gets the loader's implementation |
