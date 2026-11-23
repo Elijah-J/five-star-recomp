@@ -17,8 +17,9 @@ No game files, keys or extracted data are part of this repository. Every tool ru
 
 ## Status
 
-GTA VI does not run yet. Its main executable is now available: under the loader it starts and runs through its memory
-set-up, archive opening and graphics device set-up, and stops before its first frame. Details and numbers are in the
+GTA VI does not run yet. Its main executable is now available: under the loader it starts, runs through its memory
+set-up, archive opening and graphics device set-up, and presents frames continuously to its own window, but the frames
+are still black. Details and numbers are in the
 [wiki](https://github.com/ThatRecompDev/five-star-recomp/wiki/Status).
 
 | Area | State |
