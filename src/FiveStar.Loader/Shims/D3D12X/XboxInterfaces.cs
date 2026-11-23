@@ -28,6 +28,7 @@ internal static class XboxInterfaces
     private static readonly int ResourceObjectSize = Unsafe.SizeOf<XboxResourceObject>();
     private static readonly int DescriptorHeapObjectSize = Unsafe.SizeOf<XboxDescriptorHeapObject>();
     private static readonly int FenceObjectSize = Unsafe.SizeOf<XboxFenceObject>();
+    private static readonly int QueueObjectSize = Unsafe.SizeOf<XboxQueueObject>();
 
     /// <summary>AddRef and ID3D12Object (GetPrivateData, SetPrivateData, SetPrivateDataInterface, SetName).</summary>
     private static readonly ForwardedSlot[] Common =
@@ -93,7 +94,7 @@ internal static class XboxInterfaces
     private static readonly XboxInterface[] All =
     [
         new(XboxInterfaceKind.Device, "ID3D12Device", MaxSlotCount, PlainObjectSize, DeviceSlots),
-        Child(XboxInterfaceKind.CommandQueue, "ID3D12CommandQueue", PlainObjectSize, QueueSlots),
+        Child(XboxInterfaceKind.CommandQueue, "ID3D12CommandQueue", QueueObjectSize, QueueSlots),
         Child(XboxInterfaceKind.CommandAllocator, "ID3D12CommandAllocator", PlainObjectSize, AllocatorSlots),
         new(XboxInterfaceKind.CommandList, "ID3D12GraphicsCommandList", MaxSlotCount, CommandListObjectSize, [.. Common, .. ListSlots]),
         Child(XboxInterfaceKind.Resource, "ID3D12Resource", ResourceObjectSize, ResourceSlots),

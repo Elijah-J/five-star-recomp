@@ -77,10 +77,17 @@ internal static unsafe class XboxQueueMethods
 
             for (uint i = 0; i < size; i++)
             {
-                desktop[i] = objects.Unwrap(lists[first + i]);
+                nint list = lists[first + i];
+                desktop[i] = objects.Unwrap(list);
+
+                if (desktop[i] != list)
+                {
+                    ListSubmissions.WaitIfRunning(list);
+                }
             }
 
             execute(inner, size, desktop);
+            ListSubmissions.Submitted((XboxQueueObject*)self, lists + first, size, objects);
         }
     }
 }
