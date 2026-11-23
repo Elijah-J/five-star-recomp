@@ -14,7 +14,7 @@ The executable is in hand; `fivestar exe analyze` reports its imports and GDK ca
 | Pipeline creation | the game's five pipeline-creation methods (from its pipeline cache, from a state stream, compute, and derived variants) build desktop pipelines from the translated shaders; picking per-GPU program variants and slot 101 (ray-tracing state objects) are open ([d3d12x-pipelines.md](https://github.com/ThatRecompDev/five-star-recomp/blob/main/docs/d3d12x-pipelines.md)) |
 | Pipeline state | whole root signatures (the cache lists only the bindings each shader uses, with their user SGPRs) and the shader constants layout; blend, depth, raster state, render-target and depth formats and vertex formats already come from the driver's pipeline cache |
 | Present | the queue's present and frame-event methods, on a swap chain for the game's own window |
-| Audio | the game mixes on the CPU and plays through WASAPI but leaves decoding to the console hardware: Opus (99.9% of sounds) now decodes through a CPU copy of the console's queue; XMA2 (1,818 streams) needs a decoder ([audio-runtime.md](https://github.com/ThatRecompDev/five-star-recomp/blob/main/docs/audio-runtime.md)) |
+| Audio | the game mixes on the CPU and plays through WASAPI but leaves decoding to the console hardware: Opus (99.9% of sounds) now decodes through a CPU copy of the console's queue; an XMA2 decoder exists (below) but is not yet behind the console's SHAPE XMA contexts, whose protocol is still being traced ([audio-runtime.md](https://github.com/ThatRecompDev/five-star-recomp/blob/main/docs/audio-runtime.md)) |
 | Archive file table | names and exact entry boundaries stay encrypted; the game opens and reads its archives itself at run time |
 
 ## Research

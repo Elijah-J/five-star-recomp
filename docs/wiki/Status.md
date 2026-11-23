@@ -24,7 +24,7 @@ that is still being tracked down (see [Roadmap](Roadmap.md)).
 | Textures | 354,520 of 357,115 (99.3%) export across all 57 texture files; all 102,725 BCPack BC1 pages decode; 2,112 textures wait for the other BCPack codecs (mostly BC7) |
 | Models | 4,304,262 of 4,306,994 geometries (99.94%) of 383,907 drawables decode across 7 archives: meshlets, packed positions, normals, texture coordinates; OBJ export |
 | Videos | 515 Bink 2 videos extract from `movies.rpf` |
-| Audio | all 1,603,231 sounds in `audio.rpf` export as Ogg Opus or WAV (Opus, XMA2, PCM) |
+| Audio | all 1,603,231 sounds in `audio.rpf` export as Ogg Opus or WAV (Opus, XMA2, PCM); our XMA2 decoder matches FFmpeg on all 1,818 XMA2 streams (exact sample counts, at least 136 dB SNR) and can export them as PCM |
 | Executable | 587 imports, all resolved: 34 by shims, 209 from the package's own libraries, 325 from Windows, 19 by Xbox-only stubs; the six Xbox libraries in the package load with all 825 of their imports resolved |
 | Boot | from the entry point through C runtime start-up, memory set-up, DirectStorage archive opening, D3D12.X device set-up (queues, command lists, frame pacing), buffers at game-chosen GPU addresses and the descriptor heaps; a fault report gives the address, function, registers and last shim calls of any stop |
 | Console runtime | task queues and async run for real; user, saves, package and store work offline; the game calls 161 GDK functions, all named from the PC GDK and all shimmed |
