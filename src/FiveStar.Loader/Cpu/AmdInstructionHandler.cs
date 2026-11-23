@@ -142,7 +142,7 @@ internal sealed unsafe class AmdInstructionHandler
 
             if (site != 0)
             {
-                _log.Detail($"  [cpu] {_images.Describe(site)}: {Interlocked.Read(ref _siteCounts[slot])}");
+                _log.Detail($"  [cpu] {Where(site)}: {Interlocked.Read(ref _siteCounts[slot])}");
             }
         }
     }
@@ -196,8 +196,19 @@ internal sealed unsafe class AmdInstructionHandler
         }
     }
 
+    /// <summary>image+rva in a mapped image, else the address (the self-test's code).</summary>
+    private string Where(nint address)
+    {
+        if (_images.FindByAddress(address) is null)
+        {
+            return $"0x{address:x}";
+        }
+
+        return _images.Describe(address);
+    }
+
     private void LogFirst(nint rip, AmdInstructionKind kind)
     {
-        _log.Info($"cpu: emulating {Name(kind)} at {_images.Describe(rip)}");
+        _log.Info($"cpu: emulating {Name(kind)} at {Where(rip)}");
     }
 }
