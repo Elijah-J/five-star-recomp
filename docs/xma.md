@@ -63,6 +63,7 @@ frame.
 | Type | Does |
 |---|---|
 | `XmaStreamDecoder` | one stream, packet by packet; per packet the frames it completes; allocation-free |
+| `XmaStreamDecoder.DecodeFrameAt` | the frame at a bit offset of a run of packets (headers counted, as the SHAPE XMA context's read offset), and where the next one starts; for the XMA contexts ([audio-runtime.md](audio-runtime.md)) |
 | `XmaTrackDecoder` | a whole sound; drops one frame plus 64 samples at the start and 64 plus the last end trim at the end, as FFmpeg does |
 | `fivestar audio export ... --decode-xma` | writes XMA2 tracks as 16-bit PCM WAVE instead of XMA2 in WAVE |
 
@@ -82,7 +83,8 @@ from the bitstream description above.
 
 ## Unknown
 
-- The console's alignment: whether the SHAPE decoder outputs the first frame and the 64 samples FFmpeg drops.
+- The console's alignment: the game counts every frame's 512 samples out of a SHAPE context, which suggests the
+  hardware outputs the first frame FFmpeg drops; the PC contexts do so. Not confirmed on hardware.
 - Stereo: no XMA2 stream in the dump has two channels, so the stereo transform is untested on game data.
-- Several streams interleaved by the packet skip field, and loop points: the decoder handles neither, and no
-  packet of the dump interleaves streams.
+- Several streams interleaved by the packet skip field: `DecodePacket` ignores it, `DecodeFrameAt` follows it, and
+  no packet of the dump interleaves streams.

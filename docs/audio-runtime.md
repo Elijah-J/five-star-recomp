@@ -7,7 +7,7 @@ The engine mixes on the CPU and plays through WASAPI, but it does not decode on 
 processor through `xapu.dll` and XMA to the SHAPE XMA decoders through `acphal.dll`. The executable holds no Opus or
 XMA decoder (no libopus tables, no `opus` strings) and imports no XAudio2. Bink video sound is the exception:
 Bink decodes it and hands it to the game's mixer. A PC port therefore has to supply the
-decoders; the loader runs the Opus queue on the CPU (`src/FiveStar.Loader/Shims/Apu`).
+decoders; the loader runs the Opus queue and the XMA contexts on the CPU (`src/FiveStar.Loader/Shims/Apu`).
 
 ## Start-up
 
@@ -88,6 +88,62 @@ slot * 0x280 and a 0x1E00-byte output area at 0x14000 + slot * 0x1E00. A decode 
 The game's stream states (table at 0x149ae8c90): 1 creating, 2 resetting, 3 destroying, 4 ready, 5 decoded. A
 create result moves 1 to 4, a decode result 4 to 5, a reset result 2 to 4, a destroy result frees the stream.
 
+### SHAPE XMA protocol
+
+The game keeps the context array pointer at 0x149ae9908 and per context a 0x20-byte record at 0x149ae9938 (+0x00
+output buffer, +0x08 the 0x200-byte buffer, +0x10 state: 2 enabled, 0 free; +0x18 free flag). A voice takes a free
+context round robin (0x1455cbc80), zeroes its 64 bytes and the 0x200-byte buffer and fills it (0x1400785d0); on its
+next update it enables it (0x1443a73e0). From then on each update (0x140078120) copies the ready output into the
+voice's ring buffer (0x144e64f00) and acknowledges it. The whole sound is one input buffer in APU memory; the game
+never uses input buffer 1.
+
+The fields, as dwords of the 64-byte context; bit 0 is the least significant. The names are those of the Xbox 360 XMA
+context in Xenia, whose layout matches every field the game touches.
+
+| Dword | Bits | Field | What the game does |
+|---|---|---|---|
+| 0 | 0-11 | input buffer 0 packets | bytes / 2048 (left 0 unless the size is whole packets) |
+| 0 | 12-19 | loop count | 255 for a looping voice, else 0 |
+| 0 | 20 | input buffer 0 valid | set |
+| 0 | 21 | input buffer 1 valid | cleared |
+| 0 | 22-26 | output buffer blocks | 23: 0x1700 bytes in 256-byte blocks |
+| 0 | 27-31 | output write offset | read, in blocks |
+| 1 | 0-11 | input buffer 1 packets | 0 |
+| 1 | 12-13 | loop end subframe | (loop end sample >> 7) & 3 |
+| 1 | 17-19 | loop start subframe skip | (loop start sample >> 7) & 3 |
+| 1 | 20-23 | subframe decode count | 4 |
+| 1 | 24-26 | start subframe skip | (start sample >> 7) & 3, for a voice that starts mid-sound |
+| 1 | 27-28 | sample rate | 0 up to 24000 Hz, 1 to 32000, 2 to 44100, 3 above |
+| 1 | 29 | stereo | set for two channels |
+| 1 | 31 | output buffer valid | set; read when the offsets meet: set means empty, clear means full |
+| 2 | 0-25 | input read offset | bit offset of the first frame (headers counted): 32, or the frame the start sample is in |
+| 3 | 0-25 | loop start | bit offset of the frame the loop start sample is in |
+| 4 | 0-25 | loop end | bit offset of the frame the loop end sample is in (default: the last frame) |
+| 4 | 31 | current input buffer | cleared |
+| 5, 6 | | input buffer 0 and 1 | the APU address of the sound data, both; only when `ApuIsVirtualAddressValid` accepts it |
+| 7 | | output buffer | APU address of the 0x1700-byte buffer |
+| 8 | | work buffer | APU address of the 0x200-byte buffer |
+| 9 | 0-4 | output read offset | read, in blocks; the game never writes it |
+
+The game finds a frame's bit offset itself: it sums the packets' 6-bit frame counts to the packet the frame starts
+in, then walks the 15-bit frame lengths from the packet's first frame offset (0x1443a7440).
+
+Messages, all `SendMessage(type, cookie, timeout -1, payload, 0)`:
+
+| Type | Cookie | Payload | Sent | Meaning |
+|---|---|---|---|---|
+| 2 | 0xF0F0F0F0 | 0xC0 | once at start-up | unknown |
+| 5 | 0xF6F6F6F6 | context | first update after the fill (0x1443a73e0) | enable: start decoding |
+| 7 | context + 1 | context | voice ends (0x1400925e0) | disable; the record becomes free |
+| 0x12 | 0xF1F1F1F1 | context, blocks | every update that took output (0x140078120) | the game took that many blocks from the read offset |
+
+The game polls nothing else: ready output is write offset minus read offset (in blocks, modulo 23), or all 23 when
+they meet and the output valid bit is clear. It takes 16-bit PCM, channels interleaved (it divides bytes by 2 and
+the channel count to count samples). It never reads the input fields back: it ends a non-looping voice when it has
+counted the sound's sample count out of the context: the packets' frame counts times 512 (0x1455cbd70), or the
+voice's own end if that is earlier. When a voice chains two contexts, the game copies
+the 0x200-byte work buffer of the finished context into the next one before enabling it.
+
 ### XDsp protocol
 
 The DSP object (constructor 0x145f0b960) allocates a 0x60000-byte pool (`XMemAlloc`, 0x141d6bdf0), zeroes it in
@@ -127,16 +183,15 @@ blocks already taken is how many output blocks are ready (0x1443b3cc0). The conv
 | `ApuCreateHeap`, `ApuAlloc` and the address functions | one committed region ([loader.md](loader.md)) |
 | `AcpHalAllocateShapeContexts` | XMA contexts from the APU heap; any other context kind E_NOTIMPL |
 | `AcpHalCreate` | an IAcpHal object: slot 0, 1 and 2 return S_OK (messages logged once per type), slots 3 and 4 E_NOTIMPL, slot 5 releases |
+| IAcpHal messages 5, 7, 0x12 | XMA decoding on the CPU, on the caller's thread: message 5 resets the context's decoder and 0x12 moves the read offset and sets output valid; both then decode (XmaStreamDecoder.DecodeFrameAt) from the input read offset into the ring, block by block, until it is full or the input is used up. Each frame gives all 512 samples per channel, as 16-bit little-endian PCM; the start skip, the loop (end subframe, jump, start skip, count) and the input buffer switch follow the fields above. Message 7 stops the context |
 | `AcpHalReleaseShapeContexts` | frees the contexts |
 | `XApuConnect` and the queue | a CPU queue: a command runs when enqueued and its result waits for the poll. Opus decodes with Concentus at 48 kHz, one decoder per stream kept across packets; the channel count comes from the output capacity |
 | `XDsp*` | streams on the CPU: a command completes when it is submitted (id = completed count, written to the stream's status record); no effect runs and the output pages stay as the game zeroed them, so XDsp effects return silence |
 
-What a complete replacement still needs: XMA2 decoding behind the SHAPE contexts, the XDsp convolution (the impulse
-response format and whether the output is a wet send or an in-place insert are not confirmed), and a check that WASAPI on the PC accepts the format the game asks for. The XMA2 decoder exists
-(XmaStreamDecoder, [xma.md](xma.md)); what is missing is the context protocol. Wiring it in means, per enabled
-context: read its input packets, call DecodePacket per 2 KiB packet, pack the float output to 16-bit PCM into the
-context's 0x1700-byte output buffer in 256-byte blocks, and advance the write offset the game reads. The hook is
-AcpHalDevice.SendMessage, where the per-context messages (5, 7, 0x12) arrive.
+What a complete replacement still needs: the XDsp convolution (the impulse response format and whether the output is
+a wet send or an in-place insert are not confirmed), and a check that WASAPI on the PC accepts the format the game
+asks for. The XMA contexts do not carry decoder state through the work buffer, so a voice that chains two contexts
+starts the second one's overlap from silence.
 
 ## Unknown
 
@@ -144,12 +199,15 @@ AcpHalDevice.SendMessage, where the per-context messages (5, 7, 0x12) arrive.
   the XApu config struct; other result fields.
 - The SHAPE_CONTEXTS layout beyond the XMA count (+0x10) and pointer (+0x38): six u32 counts and one pointer per
   kind are inferred from those two offsets.
-- The XMA context bit fields (the game reads offsets in 256-byte blocks from +0x00 and +0x24 and the output buffer's
-  APU address from +0x1C); the IAcpHal message types (2 at start-up, 5, 7 and 0x12 per XMA context) and slots 3, 4.
-  Those three fields and the 64-byte size sit where the Xbox 360 XMA context, as emulators describe it, keeps the
-  output write offset (dword 0), output buffer pointer (dword 7) and output read offset (dword 9); whether the rest
-  (input buffer pointers and packet counts, loop fields) matches as well is not checked.
+- SHAPE XMA: the context layout and the message meanings are read from how the game fills, reads and sends them;
+  what the hardware does in between is inferred: that it decodes on its own while enabled and the ring has room,
+  that it outputs every frame whole (the game's sample count includes the first frame; FFmpeg drops it), how the
+  loop end and start subframes apply (Xenia's reading), when it clears the input valid bit, the byte order and the
+  rounding of its PCM, and what it keeps in the 0x200-byte work buffer (perhaps the overlap). The game seeks a start
+  or loop sample 128 samples early (it takes the frame of sample - 128 when the sample is 128 or more), which may be
+  the hardware's output delay. Message 2 and slots 3 and 4 are unknown.
 - Who sets the XDsp byte at +0x3DD78; the XDsp connect arguments 0x80 and 1; config +0x04; which effect kind 2
   selects (perhaps `Spatial_Reverb`); the two 1.0 command floats (perhaps input and output gain); the status record
   fields other than +0x04 and +0x0C.
-- How the game behaves when an XMA context never produces output.
+- How the game behaves when an XMA context never produces output; whether its XMA data is in APU memory at all (a
+  context whose data is not gets no input pointer).

@@ -66,6 +66,48 @@ public sealed class XmaStreamDecoder
         return written + ReadFrames(ref reader, output[(written * FrameFloats)..]);
     }
 
+    /// <summary>
+    /// Decodes the frame that starts at bit <paramref name="position"/> of <paramref name="buffer"/>, a run of whole
+    /// packets of this stream, into <paramref name="output"/> (512 interleaved samples per channel). Positions count
+    /// the packet headers, as the console's XMA context read offset does. A frame may run on into the next packet.
+    /// Returns false when no whole frame starts there; <paramref name="next"/> is where the frame after it starts, or
+    /// null when the buffer ends first. The overlap carries over from the frame decoded before, wherever it was.
+    /// </summary>
+    [HotPath]
+    public bool DecodeFrameAt(ReadOnlySpan<byte> buffer, int position, Span<float> output, out int? next)
+    {
+        next = null;
+        var packet = position / XmaLayout.PacketBits;
+
+        if (position < 0 || packet >= buffer.Length / XmaLayout.PacketBytes || position % XmaLayout.PacketBits < XmaLayout.PacketHeaderBits)
+        {
+            return false;
+        }
+
+        _assembler.Clear();
+        var end = position;
+
+        if (!CollectFrom(buffer, ref packet, ref end, XmaLayout.FrameLengthBits))
+        {
+            return false;
+        }
+
+        var length = _assembler.DeclaredLength;
+
+        if (length == XmaLayout.NoFrame || length <= XmaLayout.FrameLengthBits || !CollectFrom(buffer, ref packet, ref end, length - XmaLayout.FrameLengthBits))
+        {
+            _assembler.Clear();
+
+            return false;
+        }
+
+        var more = _assembler.MoreFrames();
+        _ = DecodeAssembled(output);
+        next = FrameAfter(buffer, packet, end, more);
+
+        return true;
+    }
+
     /// <summary>Writes the tail of the last frame's overlap, 256 interleaved samples per channel, and returns that count.</summary>
     public int Flush(Span<float> output)
     {
@@ -167,6 +209,92 @@ public sealed class XmaStreamDecoder
 
         return 1;
     }
+
+    /// <summary>Collects <paramref name="count"/> bits from <paramref name="position"/> on, past packet headers; false when the buffer ends first.</summary>
+    [HotPath]
+    private bool CollectFrom(ReadOnlySpan<byte> buffer, ref int packet, ref int position, int count)
+    {
+        while (count > 0)
+        {
+            if (position >= (packet + 1) * XmaLayout.PacketBits)
+            {
+                var following = FollowingPacket(buffer, packet);
+
+                if (following is null)
+                {
+                    return false;
+                }
+
+                packet = following.Value;
+                position = (packet * XmaLayout.PacketBits) + XmaLayout.PacketHeaderBits;
+            }
+
+            var room = ((packet + 1) * XmaLayout.PacketBits) - position;
+            var take = count < room ? count : room;
+            var reader = new XmaBitReader(buffer, position, take);
+            _assembler.Collect(ref reader, take);
+            position += take;
+            count -= take;
+        }
+
+        return true;
+    }
+
+    /// <summary>Where the frame after one that ended at <paramref name="end"/> of <paramref name="packet"/> starts.</summary>
+    [HotPath]
+    private static int? FrameAfter(ReadOnlySpan<byte> buffer, int packet, int end, bool more)
+    {
+        var packetEnd = (packet + 1) * XmaLayout.PacketBits;
+
+        if (more && end < packetEnd)
+        {
+            if (packetEnd - end < XmaLayout.FrameLengthBits)
+            {
+                return end;
+            }
+
+            var length = (int)new XmaBitReader(buffer, end, XmaLayout.FrameLengthBits).Peek(XmaLayout.FrameLengthBits);
+
+            if (length != XmaLayout.NoFrame && length > XmaLayout.FrameLengthBits)
+            {
+                return end;
+            }
+        }
+
+        var following = FollowingPacket(buffer, packet);
+
+        if (following is null)
+        {
+            return null;
+        }
+
+        var first = XmaLayout.PacketHeaderBits + PacketAt(buffer, following.Value).FirstFrameOffset;
+
+        if (first >= XmaLayout.PacketBits)
+        {
+            return null;
+        }
+
+        return (following.Value * XmaLayout.PacketBits) + first;
+    }
+
+    /// <summary>The stream's packet after <paramref name="packet"/>: past the packets of other streams its header skips.</summary>
+    [HotPath]
+    private static int? FollowingPacket(ReadOnlySpan<byte> buffer, int packet)
+    {
+        var following = packet + 1 + PacketAt(buffer, packet).SkipCount;
+
+        if (following >= buffer.Length / XmaLayout.PacketBytes)
+        {
+            return null;
+        }
+
+        return following;
+    }
+
+    [HotPath]
+    private static XmaPacketHeader PacketAt(ReadOnlySpan<byte> buffer, int packet) =>
+        XmaPacketHeader.Read(buffer.Slice(packet * XmaLayout.PacketBytes, XmaLayout.PacketBytes));
 
     private static void RequirePacket(ReadOnlySpan<byte> packet)
     {
