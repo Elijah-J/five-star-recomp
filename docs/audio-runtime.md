@@ -98,9 +98,12 @@ create result moves 1 to 4, a decode result 4 to 5, a reset result 2 to 4, a des
 | `XApuConnect` and the queue | a CPU queue: a command runs when enqueued and its result waits for the poll. Opus decodes with Concentus at 48 kHz, one decoder per stream kept across packets; the channel count comes from the output capacity |
 | `XDsp*` | E_NOTIMPL |
 
-What a complete replacement still needs: an XMA2 decoder behind the SHAPE contexts (fill the output buffer and
-advance the write offset the game reads from the context), XDsp if the device byte is ever set, and a check that
-WASAPI on the PC accepts the format the game asks for.
+What a complete replacement still needs: XMA2 decoding behind the SHAPE contexts, XDsp if the device byte is ever
+set, and a check that WASAPI on the PC accepts the format the game asks for. The XMA2 decoder exists
+(XmaStreamDecoder, [xma.md](xma.md)); what is missing is the context protocol. Wiring it in means, per enabled
+context: read its input packets, call DecodePacket per 2 KiB packet, pack the float output to 16-bit PCM into the
+context's 0x1700-byte output buffer in 256-byte blocks, and advance the write offset the game reads. The hook is
+AcpHalDevice.SendMessage, where the per-context messages (5, 7, 0x12) arrive.
 
 ## Unknown
 
@@ -110,5 +113,8 @@ WASAPI on the PC accepts the format the game asks for.
   kind are inferred from those two offsets.
 - The XMA context bit fields (the game reads offsets in 256-byte blocks from +0x00 and +0x24 and the output buffer's
   APU address from +0x1C); the IAcpHal message types (2 at start-up, 5, 7 and 0x12 per XMA context) and slots 3, 4.
+  Those three fields and the 64-byte size sit where the Xbox 360 XMA context, as emulators describe it, keeps the
+  output write offset (dword 0), output buffer pointer (dword 7) and output read offset (dword 9); whether the rest
+  (input buffer pointers and packet counts, loop fields) matches as well is not checked.
 - Who sets the XDsp byte at +0x3DD78, and what XDsp would process.
 - How the game behaves when an XMA context never produces output.

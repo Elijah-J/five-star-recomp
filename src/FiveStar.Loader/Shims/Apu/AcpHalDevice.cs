@@ -10,7 +10,9 @@ namespace FiveStar.Loader.Shims.Apu;
 /// <summary>
 /// The SHAPE side of acphal.dll: the XMA decode contexts and the IAcpHal object the game sends context messages
 /// through. The game uses SHAPE only to decode XMA (no SRC, EQ, filter or DMA contexts); this skeleton hands out the
-/// contexts and accepts every message, but nothing decodes XMA yet, so an XMA voice's output buffer stays empty.
+/// contexts and accepts every message, but nothing decodes XMA yet, so an XMA voice's output buffer stays empty. The
+/// decoder exists (FiveStar.Formats.Audio.Xma.XmaStreamDecoder, one per context); what is missing is the context
+/// protocol behind the per-context messages <see cref="SendMessage"/> receives (docs/audio-runtime.md).
 /// </summary>
 internal sealed unsafe class AcpHalDevice : IDisposable
 {
