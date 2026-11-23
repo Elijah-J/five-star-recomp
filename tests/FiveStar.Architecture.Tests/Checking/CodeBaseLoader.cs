@@ -9,6 +9,7 @@ namespace FiveStar.Architecture.Tests.Checking;
 public static class CodeBaseLoader
 {
     private const string SolutionFile = "FiveStar.slnx";
+    private const string GitMarker = ".git";
     private const int BinaryProbeLength = 8000;
     private const char ByteOrderMark = '﻿';
 
@@ -48,13 +49,21 @@ public static class CodeBaseLoader
 
         foreach (var child in folder.EnumerateDirectories())
         {
-            if (CodePolicy.SkippedFolders.Contains(child.Name))
+            if (CodePolicy.SkippedFolders.Contains(child.Name) || IsSeparateCheckout(child))
             {
                 continue;
             }
 
             Collect(child, root, files);
         }
+    }
+
+    /// <summary>A nested repository or git worktree: its own <c>.git</c> file or folder means it is not part of this one.</summary>
+    private static bool IsSeparateCheckout(DirectoryInfo folder)
+    {
+        var marker = Path.Combine(folder.FullName, GitMarker);
+
+        return File.Exists(marker) || Directory.Exists(marker);
     }
 
     /// <summary>The file's text, or null when a NUL byte near its start marks it as binary.</summary>
