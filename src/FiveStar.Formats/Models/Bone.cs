@@ -5,5 +5,9 @@ using System.Numerics;
 
 namespace FiveStar.Formats.Models;
 
-/// <summary>A bone of a drawable's skeleton: its name, parent index (-1 for the root) and transform relative to the parent.</summary>
-public sealed record Bone(string Name, int Parent, Quaternion Rotation, Vector3 Translation, Vector3 Scale);
+/// <summary>
+/// A bone of a drawable's skeleton: its name, parent index (-1 for the root), transform relative to the parent, and
+/// the inverse bind matrix that takes a model-space point into the bone's space (row vectors; null when the skeleton
+/// has none).
+/// </summary>
+public sealed record Bone(string Name, int Parent, Quaternion Rotation, Vector3 Translation, Vector3 Scale, Matrix4x4? InverseBind);

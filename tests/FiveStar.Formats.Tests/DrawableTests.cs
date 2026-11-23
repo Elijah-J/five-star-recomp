@@ -37,6 +37,35 @@ public sealed class DrawableTests
         Assert.Equal([2 + (0x1234 * 0.25f), 3 + (7 * 2), 1 + (10 * 0.5f)], PackedPositions.Decode(header, vertex, 1));
     }
 
+    [Fact]
+    public void Meshlet_starts_that_wrap_past_65535_are_unwrapped_along_the_meshlets()
+    {
+        // 600 meshlets of 128 triangles over 3 remap entries each; meshlet 512 starts at triangle 65,536, stored as 0.
+        const int count = 600;
+        const int size = 128;
+        var writer = new ByteWriter().U32(Meshlets.Flag | count).U32(count * size).U32(count * 3);
+
+        for (var meshlet = 0u; meshlet < count; meshlet++)
+        {
+            writer.U32(0).U32((((meshlet * size) & 0xFFFF) << 16) | (meshlet * 3)).U32(0).U32(0);
+        }
+
+        for (var triangle = 0u; triangle < count * size; triangle++)
+        {
+            writer.U32(0 | (1u << 7) | (2u << 14) | ((triangle / size) << 21));
+        }
+
+        for (var entry = 0; entry < count * 3; entry++)
+        {
+            writer.U16((ushort)(entry / 3));
+        }
+
+        var indices = Meshlets.Triangles(writer.ToArray(), count);
+
+        Assert.Equal([599, 599, 599], indices[^3..]);
+        Assert.Equal([512, 512, 512], indices[(512 * size * 3)..((512 * size * 3) + 3)]);
+    }
+
     [DumpFact]
     public void A_prop_decodes_three_levels_of_detail_with_normals_that_face_their_triangles()
     {
