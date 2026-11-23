@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Runtime.InteropServices;
+using FiveStar.Formats.Audio.Xma;
 using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Native;
 
@@ -9,10 +10,9 @@ namespace FiveStar.Loader.Shims.Apu;
 
 /// <summary>
 /// The SHAPE side of acphal.dll: the XMA decode contexts and the IAcpHal object the game sends context messages
-/// through. The game uses SHAPE only to decode XMA (no SRC, EQ, filter or DMA contexts); this skeleton hands out the
-/// contexts and accepts every message, but nothing decodes XMA yet, so an XMA voice's output buffer stays empty. The
-/// decoder exists (FiveStar.Formats.Audio.Xma.XmaStreamDecoder, one per context); what is missing is the context
-/// protocol behind the per-context messages <see cref="SendMessage"/> receives (docs/audio-runtime.md).
+/// through. The game uses SHAPE only to decode XMA (no SRC, EQ, filter or DMA contexts). The hardware decodes on its
+/// own while a context is enabled; here each context decodes when a message changes it (enable, or output taken),
+/// on the caller's thread, until its output ring is full or its input used up (<see cref="XmaContextDecoder"/>).
 /// </summary>
 internal sealed unsafe class AcpHalDevice : IDisposable
 {
@@ -20,6 +20,7 @@ internal sealed unsafe class AcpHalDevice : IDisposable
     private readonly HashSet<uint> _loggedMessages = [];
     private readonly ApuHeap _heap;
     private readonly LoaderLog _log;
+    private XmaContextDecoder?[] _decoders = [];
     private nint _object;
     private nint _vtable;
     private nint _contexts;
@@ -64,8 +65,14 @@ internal sealed unsafe class AcpHalDevice : IDisposable
         }
 
         ((nint*)(block + AcpHalLayout.PointersOffset))[AcpHalLayout.XmaKind] = array;
-        _contexts = array;
-        _log.Info($"  [acphal] AcpHalAllocateShapeContexts: {xma} XMA contexts at 0x{array:x} (no XMA decoder yet)");
+
+        lock (_gate)
+        {
+            _contexts = array;
+            _decoders = new XmaContextDecoder?[xma];
+        }
+
+        _log.Info($"  [acphal] AcpHalAllocateShapeContexts: {xma} XMA contexts at 0x{array:x} (decoded on the CPU)");
 
         return HResult.Ok;
     }
@@ -73,10 +80,14 @@ internal sealed unsafe class AcpHalDevice : IDisposable
     /// <summary>AcpHalReleaseShapeContexts(): the game passes nothing, so the last array is freed.</summary>
     public void ReleaseContexts()
     {
-        if (_contexts != 0)
+        lock (_gate)
         {
-            _ = _heap.Free(_contexts);
-            _contexts = 0;
+            if (_contexts != 0)
+            {
+                _ = _heap.Free(_contexts);
+                _contexts = 0;
+                _decoders = [];
+            }
         }
     }
 
@@ -104,21 +115,25 @@ internal sealed unsafe class AcpHalDevice : IDisposable
         return HResult.Ok;
     }
 
-    /// <summary>IAcpHal::SendMessage: accepted; the first message of each type is logged with its first payload word.</summary>
+    /// <summary>IAcpHal::SendMessage: the XMA context messages act on their context; the first message of each type is logged.</summary>
     public int SendMessage(uint type, uint cookie, uint* payload)
     {
+        LogFirst(type, cookie, payload);
+
         lock (_gate)
         {
-            if (!_loggedMessages.Add(type))
+            switch ((AcpHalMessage)type)
             {
-                return HResult.Ok;
+                case AcpHalMessage.EnableContext:
+                    return EnableContext(payload);
+                case AcpHalMessage.DisableContext:
+                    return DisableContext(payload);
+                case AcpHalMessage.ConsumeOutput:
+                    return ConsumeOutput(payload);
+                default:
+                    return HResult.Ok;
             }
         }
-
-        string word = payload == null ? "none" : $"0x{*payload:x}";
-        _log.Info($"  [acphal] IAcpHal message {type} (cookie 0x{cookie:x}, payload {word}) accepted, not acted on (logged once per type)");
-
-        return HResult.Ok;
     }
 
     public void Dispose()
@@ -127,5 +142,118 @@ internal sealed unsafe class AcpHalDevice : IDisposable
         NativeMemory.Free((void*)_vtable);
         _object = 0;
         _vtable = 0;
+    }
+
+    private int EnableContext(uint* payload)
+    {
+        uint* context = Context(payload);
+
+        if (context == null)
+        {
+            return HResult.InvalidArgument;
+        }
+
+        int index = (int)*payload;
+        var decoder = _decoders[index] ??= new XmaContextDecoder();
+        decoder.Enable(context);
+        Service(decoder, context);
+
+        return HResult.Ok;
+    }
+
+    private int DisableContext(uint* payload)
+    {
+        if (Context(payload) == null)
+        {
+            return HResult.InvalidArgument;
+        }
+
+        _decoders[(int)*payload]?.Disable();
+
+        return HResult.Ok;
+    }
+
+    /// <summary>Message 0x12: the game took blocks from the ring; the read offset moves on and the ring has room again.</summary>
+    private int ConsumeOutput(uint* payload)
+    {
+        uint* context = Context(payload);
+
+        if (context == null)
+        {
+            return HResult.InvalidArgument;
+        }
+
+        uint taken = payload[1];
+        uint blocks = XmaContextLayout.OutputBlocks.Read(context);
+
+        if (taken != 0 && blocks != 0)
+        {
+            uint read = XmaContextLayout.OutputReadOffset.Read(context);
+            XmaContextLayout.OutputReadOffset.Write(context, (read + taken) % blocks);
+            XmaContextLayout.OutputValid.Write(context, 1);
+        }
+
+        var decoder = _decoders[(int)*payload];
+
+        if (decoder is not null)
+        {
+            Service(decoder, context);
+        }
+
+        return HResult.Ok;
+    }
+
+    /// <summary>The context a message names by its first payload word, null for an index outside the array.</summary>
+    private uint* Context(uint* payload)
+    {
+        if (payload == null || _contexts == 0 || *payload >= (uint)_decoders.Length)
+        {
+            return null;
+        }
+
+        return (uint*)(_contexts + ((nint)(*payload) * AcpHalLayout.XmaContextBytes));
+    }
+
+    /// <summary>Maps the context's buffers (APU addresses) and decodes into its ring.</summary>
+    private void Service(XmaContextDecoder decoder, uint* context)
+    {
+        uint outputBytes = XmaContextLayout.OutputBlocks.Read(context) * XmaContextLayout.BlockBytes;
+        nint output = _heap.ToVirtualAddress(XmaContextLayout.OutputBuffer.Read(context), outputBytes);
+
+        if (output == 0)
+        {
+            return;
+        }
+
+        var input0 = Input(XmaContextLayout.InputBuffer0.Read(context), XmaContextLayout.InputPackets0.Read(context));
+        var input1 = Input(XmaContextLayout.InputBuffer1.Read(context), XmaContextLayout.InputPackets1.Read(context));
+        decoder.Service(context, input0, input1, new Span<byte>((void*)output, (int)outputBytes));
+    }
+
+    private ReadOnlySpan<byte> Input(uint apuAddress, uint packets)
+    {
+        uint bytes = packets * XmaLayout.PacketBytes;
+        nint address = _heap.ToVirtualAddress(apuAddress, bytes);
+
+        if (address == 0)
+        {
+            return [];
+        }
+
+        return new ReadOnlySpan<byte>((void*)address, (int)bytes);
+    }
+
+    private void LogFirst(uint type, uint cookie, uint* payload)
+    {
+        lock (_gate)
+        {
+            if (!_loggedMessages.Add(type))
+            {
+                return;
+            }
+        }
+
+        string word = payload == null ? "none" : $"0x{*payload:x}";
+        _log.Info($"  [acphal] IAcpHal message {type} (cookie 0x{cookie:x}, payload {word}) (logged once per type)");
     }
 }

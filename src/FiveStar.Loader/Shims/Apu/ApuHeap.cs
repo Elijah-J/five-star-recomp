@@ -153,6 +153,20 @@ internal sealed class ApuHeap : IDisposable
         }
     }
 
+    /// <summary>The virtual address of <paramref name="bytes"/> bytes from an APU address on, 0 unless all of them are in the heap.</summary>
+    public nint ToVirtualAddress(uint apuAddress, uint bytes)
+    {
+        lock (_gate)
+        {
+            if (_allocator is null || apuAddress < ApuAddressBase || (ulong)(apuAddress - ApuAddressBase) + bytes > _allocator.Capacity)
+            {
+                return 0;
+            }
+
+            return _base + (nint)(apuAddress - ApuAddressBase);
+        }
+    }
+
     public void Dispose()
     {
         if (_base != 0)
