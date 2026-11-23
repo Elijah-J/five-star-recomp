@@ -2,7 +2,8 @@
 
 `fivestar setup <dump folder>` prepares everything the port needs from your own dump. It runs a fixed list of steps
 in dependency order and records each finished step, so a second run skips what is done and redoes only what changed.
-An interrupted run continues where it stopped.
+An interrupted run continues where it stopped. `fivestar run` ([running.md](running.md)) runs the steps the game needs
+with the same state before it starts the game.
 
 ```
 fivestar setup <dump folder> [--work <dir>] [--only <step,...>] [--force] [--limit N] [--step K] [--jobs N]
@@ -17,6 +18,7 @@ fivestar setup <dump folder> --clean-cache
 flowchart LR
   verify["verify"] --> extract["shader-extract"]
   extract --> translate["shader-translate"]
+  translate --> rect["rect-gs"]
   extract --> cache["pipeline-cache"]
   verify --> textures["textures"]
   verify --> gdk["gdk-abi"]
@@ -27,6 +29,7 @@ flowchart LR
 | `verify` | reads the title id and version from `MicrosoftGame.Config`; checks `shaders.rpf` and the texture page files exist. Another title fails; another version gives a warning | none |
 | `shader-extract` | `fivestar shader extract` of `shaders.rpf` | `shaders/dxbc`, `shaders/fssm` |
 | `shader-translate` | `fivestar shader translate --mesh-fallbacks` of every program, compiled with dxc through the shader cache | `shaders/hlsl` (HLSL, DXIL, `results.json`, `variants.json`), `shader-cache` |
+| `rect-gs` | `fivestar shader rect-gs` of the translated vertex programs: the geometry shaders the loader draws rectangle lists with | `shaders/hlsl/rect-gs` |
 | `pipeline-cache` | `fivestar shader psocache` of the console pipeline cache, matched to the programs | `pipelines` (`pipelines.json`, `code/`) |
 | `textures` | `fivestar texture extract` of every page file | `textures/<page file path>/*.dds` |
 | `gdk-abi` | `fivestar platform gdk-abi` from the PC GDK's `xgameruntime.lib`, for `fivestar-loader --gdk-abi`. Without a GDK it finishes with a note | `loader/gdk-abi.txt` |
@@ -58,6 +61,7 @@ or the step fails, and the step then shows as interrupted.
 | `verify` | path, size and write time of the config, `shaders.rpf` and the page files | a version number in the code |
 | `shader-extract` | `shaders.rpf` (path, size, write time) | FiveStar.Shaders |
 | `shader-translate` | `shaders/dxbc/_manifest.tsv` (it lists every container hash), the sample options | the shader-cache identity (below) |
+| `rect-gs` | `shaders/hlsl/variants.json` | the shader-cache identity, FiveStar.Shaders |
 | `pipeline-cache` | `shaders.rpf` | FiveStar.Shaders, FiveStar.Formats |
 | `textures` | every page file, the sample options | FiveStar.Formats |
 | `gdk-abi` | the GDK library and the dump's modules, or none | FiveStar.Formats |
@@ -69,9 +73,10 @@ step runs when it has no record, its record differs, its outputs are gone or it 
   only does the programs that were not reached.
 - `textures` writes `state/textures/<page file>.done` with the file's fingerprint after each page file and skips files
   whose mark is current.
+- `rect-gs` keeps every geometry shader already compiled.
 - `shader-extract` and `pipeline-cache` take about a minute and start over.
 
-Every step prints `[n/6] <title>`, the reason it runs, its expected time and the overall time left. The expected time is
+Every step prints `[n/7] <title>`, the reason it runs, its expected time and the overall time left. The expected time is
 the last measured duration of the step, or before the first run an estimate: 3.2 s of one job per shader program
 (about an hour for all programs on 24 jobs, 5.8 hours on 4), 100 MiB of page files per second for textures. The shader and texture steps print
 progress, time left and finish time every 10 seconds.
@@ -81,7 +86,7 @@ sample counts as different inputs.
 
 ## Requirements
 
-`shader-translate` needs dxc, found as for `fivestar shader translate`: `--dxc`/`FIVESTAR_DXC`, then the Windows SDK,
+`shader-translate` and `rect-gs` need dxc, found as for `fivestar shader translate`: `--dxc`/`FIVESTAR_DXC`, then the Windows SDK,
 then `PATH`. The RDNA code is decoded in-process, so LLVM is not needed. When dxc is missing setup says so and how to
 provide it before any step runs.
 
