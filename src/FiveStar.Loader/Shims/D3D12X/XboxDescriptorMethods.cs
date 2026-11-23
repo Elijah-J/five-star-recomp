@@ -27,9 +27,28 @@ internal static unsafe class XboxDescriptorMethods
     public const int CopyDescriptorsSimpleSlot = 24;
 
     /// <summary>ID3D12Device::GetDescriptorHandleIncrementSize (d3d12.h).</summary>
-    private const int IncrementSlot = 15;
+    public const int IncrementSlot = 15;
+
+    /// <summary>D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES: the desktop heap types are 0 (CBV_SRV_UAV) to 3 (DSV) (d3d12.h).</summary>
+    private const uint DesktopHeapTypes = 4;
 
     private static XboxDeviceFactory D3D12X => ShimContext.Runtime.D3D12X;
+
+    /// <summary>
+    /// Slot 15. The game asks for types 0 to 4 once at start-up (0x142478e3d) and keeps only type 0's answer; type 4 is
+    /// console-only and answered 0 without the desktop call, which refuses it.
+    /// </summary>
+    [HotPath]
+    [UnmanagedCallersOnly]
+    public static uint GetDescriptorHandleIncrementSize(XboxObject* self, uint type)
+    {
+        if (type >= DesktopHeapTypes)
+        {
+            return 0;
+        }
+
+        return Increment(self->Inner, (int)type);
+    }
 
     [HotPath]
     [UnmanagedCallersOnly]
