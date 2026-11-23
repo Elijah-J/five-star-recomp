@@ -45,6 +45,9 @@ lists each violation as `path:line: [Rule] message`.
 - A method spans at most 60 lines. Longer work is split into named private steps.
 - Methods on per-frame paths carry `[HotPath]`: no allocation, no locks. Each project declares its own `internal sealed
   class HotPathAttribute : Attribute`; the check matches it by name.
+- The loader and the libraries it uses are trim- and NativeAOT-safe (the analyzers run on every build): no member
+  reflection, no runtime code generation. A shim type is `partial`; its shims are registered at compile time
+  ([docs/aot.md](docs/aot.md)).
 - A dispatch over commands or opcodes is a `switch` with one private handler per case.
 - No magic numbers. A value gets a name once (a `const`, a `static readonly` field or an enum member). A value that
   comes from a hardware or file format cites where it comes from in a comment (an ISA section, a header field).
