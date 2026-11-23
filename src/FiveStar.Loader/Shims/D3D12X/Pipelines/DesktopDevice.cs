@@ -18,6 +18,7 @@ internal static unsafe class DesktopDevice
     private const int QueryInterfaceSlot = 0;
     private const int AddRefSlot = 1;
     private const int ReleaseSlot = 2;
+    private const int CheckFeatureSupportSlot = 13;
     private const int CreateRootSignatureSlot = 16;
     private const int CreatePipelineStateSlot = 47;
 
@@ -34,6 +35,12 @@ internal static unsafe class DesktopDevice
     public static uint Release(nint unknown)
     {
         return ((delegate* unmanaged<nint, uint>)Method(unknown, ReleaseSlot))(unknown);
+    }
+
+    /// <summary>ID3D12Device::CheckFeatureSupport(D3D12_FEATURE, void* data, UINT size).</summary>
+    public static int CheckFeatureSupport(nint device, int feature, void* data, uint size)
+    {
+        return ((delegate* unmanaged<nint, int, void*, uint, int>)Method(device, CheckFeatureSupportSlot))(device, feature, data, size);
     }
 
     /// <summary>ID3D12Device::CreateRootSignature(UINT nodeMask, const void* blob, SIZE_T size, REFIID, void**).</summary>
