@@ -30,9 +30,9 @@ public static class SampleTexture
             throw new InvalidDataException($"{path} #{index}: {status.Name}");
         }
 
-        if (layout.Faces != 1)
+        if (layout.Images != 1 || layout.Depth != 1)
         {
-            throw new InvalidDataException($"{path} #{index} is a cube map");
+            throw new InvalidDataException($"{path} #{index} is a {layout.Kind}, not one 2D image");
         }
 
         var rowBytes = layout.BlockWidth * layout.Format.BytesPerElement;

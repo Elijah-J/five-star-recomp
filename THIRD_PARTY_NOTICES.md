@@ -11,6 +11,15 @@ WaitFrameEventX return codes and the BVH header and instance-node fields were le
 game's executable or shaders before use (docs/d3d12x-shim.md, docs/raytracing.md), and the instance node's 0x00 and
 0x70 fields are taken from it unverified. No code was copied.
 
+## GTA6-Asset-Info
+
+https://github.com/TrinitronClient/GTA6-Asset-Info, revision `0f649eba78cdd6e053d7aefd333fb6e3abe9739a`, GPL-3.0.
+Its notes on the `.ttpf` texture layout were leads: the resource-kind and array-size fields of the descriptor, the
+copies of a cube map and their padding, arrays stored level by level, no mip tail on a single-mip texture, the 3D
+brick order and the y bit order of the 1-byte 64 KB block. Each was checked on the dump before use
+(docs/textures.md); the stored mip count we use (mip field plus `d1` bits 0-2) is our own finding. No text or code
+was copied.
+
 ## bcpack-rs
 
 https://github.com/Ahmet-Dedeler/bcpack-rs, revision `0a887de1edc9c22a425605091f1a8365fdf74dbb`, licensed MIT OR
