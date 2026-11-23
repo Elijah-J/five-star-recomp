@@ -2,6 +2,7 @@
 
 `audio.rpf` (26.6 GiB) holds the game's sound banks as AWC containers stored raw: no zlib and no encryption.
 `fivestar audio` finds them without the archive's table of contents, checks every stream and exports playable files.
+How the game decodes and plays them is in [audio-runtime.md](audio-runtime.md).
 
 ## Archive layout
 
