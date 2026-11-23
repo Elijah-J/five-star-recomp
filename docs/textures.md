@@ -81,6 +81,19 @@ of its position. An element is a 4x4 block for BC formats and a pixel otherwise.
 zlib pages decode with any zlib inflater. Codecs 1 and 3 to 7 are the console's BCPack format, one per BC format (the
 codec equals `DSTORAGE_BCPACK_MODE`). BC1 (codec 1) decodes; pages of the other codecs read as missing.
 
+Every codec uses the same entropy layer (below) with its own lanes. Each lane emits one symbol per 8 bytes of output:
+one per block for BC1 and BC4, two (E, then O) per 16-byte block for the others. A lane's alphabet index is its symbol
+width - 1. Every page of the dump converges with these layouts.
+
+| Codec | Lanes | Symbol width per lane, bits |
+|---|---|---|
+| 1 BC1 | 12 | 8, 8, 5, 6, 5, 5, 6, 5, 8, 8, 8, 8 |
+| 3 BC3 | 12 | 4, 4, 8, 6, 6, 6, 6, 5, 6, 5, 8, 8 |
+| 4 BC4 | 12 | 8, 8, 8, 8, 6, 6, 6, 6, 6, 6, 6, 6 |
+| 5 BC5 | 12 | 4, 4, 8, 8, 6, 6, 6, 6, 6, 6, 6, 6 |
+| 6 BC6H | 16 | 4, 4, 8, 8, 8, 5, 5, 5, 6, 6, 6, 8, 8, 8, 8, 5 |
+| 7 BC7 | 16 | 4, 4, 8, 8, 8, 8, 8, 7, 7, 5, 6, 8, 8, 8, 8, 5 |
+
 ### BCPack BC1
 
 A BC1 page decodes to `virtual size / 8` BC1 blocks in the page's stored order. They replace the page's virtual
@@ -145,7 +158,7 @@ fivestar texture extract  <file.ttpf> <out dir> [--limit N] [--only i,j] [--no-d
 fivestar texture coverage <dir>                  textures whose pages all decode, per file and in total
 fivestar texture codecs   <dir>                  pages and stored bytes per storage kind
 fivestar texture pages    <file.ttpf>            three sample entries per flag value, then counts per flag and kind
-fivestar texture bcpack-scan  <file|dir>... [--every N] [--jobs N] [--engine avx512|avx2|scalar] [--hashes FILE] [--quiet]
+fivestar texture bcpack-scan  <file|dir>... [--codec 1|3|4|5|6|7] [--every N] [--jobs N] [--engine avx512|avx2|scalar] [--hashes FILE] [--quiet]
 fivestar texture bcpack-bench <file|dir>... [--pages N] [--seconds S] [--engine avx512|avx2|scalar]
 ```
 
@@ -153,14 +166,15 @@ Statuses: `ok`, `skip_fmt_N` (format not supported), `skip_modeN` (no swizzle kn
 `skip_size`, `skip_cube_mips`, `skip_unsupported_codec` (mip 0 on a BCPack page of codec 3 to 7), and in
 `coverage` `bcpack_codecN`.
 
-`bcpack-scan` decodes every BC1 page on all cores and prints, per file and in total, the pages that converge, fail
-or reach an unfitted window slot, with the decode speed. `--hashes` writes one line per page (path, virtual address,
-status, SHA-256 of the blocks, unfitted blocks) to compare engines or builds. `bcpack-bench` measures one core on
+`bcpack-scan` decodes every page of one codec (BC1 by default) on all cores and prints, per file and in total, the
+pages that converge, fail or reach an unfitted preset slot, with the decode speed. `--hashes` writes one line per page
+(path, virtual address, status, SHA-256 of the output, unfitted blocks) to compare engines or builds; for a codec
+without a block decoder the output is the lane symbols. `bcpack-bench` measures one core on
 sampled pages, by page size.
 
 ## Unknown
 
-- The BCPack lane layouts of codecs 3 to 7.
+- The BCPack block layers of codecs 3 to 7.
 - Values of the BC1 preset window and codebook that no page of this dump tests.
 - Layout base 4, and what separates bases 1, 2 and 3.
 - Mipped cube map layout.

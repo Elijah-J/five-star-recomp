@@ -22,11 +22,11 @@ public class Bc1DecodeBenchmarks
     private int _blocks;
 
     [ParamsSource(nameof(Engines))]
-    public Bc1Engine Engine { get; set; }
+    public BcPackEngine Engine { get; set; }
 
-    public static IEnumerable<Bc1Engine> Engines()
+    public static IEnumerable<BcPackEngine> Engines()
     {
-        return Enum.GetValues<Bc1Engine>().Where(Bc1Decoder.IsSupported);
+        return Enum.GetValues<BcPackEngine>().Where(BcPackDecoder.IsSupported);
     }
 
     [GlobalSetup]
@@ -43,7 +43,7 @@ public class Bc1DecodeBenchmarks
 
     /// <summary>One decode of the stream to BC1 blocks.</summary>
     [Benchmark]
-    public Bc1DecodeStatus Decode()
+    public BcPackDecodeStatus Decode()
     {
         return Bc1Decoder.Decode(_chunk, _blocks, _output, Engine).Status;
     }

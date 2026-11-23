@@ -7,17 +7,14 @@
 namespace FiveStar.Formats.Ttpf.BcPack;
 
 /// <summary>
-/// The registers of the 12 BC1 lanes, as arrays of 16 slots per field so the vector engines load them directly (slots
-/// 12-15 stay inert). Flags are 0 or all ones. Also runs the rare steps of a lane's control: start-up, the fragment
-/// header bytes and the end of a fragment, which every engine shares.
+/// The registers of a codec's 12 or 16 lanes, as arrays of 16 slots per field so the vector engines load them directly
+/// (slots past the codec's lanes stay inert: never started, granted, pushed or written). Flags are 0 or all ones. Also
+/// runs the rare steps of a lane's control: start-up, the fragment header bytes and the end of a fragment, which every
+/// engine shares.
 /// </summary>
 internal unsafe struct LaneRegisters
 {
     public const int Width = 16;
-
-    public const int Lanes = 12;
-
-    public const uint AllLanes = (1u << Lanes) - 1;
 
     /// <summary>The rANS lower bound L: the state renormalises byte by byte while below it.</summary>
     public const uint LowerBound = 1u << 24;
@@ -38,6 +35,9 @@ internal unsafe struct LaneRegisters
 
     public const int Bc1Segments = RansModels.Bc1Thresholds + 1;
 
+    // The hardware's alphabet_bits input is the lane's symbol width - 1.
+    private const uint WidthOverAlphabet = 1;
+
     // Header byte 0: bits 0-3 the model q, bit 4 flush, bit 5 a three-byte header, bits 6-7 narrow the alphabet.
     private const uint ModelMask = 0xF;
     private const int FlushBit = 4;
@@ -49,9 +49,6 @@ internal unsafe struct LaneRegisters
 
     // A three-byte header's length is (byte 2 << 8 | byte 1) + 257; a two-byte header's is byte 1 + 1.
     private const uint LongLengthBias = (1u << ByteShift) + 1;
-
-    // Symbol bits - 1 of each BC1 lane (the hardware's alphabet_bits input).
-    private static readonly uint[] Bc1AlphabetBits = [7, 7, 4, 5, 4, 4, 5, 4, 7, 7, 7, 7];
 
     // Read by the vector engines.
     public fixed uint RansState[Width];
@@ -98,17 +95,24 @@ internal unsafe struct LaneRegisters
     public int ControlSum;
     public int FinishedLanes;
 
-    /// <summary>Resets to the power-on state: every lane IDLE with go set, model (0, 0).</summary>
-    public void Reset()
+    /// <summary>The codec's lanes, and the bit mask of them.</summary>
+    public int Lanes;
+    public uint AllLanes;
+
+    /// <summary>Resets to the power-on state for lanes of the given symbol widths: every lane IDLE with go set, model (0, 0).</summary>
+    public void Reset(ReadOnlySpan<byte> widths)
     {
         fixed (LaneRegisters* self = &this)
         {
             new Span<byte>(self, sizeof(LaneRegisters)).Clear();
         }
 
+        Lanes = widths.Length;
+        AllLanes = (uint)((1L << Lanes) - 1);
+
         for (var lane = 0; lane < Lanes; lane++)
         {
-            AlphabetBits[lane] = Bc1AlphabetBits[lane];
+            AlphabetBits[lane] = widths[lane] - WidthOverAlphabet;
             Go[lane] = 1;
         }
 
@@ -118,7 +122,7 @@ internal unsafe struct LaneRegisters
         }
     }
 
-    /// <summary>Whether all 12 lanes finished and hold no symbol.</summary>
+    /// <summary>Whether all lanes finished and hold no symbol.</summary>
     [HotPath]
     public readonly bool Finished()
     {

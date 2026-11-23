@@ -70,44 +70,44 @@ public sealed class Bc1DecoderTests
         }
     }
 
-    [EngineFact(Bc1Engine.Scalar)]
+    [EngineFact(BcPackEngine.Scalar)]
     public void Synthetic_streams_decode_to_their_recorded_symbols_and_blocks_on_the_scalar_engine()
     {
-        DecodeSyntheticStreams(Bc1Engine.Scalar);
+        DecodeSyntheticStreams(BcPackEngine.Scalar);
     }
 
-    [EngineFact(Bc1Engine.Avx2)]
+    [EngineFact(BcPackEngine.Avx2)]
     public void Synthetic_streams_decode_to_their_recorded_symbols_and_blocks_on_the_avx2_engine()
     {
-        DecodeSyntheticStreams(Bc1Engine.Avx2);
+        DecodeSyntheticStreams(BcPackEngine.Avx2);
     }
 
-    [EngineFact(Bc1Engine.Avx512)]
+    [EngineFact(BcPackEngine.Avx512)]
     public void Synthetic_streams_decode_to_their_recorded_symbols_and_blocks_on_the_avx512_engine()
     {
-        DecodeSyntheticStreams(Bc1Engine.Avx512);
+        DecodeSyntheticStreams(BcPackEngine.Avx512);
     }
 
-    [EngineFact(Bc1Engine.Avx2)]
+    [EngineFact(BcPackEngine.Avx2)]
     public void The_avx2_engine_matches_the_scalar_engine_on_damaged_streams()
     {
-        DecodeDamagedStreams(Bc1Engine.Avx2);
+        DecodeDamagedStreams(BcPackEngine.Avx2);
     }
 
-    [EngineFact(Bc1Engine.Avx512)]
+    [EngineFact(BcPackEngine.Avx512)]
     public void The_avx512_engine_matches_the_scalar_engine_on_damaged_streams()
     {
-        DecodeDamagedStreams(Bc1Engine.Avx512);
+        DecodeDamagedStreams(BcPackEngine.Avx512);
     }
 
-    private static void DecodeSyntheticStreams(Bc1Engine engine)
+    private static void DecodeSyntheticStreams(BcPackEngine engine)
     {
         foreach (var vector in Vectors())
         {
             var symbols = new ushort[Bc1Decoder.Lanes * vector.Blocks];
             var output = new byte[vector.Blocks * Bc1Decoder.BlockSize];
 
-            var decoded = Bc1Decoder.DecodeSymbols(vector.Chunk, vector.Blocks, symbols, engine);
+            var decoded = BcPackDecoder.DecodeSymbols(vector.Chunk, BcPackCodec.Bc1, vector.Blocks, symbols, engine);
             var blocks = Bc1Decoder.Decode(vector.Chunk, vector.Blocks, output, TestCodebook(), engine);
             var cut = Bc1Decoder.Decode(vector.Chunk.AsSpan(0, vector.Chunk.Length / 2), vector.Blocks, new byte[output.Length], engine);
 
@@ -115,12 +115,12 @@ public sealed class Bc1DecoderTests
             Assert.Equal(vector.Symbols, symbols);
             Assert.True(blocks.Success, blocks.Describe());
             Assert.Equal(vector.Bc1Sha256, Convert.ToHexStringLower(SHA256.HashData(output)));
-            Assert.Equal(Bc1DecodeStatus.NoProgress, cut.Status);
+            Assert.Equal(BcPackDecodeStatus.NoProgress, cut.Status);
         }
     }
 
     // A damaged stream fails the same way on every engine, and a stream that still converges gives the same blocks.
-    private static void DecodeDamagedStreams(Bc1Engine engine)
+    private static void DecodeDamagedStreams(BcPackEngine engine)
     {
         var random = new Random(1);
 
@@ -133,7 +133,7 @@ public sealed class Bc1DecoderTests
                 var scalarOutput = new byte[vector.Blocks * Bc1Decoder.BlockSize];
                 var vectorOutput = new byte[vector.Blocks * Bc1Decoder.BlockSize];
 
-                var scalar = Bc1Decoder.Decode(damaged, vector.Blocks, scalarOutput, Bc1Engine.Scalar);
+                var scalar = Bc1Decoder.Decode(damaged, vector.Blocks, scalarOutput, BcPackEngine.Scalar);
                 var vectorised = Bc1Decoder.Decode(damaged, vector.Blocks, vectorOutput, engine);
 
                 Assert.Equal(scalar, vectorised);

@@ -8,9 +8,12 @@ using FiveStar.Formats.Ttpf.BcPack;
 
 namespace FiveStar.Cli.Texture;
 
-/// <summary>The BCPack BC1 pages of a set of page files, and the decoder engine the command asked for.</summary>
-internal static class Bc1PageSet
+/// <summary>The BCPack pages of one codec in a set of page files, and the decoder engine and codec the command asked for.</summary>
+internal static class BcPackPageSet
 {
+    /// <summary>Output bytes per lane symbol, in every codec.</summary>
+    public const int BytesPerSymbol = 8;
+
     private const string PagePattern = "*.ttpf";
 
     /// <summary>Every page file given or below a folder given, sorted.</summary>
@@ -39,8 +42,8 @@ internal static class Bc1PageSet
         return files;
     }
 
-    /// <summary>The BC1 pages of each file, every <paramref name="every"/>-th one per file.</summary>
-    public static List<(int File, TexturePage Page)> Pages(IReadOnlyList<string> files, long every)
+    /// <summary>The pages of <paramref name="codec"/> in each file, every <paramref name="every"/>-th one per file.</summary>
+    public static List<(int File, TexturePage Page)> Pages(IReadOnlyList<string> files, long every, BcPackCodec codec)
     {
         var pages = new List<(int File, TexturePage Page)>();
 
@@ -52,7 +55,7 @@ internal static class Bc1PageSet
 
             foreach (var page in file.Pages)
             {
-                if (page.IsBcPack && page.Codec == TexturePage.Bc1Codec && seen++ % every == 0)
+                if (page.IsBcPack && page.Codec == (int)codec && seen++ % every == 0)
                 {
                     pages.Add((index, page));
                 }
@@ -62,20 +65,36 @@ internal static class Bc1PageSet
         return pages;
     }
 
+    /// <summary>The codec named by <c>--codec 1|3|4|5|6|7</c>, BC1 by default.</summary>
+    public static BcPackCodec Codec(string? number)
+    {
+        if (number is null)
+        {
+            return BcPackCodec.Bc1;
+        }
+
+        if (!Enum.TryParse<BcPackCodec>(number, out var codec) || !Enum.IsDefined(codec))
+        {
+            throw new ArgumentException($"unknown codec {number} (1, 3, 4, 5, 6, 7)");
+        }
+
+        return codec;
+    }
+
     /// <summary>The engine named by <c>--engine avx512|avx2|scalar</c>, or the fastest one this processor runs.</summary>
-    public static Bc1Engine Engine(string? name)
+    public static BcPackEngine Engine(string? name)
     {
         if (name is null)
         {
-            return Bc1Decoder.DefaultEngine;
+            return BcPackDecoder.DefaultEngine;
         }
 
-        if (!Enum.TryParse<Bc1Engine>(name, ignoreCase: true, out var engine) || !Enum.IsDefined(engine))
+        if (!Enum.TryParse<BcPackEngine>(name, ignoreCase: true, out var engine) || !Enum.IsDefined(engine))
         {
             throw new ArgumentException($"unknown engine {name} (avx512, avx2, scalar)");
         }
 
-        if (!Bc1Decoder.IsSupported(engine))
+        if (!BcPackDecoder.IsSupported(engine))
         {
             throw new ArgumentException($"this processor cannot run the {name} engine");
         }
@@ -83,13 +102,15 @@ internal static class Bc1PageSet
         return engine;
     }
 
-    public static string EngineName(Bc1Engine engine)
+    public static string CodecName(BcPackCodec codec) => codec.ToString().ToUpperInvariant();
+
+    public static string EngineName(BcPackEngine engine)
     {
         switch (engine)
         {
-            case Bc1Engine.Avx512:
+            case BcPackEngine.Avx512:
                 return "AVX-512";
-            case Bc1Engine.Avx2:
+            case BcPackEngine.Avx2:
                 return "AVX2";
             default:
                 return "scalar";

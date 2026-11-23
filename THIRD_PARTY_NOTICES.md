@@ -11,6 +11,13 @@ WaitFrameEventX return codes and the BVH header and instance-node fields were le
 game's executable or shaders before use (docs/d3d12x-shim.md, docs/raytracing.md), and the instance node's 0x00 and
 0x70 fields are taken from it unverified. No code was copied.
 
+## GTA6-Asset-Info
+
+https://github.com/TrinitronClient/GTA6-Asset-Info, revision `0f649eba`, GPL-3.0. Its BCPack notes
+(`formats/06-bcpack.md`) gave the lane counts and symbol widths of codecs 3 to 7 and the lane meanings of the BC4, BC5
+and BC7 block layers; each rule was checked against the reference dump before use (convergence of every page, and
+the mip checks in the wiki). No code or text was copied, and none of its fitted tables were used.
+
 ## bcpack-rs
 
 https://github.com/Ahmet-Dedeler/bcpack-rs, revision `0a887de1edc9c22a425605091f1a8365fdf74dbb`, licensed MIT OR

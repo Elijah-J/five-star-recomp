@@ -21,11 +21,11 @@ internal readonly record struct ClockMasks(uint Grant, uint Push, uint Slow, uin
     /// <summary>The masks for lanes that <paramref name="need"/> a byte, given the held symbols and the slots.</summary>
     [HotPath]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static ClockMasks Compute(uint need, uint symbolFull, uint slots, int available, uint vectorLanes)
+    public static ClockMasks Compute(uint need, uint symbolFull, uint slots, int available, uint vectorLanes, uint allLanes)
     {
         var blocked = symbolFull & slots;
         var grant = Bmi2.ParallelBitDeposit((1u << available) - 1, need & ~blocked);
-        var go = LaneRegisters.AllLanes & ~((need & ~grant) | blocked);
+        var go = allLanes & ~((need & ~grant) | blocked);
 
         return new ClockMasks(grant, go & symbolFull, go & ~vectorLanes, go & vectorLanes);
     }

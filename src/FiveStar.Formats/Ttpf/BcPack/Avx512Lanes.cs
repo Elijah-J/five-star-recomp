@@ -12,7 +12,7 @@ namespace FiveStar.Formats.Ttpf.BcPack;
 
 /// <summary>
 /// The lane registers the AVX-512 engine keeps in vector registers across clocks, one 16-lane vector per field (slots
-/// 12-15 are never granted, pushed or written, so they stay inert). They go through <see cref="LaneRegisters"/> only
+/// past the codec's lanes are never granted, pushed or written, so they stay inert). They go through <see cref="LaneRegisters"/> only
 /// on clocks where a lane takes a control step, and when a symbol vector is released.
 /// </summary>
 internal unsafe struct Avx512Lanes
@@ -64,7 +64,7 @@ internal unsafe struct Avx512Lanes
         var noInputLeft = Bits(Vector512.Equals(_inputLeft, Vector512<uint>.Zero));
         var need = ~Bits(_inputFull) & ((r->ProcessingLanes & ~noInputLeft) | r->HeaderLanes);
 
-        return ClockMasks.Compute(need, SymbolFullLanes, slots, available, r->ProcessingLanes | r->DrainingLanes);
+        return ClockMasks.Compute(need, SymbolFullLanes, slots, available, r->ProcessingLanes | r->DrainingLanes, r->AllLanes);
     }
 
     /// <summary>
@@ -190,11 +190,11 @@ internal unsafe struct Avx512Lanes
         return Vector512.Equals(Vector512.Create(bits) & LaneBits, LaneBits);
     }
 
-    /// <summary>The top bit of each of the 12 lane values.</summary>
+    /// <summary>The top bit of each of the 16 lane values; the callers mask out inert lanes where they could be set.</summary>
     [HotPath]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static uint Bits(Vector512<uint> value)
     {
-        return (uint)Vector512.ExtractMostSignificantBits(value) & LaneRegisters.AllLanes;
+        return (uint)Vector512.ExtractMostSignificantBits(value);
     }
 }

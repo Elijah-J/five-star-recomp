@@ -5,8 +5,8 @@ using FiveStar.Formats.Ttpf.BcPack;
 
 namespace FiveStar.Cli.Texture;
 
-/// <summary>The counts of a BC1 scan for one page file or in total.</summary>
-internal sealed class Bc1ScanTally
+/// <summary>The counts of a BCPack scan for one page file or in total.</summary>
+internal sealed class BcPackScanTally
 {
     public long Pages { get; private set; }
 
@@ -19,10 +19,10 @@ internal sealed class Bc1ScanTally
 
     public long StoredBytes { get; private set; }
 
-    /// <summary>Gets the BC1 bytes of the converged pages.</summary>
+    /// <summary>Gets the output bytes of the converged pages.</summary>
     public long BlockBytes { get; private set; }
 
-    public void Add(Bc1DecodeResult result, long storedBytes, long blockBytes)
+    public void Add(BcPackDecodeResult result, long storedBytes, long blockBytes)
     {
         Pages++;
         StoredBytes += storedBytes;
@@ -43,7 +43,7 @@ internal sealed class Bc1ScanTally
         }
     }
 
-    public void Merge(Bc1ScanTally other)
+    public void Merge(BcPackScanTally other)
     {
         Pages += other.Pages;
         Converged += other.Converged;

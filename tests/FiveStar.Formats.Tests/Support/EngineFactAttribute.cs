@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Five Star Recomp contributors.
+// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using FiveStar.Formats.Ttpf.BcPack;
@@ -10,9 +10,9 @@ namespace FiveStar.Formats.Tests.Support;
 [AttributeUsage(AttributeTargets.Method)]
 public sealed class EngineFactAttribute : FactAttribute
 {
-    public EngineFactAttribute(Bc1Engine engine)
+    public EngineFactAttribute(BcPackEngine engine)
     {
-        if (!Bc1Decoder.IsSupported(engine))
+        if (!BcPackDecoder.IsSupported(engine))
         {
             Skip = $"this processor cannot run the {engine} engine";
         }

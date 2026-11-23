@@ -41,20 +41,20 @@ internal static unsafe class LaneClock
     }
 
     /// <summary>The clock budget of the reference model.</summary>
-    public static long MaxCycles(uint target, int length) =>
-        (StallLimit * ((LaneRegisters.Lanes * (long)target) + length)) + CycleSlack;
+    public static long MaxCycles(uint target, int length, int lanes) =>
+        (StallLimit * ((lanes * (long)target) + length)) + CycleSlack;
 
     /// <summary>The result once every lane finished and drained: ok unless an end state is illegal.</summary>
-    public static Bc1DecodeResult Finish(LaneRegisters* registers, int position, int length, long cycle)
+    public static BcPackDecodeResult Finish(LaneRegisters* registers, int position, int length, long cycle)
     {
         var bad = registers->IllegalEndStates();
 
         if (bad != 0)
         {
-            return new Bc1DecodeResult(Bc1DecodeStatus.IllegalEndState, position, length, cycle, 0, bad);
+            return new BcPackDecodeResult(BcPackDecodeStatus.IllegalEndState, position, length, cycle, 0, bad);
         }
 
-        return new Bc1DecodeResult(Bc1DecodeStatus.Ok, position, length, cycle, 0, 0);
+        return new BcPackDecodeResult(BcPackDecodeStatus.Ok, position, length, cycle, 0, 0);
     }
 
     /// <summary>
@@ -83,21 +83,21 @@ internal static unsafe class LaneClock
         return NoLane;
     }
 
-    public static Bc1DecodeResult BadHeader(int position, int length, long cycle, int lane) =>
-        new(Bc1DecodeStatus.BadHeader, position, length, cycle, 0, lane);
+    public static BcPackDecodeResult BadHeader(int position, int length, long cycle, int lane) =>
+        new(BcPackDecodeStatus.BadHeader, position, length, cycle, 0, lane);
 
     /// <summary>
     /// A failed header in a vector engine, which grants every lane's byte first. The scalar engine stops inside its
     /// lane loop, so only the grants up to <paramref name="lane"/> count.
     /// </summary>
-    public static Bc1DecodeResult BadHeader(int position, uint grant, int length, long cycle, int lane) =>
+    public static BcPackDecodeResult BadHeader(int position, uint grant, int length, long cycle, int lane) =>
         BadHeader(position - BitOperations.PopCount(grant >> (lane + 1)), length, cycle, lane);
 
-    public static Bc1DecodeResult NoProgress(int position, int length, long cycle) =>
-        new(Bc1DecodeStatus.NoProgress, position, length, cycle, 0, 0);
+    public static BcPackDecodeResult NoProgress(int position, int length, long cycle) =>
+        new(BcPackDecodeStatus.NoProgress, position, length, cycle, 0, 0);
 
-    public static Bc1DecodeResult CycleLimit(int position, int length, long cycles) =>
-        new(Bc1DecodeStatus.CycleLimit, position, length, cycles, 0, 0);
+    public static BcPackDecodeResult CycleLimit(int position, int length, long cycles) =>
+        new(BcPackDecodeStatus.CycleLimit, position, length, cycles, 0, 0);
 
     /// <summary>16 stream bytes from <paramref name="position"/>, zero past the end, for the vector feeders (which use at most 8).</summary>
     [HotPath]

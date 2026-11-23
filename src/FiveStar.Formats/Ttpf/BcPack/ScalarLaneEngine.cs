@@ -9,7 +9,7 @@ using System.Runtime.CompilerServices;
 namespace FiveStar.Formats.Ttpf.BcPack;
 
 /// <summary>
-/// The portable lane engine: a clock-exact simulation of the 12 BC1 lanes sharing one byte stream, one lane at a time.
+/// The portable lane engine: a clock-exact simulation of a codec's lanes sharing one byte stream, one lane at a time.
 /// Per clock and lane, phase 0 (state update from the held symbol, the feeder byte, the symbol hand-off) and phase 1
 /// (header control, renormalise, decode). The two phases of a lane can run together because phase 0 of later lanes
 /// reads only the feeder counters and the slot mask, which phase 1 never writes.
@@ -18,11 +18,11 @@ internal static unsafe class ScalarLaneEngine
 {
     [HotPath]
     [SkipLocalsInit]
-    public static Bc1DecodeResult DecodeLanes<TSink>(ReadOnlySpan<byte> data, int target, ref TSink sink)
+    public static BcPackDecodeResult DecodeLanes<TSink>(ReadOnlySpan<byte> data, int target, ReadOnlySpan<byte> widths, ref TSink sink)
         where TSink : struct, ISymbolVectorSink
     {
         Unsafe.SkipInit(out LaneRegisters registers);
-        registers.Reset();
+        registers.Reset(widths);
 
         if (data.IsEmpty)
         {
@@ -37,10 +37,10 @@ internal static unsafe class ScalarLaneEngine
 
     [HotPath]
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-    private static Bc1DecodeResult Clock<TSink>(byte* stream, int length, uint target, LaneRegisters* r, ref TSink sink)
+    private static BcPackDecodeResult Clock<TSink>(byte* stream, int length, uint target, LaneRegisters* r, ref TSink sink)
         where TSink : struct, ISymbolVectorSink
     {
-        var maxCycles = LaneClock.MaxCycles(target, length);
+        var maxCycles = LaneClock.MaxCycles(target, length, r->Lanes);
         var watch = ProgressWatch.Start();
         var position = 0;
         var released = 0;
@@ -58,8 +58,8 @@ internal static unsafe class ScalarLaneEngine
 
             // The reference releases a vector when every lane still active holds a symbol. All lanes code the same
             // number of symbols, so between releases each lane pushed k or k + 1 of them, and a drained lane leaves no
-            // lane able to push: the rule is exactly "all 12 slots full".
-            if (slots == LaneRegisters.AllLanes)
+            // lane able to push: the rule is exactly "every slot full".
+            if (slots == r->AllLanes)
             {
                 sink.Emit(released, r->Released);
                 released++;
@@ -89,7 +89,7 @@ internal static unsafe class ScalarLaneEngine
     {
         var served = 0;
 
-        for (var lane = 0; lane < LaneRegisters.Lanes; lane++)
+        for (var lane = 0; lane < r->Lanes; lane++)
         {
             var control = r->Control[lane];
             var blocked = r->SymbolFull[lane] != 0 && ((slots >> lane) & 1) != 0;

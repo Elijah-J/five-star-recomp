@@ -3,8 +3,8 @@
 
 namespace FiveStar.Formats.Ttpf.BcPack;
 
-/// <summary>The lane engines of <see cref="Bc1Decoder"/>; all give identical results.</summary>
-public enum Bc1Engine
+/// <summary>The lane engines of <see cref="BcPackDecoder"/>; all give identical results.</summary>
+public enum BcPackEngine
 {
     /// <summary>Portable, one lane at a time.</summary>
     Scalar,
