@@ -4,6 +4,7 @@
 using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Native;
 using FiveStar.Loader.Shims.D3D12X.Resources;
+using FiveStar.Loader.Shims.D3D12X.States;
 
 namespace FiveStar.Loader.Shims.D3D12X;
 
@@ -87,6 +88,7 @@ internal sealed unsafe class XboxPlacedResources
             }
 
             *resource = _objects.WrapResource(inner, address);
+            ResourceStates.Record(_objects.AsResource(*resource), ResourceStates.BufferDimension, ResourceStates.Common);
             _log.Detail($"  [d3d12_xs] ID3D12Device.X::Slot133 CreatePlacedResource(0x{address:x}, 0x{description->Width:x} bytes) -> {runs.Count} page runs");
 
             return HResult.Ok;
@@ -100,7 +102,7 @@ internal sealed unsafe class XboxPlacedResources
     /// </summary>
     private int CreateTexture(nint device, ulong address, ResourceDescription* description, int initialLayout, void* clear, nint* resource)
     {
-        int hr = _textures.CreatePlaced(device, address, description, initialLayout, clear, out nint inner);
+        int hr = _textures.CreatePlaced(device, address, description, initialLayout, clear, out nint inner, out int state);
         _log.Detail($"  [d3d12_xs] ID3D12Device.X::Slot133 texture at 0x{address:x}: dimension {description->Dimension}, {description->Width}x{description->Height}, format {description->Format}, layout {initialLayout} -> {HResult.Format(hr)}");
 
         if (HResult.Failed(hr))
@@ -109,6 +111,7 @@ internal sealed unsafe class XboxPlacedResources
         }
 
         *resource = _objects.WrapResource(inner, address);
+        ResourceStates.Record(_objects.AsResource(*resource), description->Dimension, state);
 
         return hr;
     }

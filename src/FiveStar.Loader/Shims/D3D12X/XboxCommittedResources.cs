@@ -4,6 +4,8 @@
 using System.Runtime.InteropServices;
 using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Native;
+using FiveStar.Loader.Shims.D3D12X.Resources;
+using FiveStar.Loader.Shims.D3D12X.States;
 
 namespace FiveStar.Loader.Shims.D3D12X;
 
@@ -43,15 +45,17 @@ internal sealed unsafe class XboxCommittedResources
     }
 
     /// <summary>
-    /// A desktop committed resource in the state of <paramref name="initialLayout"/> (a D3D12_BARRIER_LAYOUT; buffers
-    /// start COMMON), with the desc made a desktop one, plus its title-memory allocation; the wrapper is returned.
+    /// A desktop committed resource in its home state (<see cref="ResourceStates.Home"/> of <paramref name="initialLayout"/>,
+    /// a D3D12_BARRIER_LAYOUT; buffers start COMMON), with the desc made a desktop one, plus its title-memory allocation; the wrapper is returned.
     /// </summary>
     public int Create(nint device, void* properties, int heapFlags, ResourceDescription* description, int initialLayout, void* clear, Guid* iid, nint* resource)
     {
         var desktop = _descriptions.ToDesktop(device, description);
         int state = desktop.Dimension == ResourceDescription.BufferDimension ? BarrierLayouts.CommonState : BarrierLayouts.ToState(initialLayout);
+        state = ResourceStates.Home(desktop.Dimension, desktop.Flags, state);
+        byte* clearCopy = stackalloc byte[DepthViewDescriptions.ClearValueSize];
         var create = (delegate* unmanaged<nint, void*, int, ResourceDescription*, int, void*, Guid*, nint*, int>)ComObject.Slot(device, DesktopCreateCommittedResourceSlot);
-        int hr = create(device, properties, NoHeapFlags, &desktop, state, clear, iid, resource);
+        int hr = create(device, properties, NoHeapFlags, &desktop, state, DepthViewDescriptions.ClearValue(clear, clearCopy), iid, resource);
 
         if (_log.DetailEnabled)
         {
@@ -65,6 +69,7 @@ internal sealed unsafe class XboxCommittedResources
         {
             var wrapper = (XboxResourceObject*)*resource;
             wrapper->TitleMemory = _hooks.Allocate((nuint)AllocationSize(device, &desktop), ResourceAttributes);
+            ResourceStates.Record(wrapper, desktop.Dimension, state);
         }
 
         return hr;
