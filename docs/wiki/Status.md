@@ -6,7 +6,7 @@ memory set-up, opening its archives through DirectStorage, the whole D3D12.X dev
 descriptor heaps, render targets and pipelines, up to its first present, which now appears in the game's own window
 through a swap chain. Nothing is drawn yet:
 it stops in the GPU driver while recording its first graphics work, because descriptor heaps are not yet bound on
-command lists and resources at the game's GPU addresses are not real yet (see [Roadmap](Roadmap.md)).
+command lists (see [Roadmap](Roadmap.md)).
 
 ![Progress](progress.svg)
 

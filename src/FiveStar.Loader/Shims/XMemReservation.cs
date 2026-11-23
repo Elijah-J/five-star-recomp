@@ -44,6 +44,12 @@ internal sealed unsafe class XMemReservation
 
     public ulong Size => (ulong)_slots.Length * PageSize;
 
+    /// <summary>
+    /// For a GPU-only reservation the game never maps (protect PAGE_NOACCESS | PAGE_GRAPHICS_*), the CPU reservation
+    /// of the same size made just before it: the GPU reads its pages at the same offset here (docs/gpu-resources.md).
+    /// </summary>
+    public XMemReservation? CpuView { get; set; }
+
     public bool Overlaps(nint address, ulong size)
     {
         return (ulong)address < (ulong)Address + Size && (ulong)Address < (ulong)address + size;

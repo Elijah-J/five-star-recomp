@@ -1,0 +1,166 @@
+// Copyright (c) 2026 Five Star Recomp contributors.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+using FiveStar.Loader.Shims.D3D12X;
+using FiveStar.Loader.Shims.D3D12X.Resources;
+using FiveStar.Loader.Shims.Xg;
+using FiveStar.Loader.Tests.Support;
+using Xunit;
+
+namespace FiveStar.Loader.Tests;
+
+/// <summary>Textures and samplers at console GPU addresses: device slots 133, 70 and 61.</summary>
+public sealed unsafe class D3D12XGpuResourceTests
+{
+    private const int Size = 64;
+    private const int Mips = 2;
+    private const int Rgba8Unorm = 28;
+    private const int Texture2D = 3;
+    private const int SrvTexture2D = 4;
+    private const int DefaultComponentMapping = 0x1688;
+
+    /// <summary>D3D12_TEX2D_SRV::MipLevels: the union starts at +0x10 (8-byte aligned), MostDetailedMip first.</summary>
+    private const int TextureMipLevelsWord = 5;
+    private const int ShaderResourceLayout = 6;
+    private const ulong RangeBytes = 0x20000;
+    private const uint Reserve64K = 0x20402000;
+    private const uint CpuReadWrite = 0x4;
+    private const uint GpuOnly = 0x801;
+
+    [Fact]
+    public void A_tiled_texture_written_by_the_cpu_reads_back_linear_through_a_slot_70_view()
+    {
+        using var test = TestRuntime.Create();
+        var (cpu, gpu) = AliasedPages(test);
+        var device = new XboxDevice(test);
+        var description = Description();
+
+        // Slot 133 first (as the game does), while the memory is still empty; the CPU then writes the console tiling.
+        nint placed = PlaceTexture(device, gpu, description);
+        byte[][] linear = [Pattern(Size, 0), Pattern(Size / 2, 1)];
+        Tile(description, cpu, linear);
+
+        using var probe = new TextureProbe(test.Runtime.D3D12X.Objects.DesktopDevice);
+        CreateView(device, gpu, description, (nint)probe.Heap.GetCPUDescriptorHandleForHeapStart().Ptr);
+
+        for (uint mip = 0; mip < Mips; mip++)
+        {
+            uint extent = (uint)Size >> (int)mip;
+            uint[] texels = probe.Read(extent, extent, mip);
+            Assert.Equal(linear[mip], texels.SelectMany(BitConverter.GetBytes).ToArray());
+        }
+
+        var counters = test.Runtime.D3D12X.Textures.Counters;
+        Assert.NotEqual(0, placed);
+        Assert.Equal(1, counters[GpuResourceEvent.ViewResolved]);
+
+        // The empty memory at creation, then the tiled bytes the view found changed.
+        Assert.Equal(2, counters[GpuResourceEvent.Upload]);
+    }
+
+    [Fact]
+    public void A_console_sampler_desc_becomes_the_desktop_sampler_it_describes()
+    {
+        var console = new ConsoleSamplerDescription
+        {
+            MagFilter = 2, MinFilter = 1, MipFilter = 2, AddressU = 1, AddressV = 3, AddressW = 4,
+            MinLod = 1, MaxLod = 9, MipLodBias = -0.5f, MaxAnisotropy = 0, ComparisonFunc = 4,
+        };
+        console.Border[3] = 1;
+
+        var desktop = ConsoleSamplers.ToDesktop(console);
+
+        // D3D12_FILTER_COMPARISON_MIN_POINT_MAG_LINEAR_MIP_LINEAR: comparison reduction, mag and mip linear.
+        Assert.Equal(0x80 | 0x4 | 0x1, desktop.Filter);
+        Assert.Equal((1, 3, 4), (desktop.AddressU, desktop.AddressV, desktop.AddressW));
+        Assert.Equal((1f, 9f, -0.5f), (desktop.MinLod, desktop.MaxLod, desktop.MipLodBias));
+        Assert.Equal((1, 4, 1f), (desktop.MaxAnisotropy, desktop.ComparisonFunc, desktop.Border[3]));
+
+        var anisotropic = new ConsoleSamplerDescription { MagFilter = 3, MinFilter = 3, MaxAnisotropy = 8, ComparisonFunc = 1 };
+        Assert.Equal(0x55, ConsoleSamplers.ToDesktop(anisotropic).Filter);
+        Assert.Equal(8, ConsoleSamplers.ToDesktop(anisotropic).MaxAnisotropy);
+    }
+
+    /// <summary>The game's streaming pattern: a CPU range, then a GPU-only range of the same size, pages mapped into the first.</summary>
+    private static (nint Cpu, nint Gpu) AliasedPages(TestRuntime test)
+    {
+        var virtualAlloc = (delegate* unmanaged<nint, nuint, uint, ulong, uint, nint>)test.Shim("xmem.dll", "XMemVirtualAlloc");
+        var allocate = (delegate* unmanaged<ulong, ulong*, ulong*, int>)test.Shim("xmem.dll", "XMemAllocatePhysicalPages");
+        var map = (delegate* unmanaged<nint, ulong, ulong*, nint>)test.Shim("xmem.dll", "XMemMapPhysicalPages");
+
+        nint cpu = virtualAlloc(0, (nuint)RangeBytes, Reserve64K, 0x21, CpuReadWrite);
+        nint gpu = virtualAlloc(0, (nuint)RangeBytes, Reserve64K, 0x3, GpuOnly);
+        ulong* pages = stackalloc ulong[2];
+        ulong count = 2;
+        Assert.Equal(1, allocate(0, &count, pages));
+        Assert.Equal(cpu, map(cpu, 2, pages));
+
+        return (cpu, gpu);
+    }
+
+    private static ResourceDescription Description()
+    {
+        var description = new ResourceDescription
+        {
+            Dimension = Texture2D, Width = Size, Height = Size, DepthOrArraySize = 1, MipLevels = Mips,
+            Format = Rgba8Unorm, SampleCount = 1,
+        };
+        description.Layout = (int)(XgSwizzleModes.ModeBase | XgSwizzleModes.Suggest(Size * Size * sizeof(uint)));
+
+        return description;
+    }
+
+    private static nint PlaceTexture(XboxDevice device, nint address, ResourceDescription description)
+    {
+        var iid = new Guid("696442be-a72e-4059-bc79-5b5c98040fad");
+        nint resource = 0;
+        var create = (delegate* unmanaged<nint, nint, ResourceDescription*, uint, void*, Guid*, nint*, int>)XboxDevice.Vtable(device.Device)[133];
+        Assert.Equal(0, create(device.Device, address, &description, ShaderResourceLayout, null, &iid, &resource));
+
+        return resource;
+    }
+
+    /// <summary>Device slot 70 with the game's view desc: the desktop Texture2D SRV desc and the address at +0x28.</summary>
+    private static void CreateView(XboxDevice device, nint address, ResourceDescription description, nint handle)
+    {
+        var view = new AddressViewDescription { Format = Rgba8Unorm, ViewDimension = SrvTexture2D, Address = (ulong)address };
+        var words = (int*)&view;
+        words[2] = DefaultComponentMapping;
+        words[TextureMipLevelsWord] = Mips;
+        var create = (delegate* unmanaged<nint, ResourceDescription*, AddressViewDescription*, nint, void>)XboxDevice.Vtable(device.Device)[70];
+        create(device.Device, &description, &view, handle);
+    }
+
+    private static void Tile(ResourceDescription description, nint memory, byte[][] mips)
+    {
+        var xg = new XgResourceDesc
+        {
+            Dimension = Texture2D, Width = Size, Height = Size, DepthOrArraySize = 1, MipLevels = Mips,
+            Format = Rgba8Unorm, SampleCount = 1, Layout = (uint)description.Layout,
+        };
+        XgLayoutBuilder.Build(xg, out var surface);
+        Assert.True(surface.Size <= RangeBytes);
+
+        for (int mip = 0; mip < Mips; mip++)
+        {
+            uint pitch = (uint)(Size >> mip) * sizeof(uint);
+
+            fixed (byte* linear = mips[mip])
+            {
+                Assert.Equal(0, XgCopier.Into(surface, (byte*)memory, 0, (uint)mip, linear, pitch, pitch * (uint)(Size >> mip)));
+            }
+        }
+    }
+
+    private static byte[] Pattern(int extent, int seed)
+    {
+        var bytes = new byte[extent * extent * sizeof(uint)];
+
+        for (int index = 0; index < bytes.Length; index++)
+        {
+            bytes[index] = (byte)((index * 7) + (index / 251) + (seed * 31));
+        }
+
+        return bytes;
+    }
+}
