@@ -26,6 +26,7 @@ internal sealed unsafe class XMemPhysicalMemory : IDisposable
     private readonly XMemPageStore _pages;
     private readonly XMemReservationTable _reservations = new();
     private readonly List<(nint Address, nuint Size)> _placeholders = [];
+    private XMemReservation? _lastCpuReservation;
 
     public XMemPhysicalMemory(LoaderLog log)
     {
@@ -166,6 +167,7 @@ internal sealed unsafe class XMemPhysicalMemory : IDisposable
     {
         chunk = null;
         offset = 0;
+        address = CpuAddress(address);
         var reservation = _reservations.Find(address);
 
         if (reservation is null || !_pages.TryLocate(reservation.FrameAt(address), out chunk, out ulong pageOffset))
@@ -176,6 +178,46 @@ internal sealed unsafe class XMemPhysicalMemory : IDisposable
         offset = pageOffset + ((ulong)(address - reservation.Address) % PageSize);
 
         return true;
+    }
+
+    /// <summary>
+    /// Where the CPU reads <paramref name="address"/>: the same offset in the paired CPU reservation for an address in
+    /// a GPU-only alias (<see cref="XMemReservation.CpuView"/>), else the address itself.
+    /// </summary>
+    [HotPath]
+    public nint CpuAddress(nint address)
+    {
+        var reservation = _reservations.Find(address);
+
+        if (reservation is null)
+        {
+            return address;
+        }
+
+        var cpu = reservation.CpuView;
+
+        if (cpu is null)
+        {
+            return address;
+        }
+
+        return cpu.Address + (address - reservation.Address);
+    }
+
+    /// <summary>Whether a page is mapped at <paramref name="address"/> (after <see cref="CpuAddress"/>); false outside every reservation.</summary>
+    [HotPath]
+    public bool IsMapped(nint address)
+    {
+        var reservation = _reservations.Find(address);
+
+        return reservation is not null && reservation.FrameAt(address) != 0;
+    }
+
+    /// <summary>Whether <paramref name="address"/> lies in a mappable reservation.</summary>
+    [HotPath]
+    public bool IsReserved(nint address)
+    {
+        return _reservations.Find(address) is not null;
     }
 
     public void Dispose()
@@ -272,10 +314,39 @@ internal sealed unsafe class XMemPhysicalMemory : IDisposable
 
         if (result != 0)
         {
-            _reservations.Add(new XMemReservation(_process, result, size, ViewProtection(protect), OriginOf(result)));
+            var reservation = new XMemReservation(_process, result, size, ViewProtection(protect), OriginOf(result));
+            PairGpuAlias(reservation, protect);
+            _reservations.Add(reservation);
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// The game reserves its streaming range twice, a CPU range (protect PAGE_READWRITE) and then a GPU-only range of
+    /// the same size (PAGE_NOACCESS | PAGE_GRAPHICS_NOACCESS, 0x141E6C1A6 and 0x141E6C1CB), and maps pages only into
+    /// the first; its GPU addresses are CPU address - CPU base + GPU base (0x144ECC8F0). Such a second range becomes
+    /// an alias of the first.
+    /// </summary>
+    private void PairGpuAlias(XMemReservation reservation, uint protect)
+    {
+        bool gpuOnly = (protect & StandardProtectionMask) == Win32Constants.PageNoAccess && (protect & ~StandardProtectionMask) != 0;
+        var previous = _lastCpuReservation;
+
+        if (!gpuOnly)
+        {
+            _lastCpuReservation = reservation;
+
+            return;
+        }
+
+        if (previous is not null && previous.Size == reservation.Size)
+        {
+            reservation.CpuView = previous;
+            _log.Detail($"  [xmem] 0x{reservation.Address:x} (GPU only) aliases the pages of 0x{previous.Address:x}");
+        }
+
+        _lastCpuReservation = null;
     }
 
     private nint Allocate(nint address, nuint size, uint allocationType, uint protect)

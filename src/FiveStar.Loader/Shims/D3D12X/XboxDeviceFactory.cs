@@ -8,6 +8,7 @@ using FiveStar.Loader.Loading;
 using FiveStar.Loader.Native;
 using FiveStar.Loader.Shims.D3D12X.DebugLayer;
 using FiveStar.Loader.Shims.D3D12X.Pipelines;
+using FiveStar.Loader.Shims.D3D12X.Resources;
 using FiveStar.Shaders.Cache;
 
 namespace FiveStar.Loader.Shims.D3D12X;
@@ -52,7 +53,10 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         Warnings = new OnceLog(log);
         Objects = new XboxObjects(stubs, heap, Debugging, log);
         CommandLists = new XboxCommandLists(Objects);
-        PlacedResources = new XboxPlacedResources(memory, Objects, Warnings, log);
+
+        Textures = new GpuTextures(new GameMemorySource(memory), Descriptions, log);
+        AddressViews = new AddressShaderViews(Textures, Warnings, log);
+        PlacedResources = new XboxPlacedResources(memory, Objects, Textures, log);
         GameMemory = new XboxGameMemoryBuffers(Objects, PlacedResources.Addresses, log);
 
         var hooks = new TitleMemoryHooks(images);
@@ -95,6 +99,12 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
 
     /// <summary>Device slot 133 and the console-to-desktop GPU address table.</summary>
     public XboxPlacedResources PlacedResources { get; }
+
+    /// <summary>Desktop textures for console memory, by address (docs/gpu-resources.md).</summary>
+    public GpuTextures Textures { get; }
+
+    /// <summary>Device slot 70, SRVs at console GPU addresses.</summary>
+    public AddressShaderViews AddressViews { get; }
 
     /// <summary>HRESULT D3D12XboxCreateDevice(IGraphicsUnknown* adapter, const PARAMETERS*, REFIID, void** device).</summary>
     public int CreateDevice(nint adapter, byte* parameters, Guid* iid, nint* device)
@@ -180,6 +190,7 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
     public void Dispose()
     {
         Fences.Dispose();
+        Textures.Dispose();
         Debugging.Dispose();
     }
 
@@ -281,8 +292,8 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
     /// <summary>Slots 61, 70 and 74, which describe memory by address (<see cref="XboxAddressDescriptors"/>).</summary>
     private void BindAddressSlots()
     {
-        delegate* unmanaged<XboxObject*, ResourceDescription*, void*, nint, void> view = &XboxAddressDescriptors.CreateShaderResourceViewAtAddress;
-        delegate* unmanaged<XboxObject*, void*, nint, void> sampler = &XboxAddressDescriptors.CreateSamplerX;
+        delegate* unmanaged<XboxObject*, ResourceDescription*, AddressViewDescription*, nint, void> view = &XboxAddressDescriptors.CreateShaderResourceViewAtAddress;
+        delegate* unmanaged<XboxObject*, ConsoleSamplerDescription*, nint, void> sampler = &XboxAddressDescriptors.CreateSamplerX;
         delegate* unmanaged<XboxObject*, nint, uint, ulong*, int> range = &XboxDeviceMethods.RegisterGpuRange;
 
         BindDevice(XboxAddressDescriptors.CreateShaderResourceViewAtAddressSlot, (nint)view);

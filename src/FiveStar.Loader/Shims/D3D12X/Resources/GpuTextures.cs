@@ -1,0 +1,186 @@
+// Copyright (c) 2026 Five Star Recomp contributors.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+using FiveStar.Loader.Diagnostics;
+using FiveStar.Loader.Native;
+using FiveStar.Loader.Shims.Xg;
+
+namespace FiveStar.Loader.Shims.D3D12X.Resources;
+
+/// <summary>
+/// Desktop textures for console memory (docs/gpu-resources.md): created for slot 133 or for a slot-70 view, registered
+/// by address, and filled from the game's bytes through their XG layout at creation and whenever a refresh finds the
+/// bytes changed. GPU-written textures (render target, depth-stencil, UAV) are never filled from memory.
+/// </summary>
+internal sealed unsafe class GpuTextures : IDisposable
+{
+    /// <summary>IUnknown::AddRef and ID3D12Device::CreateCommittedResource (d3d12.h).</summary>
+    private const int AddRefSlot = 1;
+    private const int DesktopCreateCommittedResourceSlot = 27;
+
+    /// <summary>D3D12_HEAP_TYPE_DEFAULT and D3D12_HEAP_FLAG_NONE.</summary>
+    private const int DefaultHeapType = 1;
+    private const int NoHeapFlags = 0;
+
+    /// <summary>D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET | ALLOW_DEPTH_STENCIL | ALLOW_UNORDERED_ACCESS: the GPU writes the texture.</summary>
+    private const int GpuWrittenFlags = 0x7;
+
+    /// <summary>D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | NON_PIXEL_SHADER_RESOURCE, where a texture made for a view rests.</summary>
+    private const int ShaderResourceState = 0xC0;
+
+    private static readonly Guid ResourceIid = new("696442be-a72e-4059-bc79-5b5c98040fad");
+
+    private readonly GameMemorySource _source;
+    private readonly DesktopResourceDescriptions _descriptions;
+    private readonly LoaderLog _log;
+
+    public GpuTextures(GameMemorySource source, DesktopResourceDescriptions descriptions, LoaderLog log)
+    {
+        _source = source;
+        _descriptions = descriptions;
+        _log = log;
+    }
+
+    public GpuTextureRegistry Registry { get; } = new();
+
+    public GpuResourceCounters Counters { get; } = new();
+
+    public GpuTextureUploader Uploader { get; } = new();
+
+    /// <summary>
+    /// Slot 133: the desktop texture for <paramref name="address"/> in the state of <paramref name="initialLayout"/>,
+    /// registered and, unless GPU-written, filled from memory. Returns the HRESULT; <paramref name="desktop"/> is the
+    /// caller's reference.
+    /// </summary>
+    public int CreatePlaced(nint device, ulong address, ResourceDescription* description, int initialLayout, void* clear, out nint desktop)
+    {
+        var desc = _descriptions.ToDesktop(device, description);
+        int state = BarrierLayouts.ToState(initialLayout);
+        int hr = CreateCommitted(device, &desc, state, clear, out desktop);
+        Counters.Add(GpuResourceEvent.PlacedTexture);
+
+        if (HResult.Failed(hr))
+        {
+            return hr;
+        }
+
+        bool gpuWritten = (description->Flags & GpuWrittenFlags) != 0;
+        var texture = Register(address, description, desktop, desc.Format, state, gpuWritten);
+        Refresh(device, texture);
+
+        return hr;
+    }
+
+    /// <summary>
+    /// A read-only texture made for a slot-70 view of <paramref name="viewFormat"/> over readable memory; null when the
+    /// memory is not readable or the desktop refuses the desc.
+    /// </summary>
+    public GpuTexture? CreateForView(nint device, ulong address, ResourceDescription* description, int viewFormat)
+    {
+        XgLayoutBuilder.Build(ToXg(description), out var layout);
+
+        if (_source.Find(address, layout.Size) == null)
+        {
+            return null;
+        }
+
+        var desc = _descriptions.ToDesktop(device, description);
+        desc.Flags &= ~GpuWrittenFlags;
+        desc.Format = ViewFormats.ForTexture(desc.Format, viewFormat);
+
+        if (HResult.Failed(CreateCommitted(device, &desc, ShaderResourceState, null, out nint desktop)))
+        {
+            return null;
+        }
+
+        var texture = Register(address, description, desktop, desc.Format, ShaderResourceState, false);
+        ComObject.Release(desktop);
+        Refresh(device, texture);
+
+        return texture;
+    }
+
+    /// <summary>Fills <paramref name="texture"/> from memory when it is not GPU-written, its memory is readable and its bytes changed.</summary>
+    public void Refresh(nint device, GpuTexture texture)
+    {
+        if (texture.GpuWritten || texture.Layout.PlaneCount != 1)
+        {
+            return;
+        }
+
+        byte* source = _source.Find(texture.Address, texture.Size);
+
+        if (source == null)
+        {
+            return;
+        }
+
+        ulong hash = ContentHash.Of(source, texture.Size);
+
+        if (hash == texture.UploadedHash)
+        {
+            Counters.Add(GpuResourceEvent.UploadSkipped);
+
+            return;
+        }
+
+        if (Uploader.Upload(device, texture, source))
+        {
+            texture.UploadedHash = hash;
+            Counters.Add(GpuResourceEvent.Upload);
+        }
+    }
+
+    public void Dispose()
+    {
+        Registry.Dispose();
+        Uploader.Dispose();
+    }
+
+    private GpuTexture Register(ulong address, ResourceDescription* description, nint desktop, int format, int state, bool gpuWritten)
+    {
+        XgLayoutBuilder.Build(ToXg(description), out var layout);
+        var texture = new GpuTexture(address, *description, desktop, format, state, gpuWritten, layout);
+        ((delegate* unmanaged<nint, uint>)ComObject.Slot(desktop, AddRefSlot))(desktop);
+        Registry.Register(texture);
+
+        if (_log.DetailEnabled)
+        {
+            string writer = gpuWritten ? "GPU-written" : "filled from memory";
+            _log.Detail($"  [d3d12_xs] texture at 0x{address:x}: {description->Width}x{description->Height}x{description->DepthOrArraySize}, {description->MipLevels} mips, format {format}, layout 0x{description->Layout:x}, 0x{layout.Size:x} bytes, {writer}");
+        }
+
+        return texture;
+    }
+
+    private static int CreateCommitted(nint device, ResourceDescription* description, int state, void* clear, out nint resource)
+    {
+        int* properties = stackalloc int[] { DefaultHeapType, 0, 0, 0, 0 };
+        Guid iid = ResourceIid;
+        nint created = 0;
+        var create = (delegate* unmanaged<nint, int*, int, ResourceDescription*, int, void*, Guid*, nint*, int>)ComObject.Slot(device, DesktopCreateCommittedResourceSlot);
+        int hr = create(device, properties, NoHeapFlags, description, state, clear, &iid, &created);
+        resource = created;
+
+        return hr;
+    }
+
+    /// <summary>The XG desc of a console resource desc: the same D3D12_RESOURCE_DESC fields.</summary>
+    private static XgResourceDesc ToXg(ResourceDescription* description)
+    {
+        return new XgResourceDesc
+        {
+            Dimension = (uint)description->Dimension,
+            Alignment = description->Alignment,
+            Width = description->Width,
+            Height = description->Height,
+            DepthOrArraySize = description->DepthOrArraySize,
+            MipLevels = description->MipLevels,
+            Format = (uint)description->Format,
+            SampleCount = description->SampleCount,
+            SampleQuality = description->SampleQuality,
+            Layout = (uint)description->Layout,
+            Flags = (uint)description->Flags,
+        };
+    }
+}
