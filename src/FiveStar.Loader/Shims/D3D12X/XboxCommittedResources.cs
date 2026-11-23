@@ -30,12 +30,14 @@ internal sealed unsafe class XboxCommittedResources
     private const ulong ResourceAttributes = 0x11808000;
 
     private readonly XboxObjects _objects;
+    private readonly DesktopResourceDescriptions _descriptions;
     private readonly TitleMemoryHooks _hooks;
     private readonly LoaderLog _log;
 
-    public XboxCommittedResources(XboxObjects objects, TitleMemoryHooks hooks, LoaderLog log)
+    public XboxCommittedResources(XboxObjects objects, DesktopResourceDescriptions descriptions, TitleMemoryHooks hooks, LoaderLog log)
     {
         _objects = objects;
+        _descriptions = descriptions;
         _hooks = hooks;
         _log = log;
     }
@@ -46,7 +48,7 @@ internal sealed unsafe class XboxCommittedResources
     /// </summary>
     public int Create(nint device, void* properties, int heapFlags, ResourceDescription* description, int initialLayout, void* clear, Guid* iid, nint* resource)
     {
-        var desktop = description->ToDesktop();
+        var desktop = _descriptions.ToDesktop(device, description);
         int state = desktop.Dimension == ResourceDescription.BufferDimension ? BarrierLayouts.CommonState : BarrierLayouts.ToState(initialLayout);
         var create = (delegate* unmanaged<nint, void*, int, ResourceDescription*, int, void*, Guid*, nint*, int>)ComObject.Slot(device, DesktopCreateCommittedResourceSlot);
         int hr = create(device, properties, NoHeapFlags, &desktop, state, clear, iid, resource);

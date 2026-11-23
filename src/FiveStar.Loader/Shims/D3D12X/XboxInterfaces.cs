@@ -18,12 +18,16 @@ internal static class XboxInterfaces
     /// <summary>Bytes of a command-list wrapper: the game reads and writes fields up to +0x564 (inline recording).</summary>
     public const int CommandListObjectSize = 0x1000;
 
+    /// <summary>Command-list slot 139, read as Reset(allocator, PSO, flags) (*inferred*: call at 0x142474cce).</summary>
+    private const int ResetXSlot = 139;
+
     /// <summary>Slots of the interfaces whose highest known slot is low (queue 35, resource 14).</summary>
     private const int SmallSlotCount = 64;
 
     private static readonly int PlainObjectSize = Unsafe.SizeOf<XboxObject>();
     private static readonly int ResourceObjectSize = Unsafe.SizeOf<XboxResourceObject>();
     private static readonly int DescriptorHeapObjectSize = Unsafe.SizeOf<XboxDescriptorHeapObject>();
+    private static readonly int FenceObjectSize = Unsafe.SizeOf<XboxFenceObject>();
 
     /// <summary>AddRef and ID3D12Object (GetPrivateData, SetPrivateData, SetPrivateDataInterface, SetName).</summary>
     private static readonly ForwardedSlot[] Common =
@@ -58,7 +62,7 @@ internal static class XboxInterfaces
 
     /// <summary>
     /// ID3D12GraphicsCommandList: 8 to 25 in desktop order; 33 to 40 and 50 to 52 four slots later; 70 is
-    /// OMSetDepthBounds. Slots taking GPU addresses (41 to 48) wait for the address translation and stay stubs.
+    /// OMSetDepthBounds; 139 is Reset with a third argument (allocator, null, 0 when a pooled list is reused). Slots taking GPU addresses (41 to 48) wait for the address translation and stay stubs.
     /// </summary>
     private static readonly ForwardedSlot[] ListSlots =
     [
@@ -68,10 +72,14 @@ internal static class XboxInterfaces
         Same(20), Same(21), Same(22), Same(23), Same(24), Unwrapped(25, ArgumentRegisters.Rdx),
         Moved(33, 29), Moved(34, 30), Moved(35, 31), Moved(36, 32), Moved(37, 33), Moved(38, 34), Moved(39, 35), Moved(40, 36),
         Moved(50, 46), Moved(51, 47), Moved(52, 48), Moved(70, 62),
+        new(ResetXSlot, 10, false, ArgumentRegisters.Rdx | ArgumentRegisters.R8),
     ];
 
-    /// <summary>ID3D12Resource: Map, Unmap, GetDesc (struct), GetGPUVirtualAddress, Write/ReadFromSubresource, GetHeapProperties.</summary>
-    private static readonly ForwardedSlot[] ResourceSlots = [Same(8), Same(9), Swap(10), Same(11), Same(12), Same(13), Same(14)];
+    /// <summary>
+    /// ID3D12Resource: Map, Unmap, GetDesc, GetGPUVirtualAddress, Write/ReadFromSubresource, GetHeapProperties. GetDesc
+    /// takes the resource in rcx and the result in rdx, the desktop order (call at 0x14501f80b).
+    /// </summary>
+    private static readonly ForwardedSlot[] ResourceSlots = [Same(8), Same(9), Same(10), Same(11), Same(12), Same(13), Same(14)];
 
     /// <summary>ID3D12Heap::GetDesc and ID3D12DescriptorHeap::GetDesc (struct returns).</summary>
     private static readonly ForwardedSlot[] DescriptionSlots = [Swap(8)];
@@ -90,7 +98,7 @@ internal static class XboxInterfaces
         new(XboxInterfaceKind.CommandList, "ID3D12GraphicsCommandList", MaxSlotCount, CommandListObjectSize, [.. Common, .. ListSlots]),
         Child(XboxInterfaceKind.Resource, "ID3D12Resource", ResourceObjectSize, ResourceSlots),
         Child(XboxInterfaceKind.Heap, "ID3D12Heap", PlainObjectSize, DescriptionSlots),
-        Child(XboxInterfaceKind.Fence, "ID3D12Fence", PlainObjectSize, FenceSlots),
+        Child(XboxInterfaceKind.Fence, "ID3D12Fence", FenceObjectSize, FenceSlots),
         Child(XboxInterfaceKind.DescriptorHeap, "ID3D12DescriptorHeap", DescriptorHeapObjectSize, DescriptionSlots),
         Child(XboxInterfaceKind.QueryHeap, "ID3D12QueryHeap", PlainObjectSize, []),
         Child(XboxInterfaceKind.CommandSignature, "ID3D12CommandSignature", PlainObjectSize, []),

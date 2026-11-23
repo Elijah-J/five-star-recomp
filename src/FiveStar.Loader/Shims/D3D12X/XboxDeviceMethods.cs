@@ -88,7 +88,7 @@ internal static unsafe class XboxDeviceMethods
             return HResult.InvalidArgument;
         }
 
-        return ShimContext.Runtime.D3D12X.PlacedResources.Create(self->Inner, address, description, clear, resource);
+        return ShimContext.Runtime.D3D12X.PlacedResources.Create(self->Inner, address, description, (int)state, clear, resource);
     }
 
     /// <summary>
@@ -106,5 +106,23 @@ internal static unsafe class XboxDeviceMethods
         }
 
         return ShimContext.Runtime.D3D12X.CommittedResources.Create(self->Inner, properties, heapFlags, description, initialLayout, clear, iid, resource);
+    }
+
+    /// <summary>
+    /// Slot 74 (*inferred*: registers a mapped range with the GPU): (address, page count, out). The game calls it once,
+    /// at 0x141e6c2bb, for its 0x185c0-page streaming range right after mapping it, and breaks into the debugger on a
+    /// failure. Nothing on the desktop needs it yet: logged, the 8-byte output zeroed, S_OK.
+    /// </summary>
+    [UnmanagedCallersOnly]
+    public static int RegisterGpuRange(XboxObject* self, nint address, uint pages, ulong* output)
+    {
+        if (output != null)
+        {
+            *output = 0;
+        }
+
+        ShimContext.Runtime.Log.Detail($"  [d3d12_xs] ID3D12Device.X::Slot74(0x{address:x}, {pages} pages) -> S_OK (no-op)");
+
+        return HResult.Ok;
     }
 }
