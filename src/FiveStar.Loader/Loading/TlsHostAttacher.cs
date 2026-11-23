@@ -88,7 +88,7 @@ internal sealed unsafe class TlsHostAttacher
         uint zeroFill = *(uint*)(directory + TlsFormat.SizeOfZeroFillOffset);
         uint characteristics = *(uint*)(directory + TlsFormat.CharacteristicsOffset);
 
-        return new TlsTemplate(raw, zeroFill, characteristics, callbacks, (ulong)image.Base, indexAddress);
+        return new TlsTemplate(raw, zeroFill, characteristics, callbacks, (ulong)image.Base, indexAddress, !image.Pe.IsDll);
     }
 
     private static nint LoadHost(string path)
