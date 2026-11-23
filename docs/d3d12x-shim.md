@@ -240,6 +240,7 @@ slot. Reset (10, 139), draws and dispatches (12 to 14, 61) and slots 32 to 46 ar
 | Device | 78 to 80 | frame interval, frame events and their wait on a timer ([Present](#present)) |
 | Device | 133 | buffer at a game address (below), or a texture registered by address ([gpu-resources.md](gpu-resources.md)) |
 | Command queue | 12, 35 | unwrap up to 256 lists per call and run desktop ExecuteCommandLists, after waiting for a list still running from its last submission ([Boot](#boot)); 35 ignores its frame object and flags |
+| Command queue | 16 | Signal: the time and value are kept on a wrapped fence (for the log's Signal-to-cell latency), then desktop Signal |
 | Command queue | 32 | present on a swap chain ([Present](#present)) |
 | Resource | 2 | Release that also frees a slot-127 resource's title memory |
 | Resource | 11 | the console address for a slot-133 resource, else the desktop GPU address |
@@ -420,7 +421,17 @@ nothing. Boot presents one plane: the 3840x2160 render target from slot 127 (R8G
   presented at the display's refresh (4.17 ms at 240 Hz).
 
 The log gets the first plane and parameter block, the swap chain, the first eight presents and the mean interval
-every 600 presents and at exit.
+every 600 presents and at exit. A present 250 ms or more after the previous one is logged (first 64) with where the
+time went: the game (and its slot-80 waits), the latency wait, the back buffer's retire wait, the copy submission,
+Present, the runtime's GC pauses, the longest Signal-to-cell time of the fence mirror and each fence's cell against
+its desktop completed value.
+
+**Measured (120 s boots, RTX 4090, 32 threads).** The fence cells never lag: at every slow present each cell equals
+the desktop completed value, and Signal-to-cell stays under 30 ms (the first frame excepted). Frames of 120 to 600 ms
+in the first 10 to 20 s after the first present are the game's own time while the driver compiles the boot's
+53,000 pipelines on every core (game threads Ready, not waiting); afterwards presents come every 33.3 ms. The
+frame-end wait (0x142474740 keeps two frames in flight and spins at 0x144fb0ad0) is short: under 1 % of
+running-thread samples. Stalls of 15 to 40 s came from `--profile-threads` (below and [loader.md](loader.md)).
 
 ### Rectangle lists
 

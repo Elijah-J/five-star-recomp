@@ -14,4 +14,8 @@ internal struct XboxFenceObject
 {
     public XboxObject Header;
     public ulong CompletedValue;
+
+    /// <summary>The last value a queue Signal set, and when (Stopwatch ticks); for the mirror's latency count.</summary>
+    public ulong SignaledValue;
+    public long SignaledAt;
 }

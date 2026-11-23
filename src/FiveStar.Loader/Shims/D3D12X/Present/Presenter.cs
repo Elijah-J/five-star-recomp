@@ -38,6 +38,7 @@ internal sealed unsafe class Presenter : IDisposable
     private readonly XboxObjects _objects;
     private readonly OnceLog _warnings;
     private readonly LoaderLog _log;
+    private readonly PresentTimeline _timeline;
     private nint _window;
     private nint _queue;
     private DxgiSwapChain? _swapChain;
@@ -54,6 +55,7 @@ internal sealed unsafe class Presenter : IDisposable
         _objects = objects;
         _warnings = warnings;
         _log = log;
+        _timeline = new PresentTimeline(log);
     }
 
     /// <summary>Draw the test pattern instead of the game's plane (<c>--present-test</c>).</summary>
@@ -141,10 +143,14 @@ internal sealed unsafe class Presenter : IDisposable
             ChangeColorSpace(source.ColorSpace);
         }
 
+        _timeline.Enter();
         swapChain.WaitForFrame();
+        _timeline.Mark(PresentTimeline.LatencyWait);
+
         uint index = swapChain.CurrentIndex();
         nint back = swapChain.Buffers[(int)index];
         recorder.Begin(index);
+        _timeline.Mark(PresentTimeline.RetireWait);
 
         if (source.Copyable)
         {
@@ -163,7 +169,11 @@ internal sealed unsafe class Presenter : IDisposable
         }
 
         recorder.Submit(_queue, index);
-        Count(swapChain.Present(SyncInterval));
+        _timeline.Mark(PresentTimeline.Submit);
+        int hr = swapChain.Present(SyncInterval);
+        _timeline.Mark(PresentTimeline.Present);
+        Count(hr);
+        _timeline.Exit(_presents);
     }
 
     [HotPath]

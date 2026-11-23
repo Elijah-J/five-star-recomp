@@ -52,20 +52,27 @@ internal sealed unsafe class ThreadProfiler
         var frames = new ulong[threads.Length * MaxFrames];
         var counts = new int[threads.Length];
 
-        for (int round = 0; round < Rounds; round++)
+        try
         {
-            CaptureRound(threads, modules, frames, counts);
-
-            for (int i = 0; i < threads.Length; i++)
+            for (int round = 0; round < Rounds; round++)
             {
-                if (counts[i] > 0 && !wait.Contains(frames[i * MaxFrames]))
-                {
-                    running++;
-                    Count(main, frames.AsSpan(i * MaxFrames, counts[i]), inclusive, innermost);
-                }
-            }
+                CaptureRound(threads, modules, frames, counts);
 
-            Thread.Sleep(GapMilliseconds);
+                for (int i = 0; i < threads.Length; i++)
+                {
+                    if (counts[i] > 0 && !wait.Contains(frames[i * MaxFrames]))
+                    {
+                        running++;
+                        Count(main, frames.AsSpan(i * MaxFrames, counts[i]), inclusive, innermost);
+                    }
+                }
+
+                Thread.Sleep(GapMilliseconds);
+            }
+        }
+        finally
+        {
+            EndNoGcRegion();
         }
 
         _log.Info($"{Prefix}{running} running-thread samples over {Rounds} rounds of {threads.Length} threads");
@@ -73,24 +80,29 @@ internal sealed unsafe class ThreadProfiler
         _log.Info($"{Prefix}innermost: {Format(innermost)}");
     }
 
-    /// <summary>One capture of every thread, inside a no-GC region (see <see cref="ThreadSampler"/>).</summary>
+    /// <summary>
+    /// One capture of every thread, inside a no-GC region (see <see cref="ThreadSampler"/>). The region stays open
+    /// across rounds and is only started again when it lapsed: starting one runs a full blocking GC, and one per
+    /// round stalled every managed shim, the present path included, for most of the burst.
+    /// </summary>
     private static void CaptureRound(uint[] threads, CodeRange[] modules, ulong[] frames, int[] counts)
     {
-        bool noGc = GC.TryStartNoGCRegion(NoGcBudget);
-
-        try
+        if (GCSettings.LatencyMode != GCLatencyMode.NoGCRegion)
         {
-            for (int i = 0; i < threads.Length; i++)
-            {
-                counts[i] = ThreadStackCapture.Capture(threads[i], modules, frames.AsSpan(i * MaxFrames, MaxFrames));
-            }
+            _ = GC.TryStartNoGCRegion(NoGcBudget);
         }
-        finally
+
+        for (int i = 0; i < threads.Length; i++)
         {
-            if (noGc && GCSettings.LatencyMode == GCLatencyMode.NoGCRegion)
-            {
-                GC.EndNoGCRegion();
-            }
+            counts[i] = ThreadStackCapture.Capture(threads[i], modules, frames.AsSpan(i * MaxFrames, MaxFrames));
+        }
+    }
+
+    private static void EndNoGcRegion()
+    {
+        if (GCSettings.LatencyMode == GCLatencyMode.NoGCRegion)
+        {
+            GC.EndNoGCRegion();
         }
     }
 
