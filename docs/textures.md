@@ -160,6 +160,23 @@ were fitted to the reference dump against the textures' smaller mips, so BC4 and
 `texture coverage` counts those textures as `approx_codec4` and `approx_codec5`. Because BCPack is lossless, a pair
 table is a bijection onto the 64 index pairs, and the fit is constrained to one.
 
+### BCPack BC7 (no block decoder yet)
+
+Checked on the dump with the BC7 anchor rule (an anchor index never has its top bit set), on every block whose index
+chain starts inside its page: 0 violations in 12.6 million anchor reads of modes 1 and 3 to 7.
+
+| Part | Layout |
+|---|---|
+| Distances | index distance di = lane 1 E and O interleaved (E on the even bits); endpoint distance (di + zigzag(lane 0 E, O interleaved)) mod 256 |
+| Header | lane 15 (E, O); its rank r among all pairs a < 32, b < 16 sorted by ((a + 1)(b + 1), a); the dump uses ranks 0-284 |
+| Ranks | 0-63 mode 7, partition 63 - r; 64 mode 6; 65-68 mode 5; 69-76 mode 4; 77-140 mode 3, partition 140 - r; 141-162 mode 2; 163-226 mode 1, partition 226 - r; 227-240 mode 0; 241-282 mode 2; 283-284 mode 0 |
+| Indices | lanes 11-14 = rows 0-3, E columns 0-1, O columns 2-3; a symbol's odd bits are the left pixel's residual and its even bits the right's (row 3: the other way round); index = reference block's index + zigzag residual modulo 2^bits, kept MSB-aligned in 4 bits; di = 0 starts from 0 |
+| Mode 4 | lanes 11-14 carry its 3-bit index set |
+
+The anchor rule fixes which mode-0 and mode-2 ranks are which, and narrows each to the partitions that share its
+anchor pixels; the partition within such a group, the endpoint layer and the 256-slot endpoint and index presets are
+not fitted here.
+
 ## Duplicate table
 
 `textures.rpf` holds one entry (archive offset 0xB6CA000 in the reference dump, 327,680 bytes) that starts with
