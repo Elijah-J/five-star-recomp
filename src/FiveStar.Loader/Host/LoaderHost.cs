@@ -83,6 +83,11 @@ internal sealed class LoaderHost
             _runtime.Input.Configure(InputConfigFile.Load(_options.InputConfig));
             _log.Info($"  [input] mapping from {_options.InputConfig}");
         }
+
+        if (_options.FidelityFxLibrary is not null)
+        {
+            _runtime.FidelityFx.Load(_options.FidelityFxLibrary);
+        }
     }
 
     /// <summary>Reads the patch files and adds the mod folders; false after a reported error.</summary>
