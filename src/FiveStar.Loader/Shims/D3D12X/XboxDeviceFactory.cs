@@ -282,6 +282,9 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
 
         delegate* unmanaged<XboxObject*, uint, nint*, uint*, uint, nint*, uint*, int, void> copy = &XboxDescriptorMethods.CopyDescriptors;
         delegate* unmanaged<XboxObject*, uint, nint, nint, int, void> copySimple = &XboxDescriptorMethods.CopyDescriptorsSimple;
+        delegate* unmanaged<XboxObject*, uint, uint> increment = &XboxDescriptorMethods.GetDescriptorHandleIncrementSize;
+        BindDevice(XboxDescriptorMethods.IncrementSlot, (nint)increment);
+
         BindDevice(XboxDescriptorMethods.CreateConstantBufferViewSlot, (nint)constantBuffer);
         BindDevice(XboxDescriptorMethods.CreateShaderResourceViewSlot, (nint)shaderResource);
         BindDevice(XboxDescriptorMethods.CreateUnorderedAccessViewSlot, (nint)unorderedAccess);
