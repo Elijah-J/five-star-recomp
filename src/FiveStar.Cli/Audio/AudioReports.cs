@@ -4,6 +4,7 @@
 using System.Globalization;
 using FiveStar.Cli.Archive;
 using FiveStar.Formats.Audio;
+using FiveStar.Formats.Audio.Xma;
 using FiveStar.Formats.Common;
 
 namespace FiveStar.Cli.Audio;
@@ -18,6 +19,9 @@ internal sealed class AudioReports
     private const int ProblemsShown = 20;
     private const double Percent = 100;
     private const double BytesPerGibibyte = 1 << 30;
+
+    /// <summary>The export switch that decodes XMA2 instead of wrapping it.</summary>
+    public const string DecodeXmaFlag = "--decode-xma";
 
     private readonly TextWriter _output;
 
@@ -65,7 +69,10 @@ internal sealed class AudioReports
         _output.WriteLine("sample-rate fields " + ReportText.CountMap(rates.MostCommon()));
     }
 
-    /// <summary>Writes every track (the first <c>--limit</c>, of codec <c>--codec</c>, from <c>--from</c>) under <paramref name="outputDirectory"/>.</summary>
+    /// <summary>
+    /// Writes every track (the first <c>--limit</c>, of codec <c>--codec</c>, from <c>--from</c>) under
+    /// <paramref name="outputDirectory"/>; with <c>--decode-xma</c>, XMA2 tracks are decoded to 16-bit PCM.
+    /// </summary>
     public void Export(string path, string outputDirectory, CommandArguments arguments)
     {
         using var source = new MappedFileSource(path);
@@ -74,6 +81,7 @@ internal sealed class AudioReports
         var written = new CodecCoverage();
 
         var codec = arguments.Option("--codec");
+        var decodeXma = arguments.HasFlag(DecodeXmaFlag);
         var skipped = 0;
         long tracks = 0;
 
@@ -99,7 +107,7 @@ internal sealed class AudioReports
                 }
 
                 Directory.CreateDirectory(folder);
-                WriteTrack(source, track, Path.Combine(folder, FileStem(track.Id, seen[track.Id])));
+                WriteTrack(source, track, Path.Combine(folder, FileStem(track.Id, seen[track.Id])), decodeXma);
                 seen.Add(track.Id);
                 written.Add(track);
             }
@@ -140,12 +148,18 @@ internal sealed class AudioReports
         return stem;
     }
 
-    private static void WriteTrack(IByteSource source, AwcTrack track, string name)
+    private static void WriteTrack(IByteSource source, AwcTrack track, string name, bool decodeXma)
     {
         if (track.Codec == AwcCodec.Opus)
         {
             using var file = File.Create(name + ".opus");
             OggOpusWriter.Write(file, source, track, track.Id);
+        }
+        else if (track.Codec == AwcCodec.Xma2 && decodeXma)
+        {
+            var sound = XmaTrackDecoder.Decode(source.Read(track.DataOffset, (int)track.DataSize), track.Format.Channels, (int)track.Format.SampleRate);
+            using var file = File.Create(name + ".wav");
+            WaveWriter.WritePcm16(file, track.Format.SampleRate, track.Format.Channels, sound.Samples);
         }
         else if (WaveWriter.Supports(track.Codec))
         {
