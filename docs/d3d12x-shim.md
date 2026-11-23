@@ -239,7 +239,7 @@ slot. Reset (10, 139), draws and dispatches (12 to 14, 61) and slots 32 to 46 ar
 | Device | 127 | committed resource (below) |
 | Device | 78 to 80 | frame interval, frame events and their wait on a timer ([Present](#present)) |
 | Device | 133 | buffer at a game address (below), or a texture registered by address ([gpu-resources.md](gpu-resources.md)) |
-| Command queue | 12, 35 | unwrap up to 256 lists per call and run desktop ExecuteCommandLists; 35 ignores its frame object and flags |
+| Command queue | 12, 35 | unwrap up to 256 lists per call and run desktop ExecuteCommandLists, after waiting for a list still running from its last submission ([Boot](#boot)); 35 ignores its frame object and flags |
 | Command queue | 32 | present on a swap chain ([Present](#present)) |
 | Resource | 2 | Release that also frees a slot-127 resource's title memory |
 | Resource | 11 | the console address for a slot-133 resource, else the desktop GPU address |
@@ -410,6 +410,11 @@ nothing. Boot presents one plane: the 3840x2160 render target from slot 127 (R8G
   blocking type-0 wait sleeps (high-resolution waitable timer) until the next origin and returns its token, a wait
   for another type with a token returns once that frame's event passed. A finite timeout that ends first returns
   HRESULT_FROM_WIN32(WAIT_TIMEOUT).
+- A present uses up its plane's token: the current token is at least the last presented one + 1 (reset with the
+  grid). The render thread takes the current token (0x142482448), waits for event 2 of the frame two presents back
+  (0x142482405) and presents; with a token per origin that wait sleeps, and the game runs at its interval (33.3 ms
+  at boot). Before, every present in an interval got the same token, the wait was always over, and the game
+  presented at the display's refresh (4.17 ms at 240 Hz).
 
 The log gets the first plane and parameter block, the swap chain, the first eight presents and the mean interval
 every 600 presents and at exit.
@@ -452,19 +457,19 @@ game's inline form of the call (0x140032570) maps topologies 6 and 0x13 to 4 its
 table to the hardware primitive type (0x1461ecf30: 17 -> 0x11, the rectangle list). The handler
 (`PrimitiveTopologies`) sets 17 as a triangle list (the three vertices then cover half the rectangle) and drops any
 other value the desktop does not define, warned once. With the GDK ABI table loaded, a 120 s boot with pipelines
-presents about 25,000 frames (4.2 ms apart, the display's refresh with sync interval 1, not the 33 ms the game
-asks device 78 for); the window stays black.
+presents a frame every 33.3 ms, the interval the game asks device 78 for ([Present](#present)).
 
 The game clears and draws to render targets it created in UNORDERED_ACCESS or SHADER_RESOURCE without a barrier;
 with home states ([gpu-resources.md](gpu-resources.md#barriers)) the debug layer reports no resource-state error in
 boot.
 
-The debug layer also reports error #553 about once per 500 presents: the list the present path submits from the
-table at 0x1475e7300 (0x142482660; recorded once at device creation) runs again while its previous submission is still
-executing, which the console allows and the desktop does not (the debug layer drops that submission). Waiting on the
-CPU for the previous run before the resubmission removed the error but made the process fail in coreclr (access
-violation at coreclr+0x165f05) within 3,000 presents, the same failure as a boot with queue slot 35 skipped, so it is
-not done yet.
+**Resubmitted lists.** The list the present path submits from the table at 0x1475e7300 (0x142482660; recorded once
+at device creation) can run again while its previous submission is still executing, which the console allows and
+the desktop does not (debug-layer error #553, about once per 500 presents at 240 Hz; the submission is dropped).
+`ListSubmissions`: each queue signals a fence of its own after every submission, each list wrapper keeps that value
+(+0xE00), and a list still in flight is waited for on the CPU before it is submitted again. The coreclr fault that
+followed this wait at first (coreclr+0x165f05) was heap corruption from the TLS host ([loader.md](loader.md)),
+which any change of timing exposed.
 
 ## Unknown
 

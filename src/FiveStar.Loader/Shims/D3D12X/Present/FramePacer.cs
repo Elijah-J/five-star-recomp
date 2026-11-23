@@ -10,6 +10,8 @@ namespace FiveStar.Loader.Shims.D3D12X.Present;
 /// The console's frame events on a timer: device slot 78 sets the interval, slot 79 places an event type at an offset
 /// from each origin, slot 80 waits for one. A token counts origins (1 = the first after the interval was set); waiting
 /// for the origin returns the next token, a token-in wait for another type returns once that frame's event passed.
+/// A presented token is used up: the current token is never one already presented, so the render thread's wait for
+/// event 2 of its previous frame (0x142482405) lasts until that frame's origin and frames come one per interval.
 /// </summary>
 internal sealed unsafe class FramePacer
 {
@@ -37,6 +39,9 @@ internal sealed unsafe class FramePacer
     private readonly long[] _offsets = new long[EventTypes];
     private FrameGrid _grid;
 
+    /// <summary>The last token a present carried on the current grid; 0 for none.</summary>
+    private long _presented;
+
     public FramePacer()
     {
         _grid = Create(DefaultMicroseconds, DefaultPeriod);
@@ -56,6 +61,27 @@ internal sealed unsafe class FramePacer
         }
 
         Volatile.Write(ref _grid, Create(microseconds, period));
+        Volatile.Write(ref _presented, 0);
+    }
+
+    /// <summary>Queue slot 32: the plane's token is used up.</summary>
+    [HotPath]
+    public void Presented(ulong token)
+    {
+        long value = (long)token;
+        long current = Volatile.Read(ref _presented);
+
+        while (value > current)
+        {
+            long seen = Interlocked.CompareExchange(ref _presented, value, current);
+
+            if (seen == current)
+            {
+                return;
+            }
+
+            current = seen;
+        }
     }
 
     /// <summary>Slot 79: event <paramref name="type"/> falls <paramref name="microseconds"/> after each origin.</summary>
@@ -87,7 +113,14 @@ internal sealed unsafe class FramePacer
 
         if (type == OriginEvent && ((flags & NoWaitFlag) != 0 || timeout == 0))
         {
-            Store(token, target - 1);
+            ulong current = (ulong)Volatile.Read(ref _presented) + 1;
+
+            if (current < reached)
+            {
+                current = reached;
+            }
+
+            Store(token, current);
 
             return HResult.Ok;
         }

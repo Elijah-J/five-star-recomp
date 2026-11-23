@@ -86,6 +86,40 @@ public sealed unsafe class D3D12XPresentTests
         Assert.InRange(waited.TotalMilliseconds, 1, 100);
     }
 
+    [Fact]
+    public void The_render_threads_loop_presents_once_per_interval()
+    {
+        using var test = TestRuntime.Create();
+        var device = new XboxDevice(test);
+        var setInterval = (delegate* unmanaged<nint, nint, uint, uint, uint, int>)XboxDevice.Vtable(device.Device)[SetFrameIntervalSlot];
+        var wait = (delegate* unmanaged<nint, uint, uint, nint, uint, ulong*, int>)XboxDevice.Vtable(device.Device)[WaitFrameEventSlot];
+        const uint IntervalMicroseconds = 20000;
+        const int Frames = 6;
+
+        Assert.Equal(0, setInterval(device.Device, 0, IntervalMicroseconds, 3, 0));
+
+        // As at 0x142482448 and 0x142482405: take the current token, wait for event 2 of the previous frame, present.
+        ulong previous = 0;
+        ulong first = 0;
+        ulong token = 0;
+        long start = Stopwatch.GetTimestamp();
+
+        for (int frame = 0; frame < Frames; frame++)
+        {
+            token = 0;
+            Assert.Equal(0, wait(device.Device, 0, 0, 0, 2, &token));
+            Assert.Equal(0, wait(device.Device, 2, Infinite, 0, 0, &previous));
+            test.Runtime.D3D12X.Pacer.Presented(token);
+            first = frame == 0 ? token : first;
+            previous = token;
+        }
+
+        var elapsed = Stopwatch.GetElapsedTime(start);
+
+        Assert.Equal(first + Frames - 1, token);
+        Assert.True(elapsed.TotalMilliseconds >= (Frames - 3) * IntervalMicroseconds / 1000.0, $"{Frames} frames in {elapsed.TotalMilliseconds:F1} ms");
+    }
+
     private static nint RenderTarget(XboxDevice device, ulong width, uint height)
     {
         int* properties = stackalloc int[] { DefaultHeap, 0, 0, 0, 0 };
