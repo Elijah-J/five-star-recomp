@@ -96,7 +96,7 @@ internal static unsafe class XboxDeviceCreation
         int home = ResourceStates.Home(desktop.Dimension, desktop.Flags, state);
         byte* clearCopy = stackalloc byte[DepthViewDescriptions.ClearValueSize];
         var create = (delegate* unmanaged<nint, void*, int, ResourceDescription*, int, void*, Guid*, nint*, int>)ComObject.Slot(inner, CreateCommittedResourceSlot);
-        int hr = create(inner, properties, flags, &desktop, home, DepthViewDescriptions.ClearValue(clear, clearCopy), iid, resource);
+        int hr = create(inner, properties, flags, &desktop, home, DepthViewDescriptions.ClearValue(clear, clearCopy, desktop.Format), iid, resource);
 
         return WrapResource(hr, resource, desktop.Dimension, home);
     }
@@ -109,7 +109,7 @@ internal static unsafe class XboxDeviceCreation
         int home = ResourceStates.Home(desktop.Dimension, desktop.Flags, state);
         byte* clearCopy = stackalloc byte[DepthViewDescriptions.ClearValueSize];
         var create = (delegate* unmanaged<nint, nint, ulong, ResourceDescription*, int, void*, Guid*, nint*, int>)ComObject.Slot(inner, CreatePlacedResourceSlot);
-        int hr = create(inner, Objects.Unwrap(heap), offset, &desktop, home, DepthViewDescriptions.ClearValue(clear, clearCopy), iid, resource);
+        int hr = create(inner, Objects.Unwrap(heap), offset, &desktop, home, DepthViewDescriptions.ClearValue(clear, clearCopy, desktop.Format), iid, resource);
 
         return WrapResource(hr, resource, desktop.Dimension, home);
     }
@@ -122,7 +122,7 @@ internal static unsafe class XboxDeviceCreation
         int home = ResourceStates.Home(desktop.Dimension, desktop.Flags, state);
         byte* clearCopy = stackalloc byte[DepthViewDescriptions.ClearValueSize];
         var create = (delegate* unmanaged<nint, ResourceDescription*, int, void*, Guid*, nint*, int>)ComObject.Slot(inner, CreateReservedResourceSlot);
-        int hr = create(inner, &desktop, home, DepthViewDescriptions.ClearValue(clear, clearCopy), iid, resource);
+        int hr = create(inner, &desktop, home, DepthViewDescriptions.ClearValue(clear, clearCopy, desktop.Format), iid, resource);
 
         return WrapResource(hr, resource, desktop.Dimension, home);
     }
@@ -231,7 +231,8 @@ internal static unsafe class XboxDeviceCreation
 
     /// <summary>
     /// GetResourceAllocationInfo or GetResourceAllocationInfo1 (<paramref name="query"/>) on desktop copies of the
-    /// descs; the extra <paramref name="infos"/> argument is passed to both and read only by the second.
+    /// descs (<see cref="DesktopResourceDescriptions.ToAllocationQuery"/>: a substituted render target is sized in its
+    /// console format); the extra <paramref name="infos"/> argument is passed to both and read only by the second.
     /// </summary>
     private static ResourceAllocationInfo* QueryAllocationInfo(nint device, nint query, ResourceAllocationInfo* result, uint visibleMask, uint count, ResourceDescription* descriptions, void* infos)
     {
@@ -263,7 +264,7 @@ internal static unsafe class XboxDeviceCreation
     {
         for (uint i = 0; i < count; i++)
         {
-            desktop[i] = Descriptions.ToDesktop(device, descriptions + i);
+            desktop[i] = Descriptions.ToAllocationQuery(device, descriptions + i);
         }
     }
 

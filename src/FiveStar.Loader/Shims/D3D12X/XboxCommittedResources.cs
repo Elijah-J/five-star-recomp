@@ -55,7 +55,7 @@ internal sealed unsafe class XboxCommittedResources
         state = ResourceStates.Home(desktop.Dimension, desktop.Flags, state);
         byte* clearCopy = stackalloc byte[DepthViewDescriptions.ClearValueSize];
         var create = (delegate* unmanaged<nint, void*, int, ResourceDescription*, int, void*, Guid*, nint*, int>)ComObject.Slot(device, DesktopCreateCommittedResourceSlot);
-        int hr = create(device, properties, NoHeapFlags, &desktop, state, DepthViewDescriptions.ClearValue(clear, clearCopy), iid, resource);
+        int hr = create(device, properties, NoHeapFlags, &desktop, state, DepthViewDescriptions.ClearValue(clear, clearCopy, desktop.Format), iid, resource);
 
         if (_log.DetailEnabled)
         {

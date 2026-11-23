@@ -139,8 +139,28 @@ The console's D16_UNORM_S8_UINT (118) and its plane views R16_UNORM_X8_TYPELESS 
 A null-desc DSV or SRV of a resource in format 19 gets the whole-resource 2D (array) view in 20 or 21; slot-70 views
 take the SRV column.
 
-## Unknown
+## Render-target formats
 
+The console renders to 16-bit color formats a desktop GPU may lack (TargetFormats, FormatSupport; on the RTX test
+machine B4G4R4A4_UNORM has no render-target support and B5G5R5A1_UNORM no typed UAV). When CheckFeatureSupport reports
+either missing for B5G6R5_UNORM (85), B5G5R5A1_UNORM (86) or B4G4R4A4_UNORM (115), every texture of that format with
+ALLOW_RENDER_TARGET or ALLOW_UNORDERED_ACCESS is made R8G8B8A8_UNORM (28), and the rest follows:
+
+| Where | Answer |
+|---|---|
+| Allocation info (slots 25, 108) | the console format without ALLOW_RENDER_TARGET: the console format's footprint (B4G4R4A4: 2 bytes a texel), which the game lays out its memory with; the desktop texture is committed apart (slots 27, 127, 133) |
+| Resource creation (27, 29, 30, 127, 133) and clear values | the substitute |
+| RTV, UAV, SRV descs (18 to 20) in the console format on such a texture | the substitute (TargetViewDescriptions); slot-70 views take the texture's format |
+| Pipeline RTVFormats | the substitute, by the same check, so pipelines and targets agree |
+| A texture read from memory (no RT/UAV flag, slot 70) | the console format, filled from the game's bytes |
+| Copyable footprints (38) | the substitute's (copies go to the desktop texture) |
+
+Shaders read the same normalized RGBA; values keep 8 bits where the console stores 4 or 5, so blends and repeated
+writes are not quantized as on the console. A view of a substituted B5G6R5 texture reads alpha as 1 (component
+mapping). A copy between a substituted texture and a texture of the console format read from memory would mix
+formats; none was seen.
+
+## Unknown
 - Whether list slot 26 is ResourceBarrier (the exe has no call; the FSR DLL's global UAV barrier through it fits).
 - How the console treats a texture barrier's subresource range other than all subresources (the shim moves the
   whole texture).

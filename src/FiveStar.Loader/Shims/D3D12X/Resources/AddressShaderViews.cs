@@ -67,6 +67,7 @@ internal sealed unsafe class AddressShaderViews
         if (texture is not null)
         {
             desktop.Format = ViewFormats.ForView(texture.DesktopFormat, viewFormat);
+            desktop.ComponentMapping = TargetFormats.ComponentMapping(viewFormat, desktop.ComponentMapping);
             target = texture.Desktop;
         }
 

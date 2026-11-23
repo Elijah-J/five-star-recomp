@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Five Star Recomp contributors.
+// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Runtime.InteropServices;
@@ -10,7 +10,7 @@ namespace FiveStar.Loader.Shims.D3D12X;
 /// Command-list slots 47 and 48, IASetIndexBuffer and IASetVertexBuffers (desktop 43 and 44). The views carry console
 /// GPU addresses (on the console GPU address == CPU address); each becomes the desktop address of the buffer over
 /// that memory (<see cref="XboxGameMemoryBuffers.TryTranslate"/>). A view outside known memory is unbound (address
-/// 0), warned once. Translated vertex programs read their attributes through the input layout, so without these the
+/// and size 0), warned once. Translated vertex programs read their attributes through the input layout, so without these the
 /// attributes read 0.
 /// </summary>
 internal static unsafe class InputBuffers
@@ -39,8 +39,7 @@ internal static unsafe class InputBuffers
             return;
         }
 
-        var desktop = *view;
-        desktop.Location = Translate(desktop.Location);
+        var desktop = Translated(*view);
         set(inner, &desktop);
     }
 
@@ -69,12 +68,25 @@ internal static unsafe class InputBuffers
 
         for (uint i = 0; i < used; i++)
         {
-            desktop[i] = views[i];
-            desktop[i].Location = Translate(views[i].Location);
+            desktop[i] = Translated(views[i]);
         }
 
         ShimContext.Runtime.D3D12X.DrawTrace?.VertexBuffers(self, startSlot, used, views);
         set(inner, startSlot, used, desktop);
+    }
+
+    /// <summary>The view with its desktop address; an unbound one (address 0) also has size 0, as the desktop requires.</summary>
+    [HotPath]
+    private static VertexBufferView Translated(VertexBufferView view)
+    {
+        view.Location = Translate(view.Location);
+
+        if (view.Location == 0)
+        {
+            view.Size = 0;
+        }
+
+        return view;
     }
 
     [HotPath]

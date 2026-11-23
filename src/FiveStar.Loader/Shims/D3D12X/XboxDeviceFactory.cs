@@ -373,6 +373,11 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         Objects.SetHandler(XboxInterfaceKind.CommandQueue, XboxQueueMethods.ExecuteCommandListsSlot, (nint)execute);
         Objects.SetHandler(XboxInterfaceKind.Resource, ResourceGpuAddressSlot, (nint)gpuAddress);
 
+        delegate* unmanaged<XboxResourceObject*, uint, void*, void**, int> map = &XboxObjectMethods.Map;
+        delegate* unmanaged<XboxResourceObject*, uint, void*, void> unmap = &XboxObjectMethods.Unmap;
+        Objects.SetHandler(XboxInterfaceKind.Resource, XboxObjectMethods.MapSlot, (nint)map);
+        Objects.SetHandler(XboxInterfaceKind.Resource, XboxObjectMethods.UnmapSlot, (nint)unmap);
+
         delegate* unmanaged<XboxFenceObject*, ulong*> fenceValue = &FenceValueMirror.CompletedValueAddress;
         delegate* unmanaged<XboxFenceObject*, uint> releaseFence = &FenceValueMirror.ReleaseFence;
         delegate* unmanaged<XboxObject*, nint, ulong, int> signal = &FenceValueMirror.QueueSignal;

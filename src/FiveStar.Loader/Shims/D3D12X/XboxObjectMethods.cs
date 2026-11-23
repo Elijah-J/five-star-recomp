@@ -18,6 +18,12 @@ internal static unsafe class XboxObjectMethods
     /// <summary>ID3D12Resource::GetGPUVirtualAddress (d3d12.h).</summary>
     private const int DesktopGetGpuAddressSlot = 11;
 
+    /// <summary>ID3D12Resource::Map and ::Unmap (d3d12.h); the D3D12.X resource keeps the slots.</summary>
+    public const int MapSlot = 8;
+    public const int UnmapSlot = 9;
+    private const int DesktopMapSlot = MapSlot;
+    private const int DesktopUnmapSlot = UnmapSlot;
+
     /// <summary>ID3D12DescriptorHeap::GetCPUDescriptorHandleForHeapStart and ::GetGPUDescriptorHandleForHeapStart.</summary>
     private const int DesktopCpuStartSlot = 9;
     private const int DesktopGpuStartSlot = 10;
@@ -91,6 +97,46 @@ internal static unsafe class XboxObjectMethods
     }
 
     /// <summary>
+    /// Resource slot 8, Map(subresource, read range, data): a resource the game placed (slot 133) maps to its own memory,
+    /// as on the console, where a texture's bytes are CPU-visible (0x145121891 maps a texture and writes a mip at
+    /// the XG offset); its desktop texture is a committed one the CPU cannot map. Others map on the desktop.
+    /// </summary>
+    [HotPath]
+    [UnmanagedCallersOnly]
+    public static int Map(XboxResourceObject* self, uint subresource, void* readRange, void** data)
+    {
+        byte* game = GameBytes(self);
+
+        if (game != null)
+        {
+            if (data != null)
+            {
+                *data = game;
+            }
+
+            return HResult.Ok;
+        }
+
+        nint inner = self->Header.Inner;
+
+        return ((delegate* unmanaged<nint, uint, void*, void**, int>)ComObject.Slot(inner, DesktopMapSlot))(inner, subresource, readRange, data);
+    }
+
+    /// <summary>Resource slot 9, Unmap(subresource, written range): nothing to do for game memory.</summary>
+    [HotPath]
+    [UnmanagedCallersOnly]
+    public static void Unmap(XboxResourceObject* self, uint subresource, void* writtenRange)
+    {
+        if (GameBytes(self) != null)
+        {
+            return;
+        }
+
+        nint inner = self->Header.Inner;
+        ((delegate* unmanaged<nint, uint, void*, void>)ComObject.Slot(inner, DesktopUnmapSlot))(inner, subresource, writtenRange);
+    }
+
+    /// <summary>
     /// Descriptor-heap slot 9: the game takes the handle in rax with only the heap in rcx (call after creation at
     /// 0x141c74559); the desktop method returns it through a hidden pointer. A heap in title memory answers with that memory.
     /// </summary>
@@ -117,6 +163,18 @@ internal static unsafe class XboxObjectMethods
         }
 
         return HeapStart(&self->Header, DesktopGpuStartSlot);
+    }
+
+    /// <summary>The CPU address of a placed resource's game memory, or null when it has none mapped.</summary>
+    [HotPath]
+    private static byte* GameBytes(XboxResourceObject* self)
+    {
+        if (self->GameAddress == 0)
+        {
+            return null;
+        }
+
+        return ShimContext.Runtime.D3D12X.MemorySource.Find(self->GameAddress, 1);
     }
 
     [HotPath]
