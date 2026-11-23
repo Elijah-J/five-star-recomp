@@ -5,6 +5,7 @@ using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Loading;
 using FiveStar.Loader.Shims.D3D12X.Pipelines;
 using FiveStar.Loader.Shims.Gdk;
+using FiveStar.Loader.Shims.Network;
 
 namespace FiveStar.Loader.Tests.Support;
 
@@ -29,16 +30,17 @@ internal sealed class TestRuntime : IDisposable
 
     /// <summary>
     /// A runtime whose manual modules are <paramref name="manualModules"/>, whose package root is
-    /// <paramref name="packageRoot"/> and whose log lines go to <paramref name="log"/> (nowhere when null).
+    /// <paramref name="packageRoot"/>, whose log lines go to <paramref name="log"/> (nowhere when null) and whose
+    /// XNetworking answers follow <paramref name="network"/> (offline when null).
     /// </summary>
-    public static TestRuntime Create(IEnumerable<string>? manualModules = null, string? packageRoot = null, TextWriter? log = null)
+    public static TestRuntime Create(IEnumerable<string>? manualModules = null, string? packageRoot = null, TextWriter? log = null, NetworkOptions? network = null)
     {
         string folder = Path.Combine(Path.GetTempPath(), "fivestar-loader-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(folder);
 
         var manual = new HashSet<string>(manualModules ?? [], StringComparer.OrdinalIgnoreCase);
         var options = new LoaderOptions([], manual, UnresolvedMode.Stub, true, Path.Combine(folder, "work"), null, Environment.ProcessId);
-        var gdk = new GdkOptions(packageRoot, Path.Combine(folder, "saves"), Path.Combine(folder, "data"), folder, SystemService.XboxScarlettAnaconda, Environment.OSVersion.Version);
+        var gdk = new GdkOptions(packageRoot, Path.Combine(folder, "saves"), Path.Combine(folder, "data"), folder, SystemService.XboxScarlettAnaconda, Environment.OSVersion.Version, network ?? NetworkOptions.Offline);
         var environment = new LoaderEnvironment(Environment.SystemDirectory, TimeProvider.System, Environment.FailFast);
         var runtime = new LoaderRuntime(options, gdk, new PipelineFolders(null, null), environment, new LoaderLog(log ?? TextWriter.Null, null, false));
 

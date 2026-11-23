@@ -1,7 +1,8 @@
-﻿// Copyright (c) 2026 Five Star Recomp contributors.
+// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using FiveStar.Loader.Loading;
+using FiveStar.Loader.Shims.Network;
 
 namespace FiveStar.Loader.Host;
 
@@ -114,6 +115,12 @@ internal sealed record HostOptions
 
     /// <summary>Run the XDsp convolution effects on the CPU instead of returning silence (<c>--xdsp-convolution</c>).</summary>
     public bool XDspConvolution { get; set; }
+
+    /// <summary>What XNetworking reports (<c>--network</c>); outbound traffic is sealed in every mode.</summary>
+    public NetworkMode NetworkMode { get; set; }
+
+    /// <summary>The connectivity level reported instead of the mode's own (<c>--network-level</c>).</summary>
+    public ConnectivityLevel? NetworkLevel { get; set; }
 
     public bool Verbose { get; set; }
 

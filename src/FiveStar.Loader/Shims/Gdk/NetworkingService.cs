@@ -6,8 +6,8 @@ using FiveStar.Loader.Native;
 namespace FiveStar.Loader.Shims.Gdk;
 
 /// <summary>
-/// XNetworking.h answered offline: the network stack is up, but the game has no connectivity (level None), so titles
-/// take their offline paths instead of waiting for Xbox services. The preferred multiplayer port is the Xbox default.
+/// XNetworking.h layouts and the preferred multiplayer port (the Xbox default). The connectivity hint itself comes from
+/// <see cref="ConnectivityService"/>.
 /// </summary>
 internal static unsafe class NetworkingService
 {
@@ -24,27 +24,6 @@ internal static unsafe class NetworkingService
     public const int HintLevelOffset = 0;
     public const int HintCostOffset = 4;
     public const int HintInitializedOffset = 12;
-
-    /// <summary>XNetworkingConnectivityLevelHint::None.</summary>
-    public const uint LevelNone = 1;
-
-    /// <summary>XNetworkingConnectivityCostHint::Unrestricted.</summary>
-    private const uint CostUnrestricted = 1;
-
-    public static int GetConnectivityHint(byte* hint)
-    {
-        if (hint == null)
-        {
-            return HResult.Pointer;
-        }
-
-        new Span<byte>(hint, HintSize).Clear();
-        *(uint*)(hint + HintLevelOffset) = LevelNone;
-        *(uint*)(hint + HintCostOffset) = CostUnrestricted;
-        hint[HintInitializedOffset] = GdkModule.True;
-
-        return HResult.Ok;
-    }
 
     public static int QueryPreferredPort(ushort* port)
     {

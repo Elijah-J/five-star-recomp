@@ -36,10 +36,15 @@ internal static unsafe class SystemModules
             return Unknown;
         }
 
+        return $"{FileName(module)}+0x{(long)address - (long)module:x}";
+    }
+
+    /// <summary>The file name of an OS-loaded module ("ws2_32.dll"); empty for an unknown handle.</summary>
+    public static string FileName(nint module)
+    {
         char* buffer = stackalloc char[Win32Constants.PathBufferLength];
         uint length = Kernel32.GetModuleFileNameW(module, buffer, Win32Constants.PathBufferLength);
-        string path = new(buffer, 0, (int)length);
 
-        return $"{Path.GetFileName(path)}+0x{(long)address - (long)module:x}";
+        return Path.GetFileName(new string(buffer, 0, (int)length));
     }
 }
