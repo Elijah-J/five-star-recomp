@@ -111,7 +111,7 @@ public sealed class DumpTests
     }
 
     [DumpFact]
-    public void The_graphics_page_file_extracts_902_textures()
+    public void The_graphics_page_file_extracts_903_textures()
     {
         var path = Path.Combine(DumpFactAttribute.Folder!, "data", "ttdb", "graphics", "ttdb_graphics.ttpf");
         using var source = new MappedFileSource(path);
@@ -121,8 +121,8 @@ public sealed class DumpTests
         var statuses = file.Descriptors.Select(descriptor => extractor.ReadMip0(descriptor).Status.Name).ToList();
 
         Assert.Equal(912, statuses.Count);
-        Assert.Equal(902, statuses.Count(status => status == "ok"));
-        Assert.Equal(5, statuses.Count(status => status == "skip_unsupported_codec"));
+        Assert.Equal(903, statuses.Count(status => status == "ok"));
+        Assert.Equal(4, statuses.Count(status => status == "skip_unsupported_codec"));
     }
 
     private static List<AwcTrack> XmaTracks(MappedFileSource source, long container) =>
