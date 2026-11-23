@@ -6,8 +6,8 @@ using System.Buffers.Binary;
 namespace FiveStar.Formats.Audio;
 
 /// <summary>
-/// Writes a RIFF WAVE file around raw AWC data: 16-bit PCM, 32-bit float, or XMA2 (format tag 0x166 with an
-/// XMA2WAVEFORMATEX describing one block of 2 KiB packets).
+/// Writes a RIFF WAVE file around raw AWC data (16-bit PCM, 32-bit float, or XMA2: format tag 0x166 with an
+/// XMA2WAVEFORMATEX describing one block of 2 KiB packets), or around decoded samples as 16-bit PCM.
 /// </summary>
 public static class WaveWriter
 {
@@ -47,6 +47,22 @@ public static class WaveWriter
         output.Write(header);
         WriteChunk(output, "fmt "u8, fmt);
         WriteChunk(output, "data"u8, data);
+    }
+
+    /// <summary>Writes decoded float samples (full scale 1.0, interleaved) as a 16-bit PCM WAVE file.</summary>
+    public static void WritePcm16(Stream output, uint sampleRate, byte channels, ReadOnlySpan<float> samples)
+    {
+        var data = new byte[samples.Length * sizeof(short)];
+
+        for (var index = 0; index < samples.Length; index++)
+        {
+            var scaled = MathF.Round(samples[index] * short.MaxValue);
+            var clamped = (short)Math.Clamp(scaled, short.MinValue, short.MaxValue);
+            BinaryPrimitives.WriteInt16LittleEndian(data.AsSpan(index * sizeof(short)), clamped);
+        }
+
+        var format = new AwcFormat((uint)samples.Length, sampleRate, 0, (byte)AwcCodec.Pcm16, channels);
+        Write(output, format, data);
     }
 
     private static byte[] Plain(ushort tag, ushort bits, AwcFormat format)
