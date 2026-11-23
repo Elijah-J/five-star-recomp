@@ -16,6 +16,16 @@ the Windows system DLL.
 | `GameInput.dll` | keyboard, mouse and gamepads |
 | `xgameruntime.dll` | offline GDK runtime (below); the game loads it at run time and gets the loader's implementation |
 
+## Middleware in the package
+
+| Library | On PC |
+|---|---|
+| `Bink2Scarlett.dll` | runs as shipped: it decodes on the CPU, and the game plays its sound through its own audio engine |
+| `amd_fidelityfx_loader_xbox.dll` | replaced by a shim. The console FSR upscaler is built for the console GPU only, and the game picks it only on a Series S, so on PC it is not used; a PC FidelityFX DLL can be named with `--ffx` |
+| `XboxBvhBuilder.dll` | loads; ray tracing waits for the D3D12.X work |
+
+Details: [middleware.md](https://github.com/ThatRecompDev/five-star-recomp/blob/main/docs/middleware.md).
+
 ## The offline GDK
 
 The game runs as if the console had no network: one local player, saves in folders, everything installed.
