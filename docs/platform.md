@@ -84,7 +84,8 @@ The October 2025 PC GDK (2510) has 418 named thunks. `libHttpClient.GDK.dll` (bu
 distinct thunks by the class-id filter; 365 match by (clsid, iid, slot). The other 43 are console-only, most of them
 XUser through interface id `26f3c674-a2fe-44fa-b6c4-a323bc94ff53`. The query-function scan finds 404: the class-id
 filter also accepts some of the vtable calls that follow a query. `game_scarlett_master.exe` has 161 thunks (17 class ids) reached
-from 358 direct call sites; `XCurl.dll` has 16.
+from 358 direct call sites; `XCurl.dll` has 16. The PC GDK 261000 library has 416 named thunks and names all 161 of the
+game's.
 
 ## Commands
 

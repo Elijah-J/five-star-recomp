@@ -32,4 +32,12 @@ internal static unsafe class XLauncherShim
     {
         return ShimContext.Runtime.Gdk.Launcher.RestartOnCrash(Utf8Text.Read((nint)arguments));
     }
+
+    /// <summary>void XLaunchNewGame(const char* exePath, const char* args, XUserHandle defaultUser).</summary>
+    [Shim(GdkModule.Name, "XLaunchNewGame")]
+    [UnmanagedCallersOnly]
+    private static void XLaunchNewGame(byte* exePath, byte* arguments, nint user)
+    {
+        ShimContext.Runtime.Gdk.Launcher.LaunchNewGame(Utf8Text.Read((nint)exePath), Utf8Text.Read((nint)arguments));
+    }
 }

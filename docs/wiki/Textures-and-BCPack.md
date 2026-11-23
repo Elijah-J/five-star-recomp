@@ -7,81 +7,113 @@ the console's 4 KiB and 64 KiB tiled layouts; the exporter undoes the tiling and
 
 | Result | Textures |
 |---|---|
-| Export cleanly | 315,483 of 357,115 (88.3%), over all 57 `.ttpf` files |
-| Blocked, mostly by BCPack pages | 41,632 |
+| Export cleanly | 354,520 of 357,115 (99.3%), over all 57 `.ttpf` files |
+| Blocked by BCPack pages of codecs 3 to 7 | 2,112 (1,867 of them BC7) |
+| Blocked by an unknown layout | 483 (280 with layout mode 12, 203 cube maps with mips) |
 
 ## BCPack
 
-BCPack is the Xbox Series hardware texture codec. Microsoft describes it as an entropy coder for BCn data that
-separates colour endpoints from palette indices and codes them with rANS. The page codec number equals
-`DSTORAGE_BCPACK_MODE` (1 = BC1 ... 7 = BC7). No decoder exists yet.
+BCPack is the Xbox Series hardware texture codec: an entropy coder for BCn data that separates colour endpoints from
+indices and codes them with rANS. The page codec number equals `DSTORAGE_BCPACK_MODE` (1 = BC1 ... 7 = BC7).
 
-### Verified
-
-From the 108,605 BCPack pages in the game (`fivestar texture bcpack <dir> --stats` and `--models`):
-
-| Item | Finding |
-|---|---|
-| Pages | 4 KiB to 4 MiB of BC data each; most are BC1 (102,725) and BC7 (5,167) |
-| Header | 48 bytes, 6 rows of 8 lanes: model byte, budget byte, 32-bit start state (big-endian) |
-| Coder | byte-wise rANS, 16-bit probabilities, lower bound 2^24 |
-| Model byte | splits into a family (bits 5-7) and a parameter (bits 0-4); written `family.parameter` below |
-| Near-constant models | 6.27 to 6.30 give one symbol 65536 - E (E = 2, 4, 8, 32) at cumulative start 1. BC1 lane 1 is always 6.30 and its state is that of N such symbols for 101,833 of 102,725 pages |
-| First bytes | right after the header, every lane whose budget is not 3 reads one byte, in lane order. Budgets 0-2 count, so the budget wraps at 256 |
-| Twin lanes | two lanes with identical headers read equal first bytes in 6,606 of 6,878 pairs (96%). Counting only budgets above 3 gives 92.5%, so the wrap is real |
-| Interleaving | twin lanes keep reading identical bytes side by side (`x x`, or `a b a b` when each reads two at once): lanes read the shared stream in lane order, a renormalisation at a time |
-
-Budgets are one byte, but a 4 MiB page stores about 3.6 MB. So a lane does not stop after one budget's worth of bytes.
-Lane headers also turn up later in the stream, spread one byte per round like the first header (for example four lanes
-with model 1.16, budget 3 and states `0x0201....` in a BC4 page). The likely reading is that a lane runs through
-several segments, each opening with its own 6-byte header. That is not proven yet.
-
-### Lane roles
-
-The most common models per lane. Lanes with families 0-7 and parameters 24-30 behave like endpoints; family 1 with
-parameters 16-22 like indices or block modes.
-
-| Codec | Lane 0 | Lane 1 | Lanes 2-7 |
+| Codec | Pages | Stored | State |
 |---|---|---|---|
-| BC1 | 1.17-1.20 | 6.30 always | 1.25-1.28 or 6.28/6.29; lanes 2/5, 3/6 and 4/7 share a model in 50-63% of pages, other pairs in 7-16% |
-| BC4 | 1.16-1.21 | 6.30 always | 2-3: mixed families, 1.29 most; 4-7: 1.16-1.19 |
-| BC5 | 1.16-1.22 | 6.27 always | 2-3: mostly 1.25-1.29; 4-7: 1.16-1.19 |
-| BC3 | 1.16-1.20 | 6.27 always | 2 and 7 endpoint-like, 3-6 1.17-1.19 |
-| BC6H | 1.16-1.18 | 1.16-1.20 | 2-4: mostly 5.27/5.28; 5-7: 1.25-1.27 |
-| BC7 | 1.16-1.17 | 1.16-1.17 | all families, parameters 22-30 |
+| 1 (BC1) | 102,725 | 10.42 GB | decodes |
+| 7 (BC7) | 5,167 | 1.07 GB | open |
+| 3, 4, 5, 6 (BC3, BC4, BC5, BC6H) | 35, 77, 333, 268 | 0.14 GB | open |
 
-For the 16-byte formats the near-constant lane codes two symbols per block. The BC1 pairing fits lanes 2-4 and 5-7
-being the same three channels of the two colour endpoints; that is a guess.
+### The BC1 decoder
 
-### Known plaintext
+`src/FiveStar.Formats/Ttpf/BcPack` implements the decoder of
+[bcpack-rs](https://github.com/Ahmet-Dedeler/bcpack-rs) (revision `0a887de1`, MIT OR Apache-2.0, used under MIT).
+bcpack-rs found the format: its lanes are the decoder module of Microsoft's
+[silicon-rans](https://github.com/microsoft/silicon-rans) (`mdu_minirans.v`, MIT), whose model tables it copies
+exactly, and it fitted the BC1 preset window and index codebook to retail data. The same lane decoder is printed in
+patent US11234023B2. bcpack-rs credits SixNG, Xbox2Windows and ttpf-viewer notes for earlier findings. The licence
+texts are in `THIRD_PARTY_NOTICES.md`.
 
-There is no copy of a BCPack page stored plainly elsewhere:
+The format is in `docs/textures.md`: 12 rANS lanes share one byte stream through a feeder that hands out up to 8
+bytes per clock in lane order, and each block is one symbol per lane (a back-reference distance, six endpoint
+residuals, four 2x2 index groups). Our decoder simulates the lanes clock by clock, as bcpack-rs does, with three
+engines: AVX-512 (all lanes in one 16-lane vector, kept in registers), AVX2 (two 8-lane vectors) and scalar.
 
-- 48 name hashes appear in more than one page file; none is BCPack in one and plain in another.
-- 20 groups of textures share their first 2 KiB of mips with a plain copy, but the rest of the data differs.
-- Matching whole zlib pages across textures gave 5 candidates, all different slices of texture arrays.
+### Checks
 
-The codec seems to be chosen from the content, so identical data gets the same codec.
+On the full dump:
 
-Mip tails give partial plaintext instead. The first page of a mipped texture starts with zero padding. For BC1
-1024x1024 with 6 mips and layout mode 2 (7,174 BCPack pages of 12 KiB), plain siblings show zero blocks 0-95, 97-127,
-132-159 and 176-191. In the BCPack copies the bytes for these zero runs repeat exactly across textures and across page
-sizes (512-block pages show the same runs), for example `4f d0 54 ec 0e 8f 9c 4c ec`, read by two to four lanes in
-step.
+| Check | Result |
+|---|---|
+| Convergence | all 102,725 BC1 pages in 57 files converge (every lane ends legally, only zero padding follows); none reaches an unfitted window slot |
+| Engines | AVX-512, AVX2 and scalar give the same blocks (SHA-256 per page) on all 102,725 pages |
+| Reference | the bcpack-rs Python decoder, given the same tables, gives the same bytes on 828 sampled pages |
+| Mip consistency | 400 random BC1 textures with a BCPack mip 0 and a zlib mip 1: mip 0 downsampled 2x against mip 1, RGB PSNR median 35.8 dB (p10 30.8, p90 41.4). Textures stored as zlib in both mips: median 36.7 dB |
+| Extraction | `fivestar texture extract` reads all 354,520 exportable textures, BC1 BCPack pages included |
 
-### Ruled out
+`fivestar texture bcpack-scan` repeats the first two checks. The tests check the model tables against their published
+checksum, the vectorised inverse against the hardware inverse for every model and input, the synthetic streams of
+bcpack-rs on every engine, and the engines against each other on damaged streams.
 
-- The second half of a page is not raw BC indices: its bytes have 7.999 bits of entropy and its 2-bit fields are uniform.
-- The zero-run bytes are not one static model coding one symbol from the lower bound. All frequencies 1-6000 and all
-  start positions were searched.
+Speed on a Ryzen 9 7950X3D (`fivestar texture bcpack-bench`, one core, BC1 output, MB = 10^6 bytes): AVX-512 about
+260 MB/s, AVX2 about 175 MB/s, scalar about 50 MB/s, at about 1.2 decoder clocks per block. A scan of all BC1 pages
+(15.3 GB of BC1 from 11.2 GB stored, file reads included) takes about 3.7 s on 32 threads. bcpack-rs reports 34 to 40
+MB/s per core.
 
-### Open questions
+### Table corrections
 
-- What the families and parameters mean, beyond the near-constant 6.27-6.30.
-- How a lane continues past its first budget: segments, and when a new header is read.
-- Why zero runs code to the same bytes in every texture. rANS bytes normally depend on everything coded after them,
-  so the coder state must restart near these runs.
-- The block order inside a page (tiled memory order is the natural guess) and how many symbols each lane codes per
-  block.
+The entropy tables are exact; the BC1 preset window and codebook are fits. Ours differ from bcpack-rs in 26 window
+slots and two codebook pairs. They change only block colours, never convergence.
 
-Microsoft's encoder (`XBTC`, part of the GDK) would answer most of these: compressing known BCn data and comparing.
+**Cause.** Some upstream window values are off by one. Many pages are one long reference chain from a single window
+slot, so a slot whose G1 is one too high (or G0 one too low) lowers c0 - c1 by one step in every block of the chain.
+Near-flat blocks then flip to c0 <= c1, the 3-colour mode, and their index 3 becomes transparent black specks. Plain
+mip 1 has none of these blocks (0 in 2.86 million); the decoded mip 0 had 1,420 in the 400-texture set, all in chains
+rooted at window slots.
+
+**Method.** Three disjoint random sets of BC1 textures (side up to 1024) with a BCPack mip 0 and a plain mip 1: A =
+400, B = 600, C = 1,200. The lane symbols give each block's reference chain and its root slot, so a slot value can be
+changed without decoding again. Score: each 2x2 quadrant of mip 0 against its mip-1 pixel (RGB squared error).
+
+- **Slot 4** (left empty upstream; 28 pages reach it): a joint fit over the 124,047 blocks that reach it, each page
+  scored against the neighbouring mips. Value `[12, 27, 13, 6, 12, 6]`; 12 of 25 per-page fits give exactly this
+  value, the others differ by 1 in one or two fields.
+- **Other slots**: every field of the value within ±1 (729 candidates), moving the centre to the best total until it
+  is stable. A new value is kept when it is cross-validated (fitted without a set, it lowers that set's error, for two
+  sets of 200 blocks or more; 9 slots), or when it removes the specks (3-colour blocks with some index-3 pixels drop by
+  at least 20 and to at most 20%, no set gains any and no set of 200 blocks or more loses over 0.3 dB; 16 slots).
+- **Slot 0** is never read: a reference before block 0 reaches slots 1 to 255.
+- **Codebook**: a 2x2 mean cannot see the arrangement inside a quadrant, so mirror pairs were tested by smoothness
+  (squared differences across a quadrant's inner edges and to its neighbours) with the table against the two patterns
+  swapped. Of 1,230 same-multiset pairs the table wins on all but two in all three sets; those two pairs, symbols
+  229/235 and 247/248, are swapped (the second wins on two of three sets and ties on the third).
+
+Changed slots: 3, 4, 22, 27, 33, 46, 69, 72, 76, 80, 81, 96, 102, 105, 108, 110, 112, 115, 117, 120, 123, 132, 133,
+165, 196, 197. Each changed entry in `bc1_window.json` and `bc1_quad_table.json` keeps the upstream value and the rule
+that accepted it.
+
+| Set | Median PSNR | p10 | Below 25 dB | Blocks with c0 = c1 and index 3 | 3-colour blocks with some index 3 |
+|---|---|---|---|---|---|
+| A (400) | 35.77 → 35.83 | 30.61 → 30.79 | 4 → 2 | 1,420 → 0 | 5,161 → 1,148 |
+| B (600) | 35.56 → 35.64 | 30.56 → 30.97 | 9 → 4 | 68 → 0 | 4,830 → 550 |
+| C (1,200) | 35.31 → 35.39 | 30.46 → 30.78 | 9 → 5 | 108 → 0 | 4,032 → 1,041 |
+| 28 slot-4 pages | 23.37 → 30.97 | 6.65 → 25.91 | 22 → 3 | | |
+
+No texture got more than 0.19 dB worse. All three sets were also used for fitting.
+
+### Earlier readings of the header
+
+Before the decoder, the start of a page was read as a fixed header. The decoder explains those findings:
+
+| Earlier reading | Now |
+|---|---|
+| 48-byte header, 6 rows of 8 lanes | the feeder's first clocks: 8 bytes per clock in lane order give lanes 0-7 their header bytes, then the four bytes that load the state; lanes 8-11 wait for free slots |
+| budget byte = refills + 3 | header byte 1 = payload length - 1; the payload includes the four state bytes |
+| near-constant models 0xDB-0xDE | header byte 0 fields (alphabet narrowing, flush, q); the frequencies come from the model tables |
+| twin lanes read equal first bytes | lanes with the same header and symbols code the same bytes |
+| lanes continue past their budget, with headers later in the stream | a lane codes several fragments, each with its own two- or three-byte header |
+
+### Open
+
+- BC7 (5,167 pages, 1,867 textures): bcpack-rs reports the entropy layer (16 lanes) solved; the block mapping is open.
+- BC3, BC4, BC5 and BC6H (713 pages, 245 textures).
+- Window and codebook values that no texture of the three sets tests, and fits that rest on one texture, keep the
+  upstream values; the search looked only at ±1 per field.

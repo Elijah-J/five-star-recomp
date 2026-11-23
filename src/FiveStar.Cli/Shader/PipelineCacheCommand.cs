@@ -73,7 +73,7 @@ internal static class PipelineCacheCommand
             .Distinct()
             .Select(meta => ShaderMetaParser.Parse(cache.Meta(meta).Span))
             .SelectMany(meta => meta?.UserData ?? []);
-        Console.WriteLine("shader bindings: " + Top(kinds.Select(entry => entry.RegisterClass)));
+        Console.WriteLine("shader bindings: " + Top(kinds.Select(entry => $"{entry.Kind} {entry.RegisterClass}")));
         PrintStates(cache);
     }
 

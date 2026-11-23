@@ -10,10 +10,11 @@ namespace FiveStar.Cli;
 internal static class TextureCommands
 {
     private const int Success = 0;
+    private const int Failure = 1;
     private const int UsageError = 2;
     private const int TwoArguments = 2;
 
-    private static readonly string[] Flags = ["--no-dds", "--stats", "--models"];
+    private static readonly string[] Flags = ["--no-dds", "--quiet"];
 
     public static int Run(IReadOnlyList<string> args)
     {
@@ -37,8 +38,10 @@ internal static class TextureCommands
                 return RunCodecs(new TextureReports(output), arguments);
             case "pages":
                 return RunPages(new PageReports(output), arguments);
-            case "bcpack":
-                return RunBcPack(new PageReports(output), arguments);
+            case "bcpack-scan":
+                return RunBcPackScan(new Bc1Scan(output), arguments);
+            case "bcpack-bench":
+                return RunBcPackBench(new Bc1Bench(output), arguments);
             case "help":
                 return RunHelp(output);
             default:
@@ -94,25 +97,29 @@ internal static class TextureCommands
         return Success;
     }
 
-    private static int RunBcPack(PageReports reports, CommandArguments arguments)
+    private static int RunBcPackScan(Bc1Scan scan, CommandArguments arguments)
     {
         if (arguments.Positionals.Count < 1)
         {
-            return Usage("texture bcpack <file.ttpf> [--limit N] [--codec C] | texture bcpack <dir> --stats | --models");
+            return Usage("texture bcpack-scan <file.ttpf | dir>... [--every N] [--jobs N] [--engine avx512|avx2|scalar] [--hashes FILE] [--quiet]");
         }
 
-        if (arguments.HasFlag("--stats"))
+        if (!scan.Run(arguments.Positionals, arguments))
         {
-            reports.BcPackStats(arguments.Positionals[0]);
+            return Failure;
         }
-        else if (arguments.HasFlag("--models"))
+
+        return Success;
+    }
+
+    private static int RunBcPackBench(Bc1Bench bench, CommandArguments arguments)
+    {
+        if (arguments.Positionals.Count < 1)
         {
-            reports.BcPackModels(arguments.Positionals[0]);
+            return Usage("texture bcpack-bench <file.ttpf | dir>... [--pages N] [--seconds S] [--engine avx512|avx2|scalar]");
         }
-        else
-        {
-            reports.BcPackPages(arguments.Positionals[0], arguments);
-        }
+
+        bench.Run(arguments.Positionals, arguments);
 
         return Success;
     }
@@ -142,12 +149,13 @@ internal static class TextureCommands
     {
         output.WriteLine("fivestar texture <command>");
         output.WriteLine("  extract  <file.ttpf> <out> [--limit N] [--only i,j] [--no-dds]   mip 0 of every texture as DDS");
-        output.WriteLine("  coverage <dir>                     share of textures readable without BCPack, per file and in total");
-
+        output.WriteLine("  coverage <dir>                     share of textures whose pages all decode, per file and in total");
         output.WriteLine("  codecs   <dir>                     pages and stored bytes per storage kind (zlib, stored, codecN)");
         output.WriteLine("  pages    <file.ttpf>               sample page-table entries per flag value with their storage kind");
-        output.WriteLine("  bcpack   <file.ttpf> [--limit N] [--codec C]   BCPack page headers and near-constant lane checks");
-        output.WriteLine("  bcpack   <dir> --stats             lane check totals over every page file");
-        output.WriteLine("  bcpack   <dir> --models            model use per codec and lane, and the twin-lane check");
+
+        output.WriteLine("  bcpack-scan  <file|dir>... [--every N] [--jobs N] [--engine E] [--hashes FILE] [--quiet]");
+        output.WriteLine("                                     decode every BCPack BC1 page on all cores: convergence and speed");
+        output.WriteLine("  bcpack-bench <file|dir>... [--pages N] [--seconds S] [--engine E]");
+        output.WriteLine("                                     single-core BC1 decode speed on sampled pages, by page size");
     }
 }

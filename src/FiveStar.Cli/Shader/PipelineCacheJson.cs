@@ -59,7 +59,10 @@ internal static class PipelineCacheJson
         json.WriteString("groupB", pipeline.GroupB);
         json.WriteNumber("stateMeta", pipeline.StateMeta);
         FixedStateJson.Write(json, cache.State(pipeline));
-        WriteInputLayout(json, InputLayoutParser.Parse(cache.Meta(pipeline.InputLayoutMeta).Span));
+
+        var layout = cache.Meta(pipeline.InputLayoutMeta).Span;
+        WriteTargets(json, PipelineTargetsParser.Parse(layout));
+        WriteInputLayout(json, InputLayoutParser.Parse(layout));
         json.WriteStartArray("stages");
 
         foreach (var link in pipeline.Stages)
@@ -165,28 +168,58 @@ internal static class PipelineCacheJson
         foreach (var entry in meta.UserData)
         {
             json.WriteStartObject();
+            json.WriteString("kind", entry.Kind.ToString());
             json.WriteString("class", entry.RegisterClass);
             json.WriteNumber("register", entry.Register);
-            json.WriteNumber("offset", entry.Offset);
+            json.WriteNumber("parameter", entry.Parameter);
 
-            json.WriteString("value", Hex(entry.Value));
-            json.WriteString("layout", Hex(entry.Layout));
+            json.WriteNumber("sgpr", entry.Sgpr);
+            json.WriteNumber("tableOffset", entry.TableOffset);
+            json.WriteNumber("size", entry.Size);
+            json.WriteNumber("stride", entry.Stride);
             json.WriteEndObject();
         }
 
         json.WriteEndArray();
+        WriteResources(json, meta.Resources);
+    }
+
+    private static void WriteResources(Utf8JsonWriter json, IReadOnlyList<ResourceEntry> resources)
+    {
         json.WriteStartArray("resources");
 
-        foreach (var entry in meta.Resources)
+        foreach (var entry in resources)
         {
             json.WriteStartObject();
-            json.WriteString("type", Hex(entry.Type));
+            json.WriteBoolean("used", entry.Used);
+            json.WriteString("class", entry.Class.ToString());
+            json.WriteNumber("kind", entry.ResourceKind);
+
             json.WriteNumber("register", entry.Register);
             json.WriteNumber("space", entry.Space);
             json.WriteEndObject();
         }
 
         json.WriteEndArray();
+    }
+
+    private static void WriteTargets(Utf8JsonWriter json, PipelineTargets targets)
+    {
+        json.WriteStartObject("targets");
+        json.WriteStartArray("renderTargetFormats");
+
+        foreach (var format in targets.RenderTargetFormats)
+        {
+            json.WriteNumberValue(format);
+        }
+
+        json.WriteEndArray();
+        json.WriteNumber("depthStencilFormat", targets.DepthStencilFormat);
+        json.WriteNumber("topologyType", targets.TopologyType);
+        json.WriteNumber("sampleCount", targets.SampleCount);
+
+        json.WriteString("sampleMask", Hex(targets.SampleMask));
+        json.WriteEndObject();
     }
 
     private static void WriteNames(Utf8JsonWriter json, IReadOnlyList<string> names)

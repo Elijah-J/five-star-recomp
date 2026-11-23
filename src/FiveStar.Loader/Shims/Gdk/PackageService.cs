@@ -158,14 +158,34 @@ internal sealed unsafe class PackageService
             return HResult.Pointer;
         }
 
-        string? text = Utf8Text.Read((nint)id);
+        int hr = CreateMonitor(Utf8Text.Read((nint)id), out nint created);
+        *monitor = created;
 
-        if (!IsOurs(text))
+        return hr;
+    }
+
+    /// <summary>An installation monitor of the game package, already complete; E_NOTFOUND for another package.</summary>
+    public int CreateMonitor(string? id, out nint monitor)
+    {
+        monitor = 0;
+
+        if (!IsOurs(id))
         {
             return HResult.NotFound;
         }
 
-        *monitor = _monitors.Add(text ?? PackageId);
+        monitor = _monitors.Add(id ?? PackageId);
+
+        return HResult.Ok;
+    }
+
+    /// <summary>XPackageChangeChunkInstallOrder: every chunk is installed, so there is no order to change.</summary>
+    public int ChangeChunkInstallOrder(byte* id)
+    {
+        if (!IsOurs(Utf8Text.Read((nint)id)))
+        {
+            return HResult.NotFound;
+        }
 
         return HResult.Ok;
     }

@@ -221,6 +221,92 @@ internal static unsafe class XPackageShim
         return ShimContext.Runtime.Gdk.Packages.EstimateDownloadSize(id, size, confirm);
     }
 
+    /// <summary>HRESULT XPackageInstallChunks(const char* id, uint32_t selectorCount, XPackageChunkSelector*, uint32_t minimumUpdateIntervalMs, bool suppressUserConfirmation, XTaskQueueHandle, XPackageInstallationMonitorHandle*).</summary>
+    [Shim(GdkModule.Name, "XPackageInstallChunks")]
+    [UnmanagedCallersOnly]
+    private static int XPackageInstallChunks(byte* id, uint selectorCount, nint selectors, uint interval, byte suppressConfirmation, nint queue, nint* monitor)
+    {
+        var gdk = ShimContext.Runtime.Gdk;
+
+        try
+        {
+            return gdk.Packages.CreateInstallationMonitor(id, monitor);
+        }
+        catch (Exception e)
+        {
+            return gdk.Boundary.Failed(nameof(XPackageInstallChunks), e);
+        }
+    }
+
+    /// <summary>HRESULT XPackageInstallChunksAsync(const char* id, uint32_t selectorCount, XPackageChunkSelector*, uint32_t minimumUpdateIntervalMs, bool suppressUserConfirmation, XAsyncBlock*).</summary>
+    [Shim(GdkModule.Name, nameof(XPackageInstallChunksAsync))]
+    [UnmanagedCallersOnly]
+    private static int XPackageInstallChunksAsync(byte* id, uint selectorCount, nint selectors, uint interval, byte suppressConfirmation, nint async)
+    {
+        var gdk = ShimContext.Runtime.Gdk;
+
+        try
+        {
+            var operation = new InstallChunksOperation(gdk.Packages, Utf8Text.Read((nint)id));
+
+            return gdk.Async.BeginManaged(async, nameof(XPackageInstallChunksAsync), operation);
+        }
+        catch (Exception e)
+        {
+            return gdk.Boundary.Failed(nameof(XPackageInstallChunksAsync), e);
+        }
+    }
+
+    /// <summary>HRESULT XPackageInstallChunksResult(XAsyncBlock*, XPackageInstallationMonitorHandle*).</summary>
+    [Shim(GdkModule.Name, "XPackageInstallChunksResult")]
+    [UnmanagedCallersOnly]
+    private static int XPackageInstallChunksResult(nint async, nint* monitor)
+    {
+        var gdk = ShimContext.Runtime.Gdk;
+
+        if (monitor == null)
+        {
+            return HResult.Pointer;
+        }
+
+        try
+        {
+            return gdk.Async.ManagedResult(async, nameof(XPackageInstallChunksAsync), (nuint)sizeof(nint), (nint)monitor);
+        }
+        catch (Exception e)
+        {
+            return gdk.Boundary.Failed(nameof(XPackageInstallChunksResult), e);
+        }
+    }
+
+    /// <summary>HRESULT XPackageChangeChunkInstallOrder(const char* id, uint32_t selectorCount, XPackageChunkSelector*).</summary>
+    [Shim(GdkModule.Name, "XPackageChangeChunkInstallOrder")]
+    [UnmanagedCallersOnly]
+    private static int XPackageChangeChunkInstallOrder(byte* id, uint selectorCount, nint selectors)
+    {
+        return ShimContext.Runtime.Gdk.Packages.ChangeChunkInstallOrder(id);
+    }
+
+    /// <summary>HRESULT XPackageUninstallChunks(const char* id, uint32_t selectorCount, XPackageChunkSelector*): the loader never deletes game files.</summary>
+    [Shim(GdkModule.Name, "XPackageUninstallChunks")]
+    [UnmanagedCallersOnly]
+    private static int XPackageUninstallChunks(byte* id, uint selectorCount, nint selectors)
+    {
+        ShimContext.Runtime.Gdk.Boundary.Info($"XPackageUninstallChunks({Utf8Text.Read((nint)id)}) not supported");
+
+        return HResult.NotSupported;
+    }
+
+    /// <summary>bool XPackageUninstallPackage(const char* packageIdentifier): false, nothing is uninstalled.</summary>
+    [Shim(GdkModule.Name, "XPackageUninstallPackage")]
+    [UnmanagedCallersOnly]
+    private static byte XPackageUninstallPackage(byte* id)
+    {
+        ShimContext.Runtime.Gdk.Boundary.Info($"XPackageUninstallPackage({Utf8Text.Read((nint)id)}) not supported");
+
+        return GdkModule.False;
+    }
+
     [Shim(GdkModule.Name, "XPackageGetWriteStats")]
     [UnmanagedCallersOnly]
     private static int XPackageGetWriteStats(byte* stats)

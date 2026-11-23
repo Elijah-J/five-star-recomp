@@ -151,7 +151,7 @@ internal sealed class LoaderRuntime : IDisposable
 
         var packages = new PackageService(config);
         var system = new SystemService(config, boundary);
-        var store = new StoreService(config);
+        var store = new StoreService(config, packages);
         var runtime = new GameRuntimeService(config, Shims, Stubs, CodeHeap, Log);
         var platform = new GdkPlatformServices(new EventRegistrations(), new DisplayService(boundary), new AccessibilityService(), new LauncherService(boundary));
 

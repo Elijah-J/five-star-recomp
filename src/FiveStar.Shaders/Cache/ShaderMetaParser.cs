@@ -32,6 +32,17 @@ public static class ShaderMetaParser
     private const int ValueField = 16;
     private const int LayoutField = 20;
 
+    // Packed fields: 0x41 +4 = kind << 8 | class; 0x41 +20 = parameter << 16 | SGPR << 8 | size;
+    // 0x42 +8 = resource kind << 16 | class << 8 | (1 used, 2 not used).
+    private const int ByteBits = 8;
+    private const int HalfBits = 16;
+    private const uint ByteMask = 0xFF;
+    private const uint UsedMarker = 1;
+
+    // Register classes of the 0x42 entries by their code (0 SRV, 1 UAV, 2 CBV, 3 sampler).
+    private static readonly BindingClass[] ResourceClasses =
+        [BindingClass.ShaderResource, BindingClass.UnorderedAccess, BindingClass.ConstantBuffer, BindingClass.Sampler];
+
     /// <summary>The entries of the metadata, or null when it is not a shader's metadata.</summary>
     public static ShaderMeta? Parse(ReadOnlySpan<byte> meta)
     {
@@ -76,20 +87,7 @@ public static class ShaderMetaParser
                 return new ShaderMeta(version, userData, resources, hash);
             }
 
-            if (entry.Length < EntrySize)
-            {
-                return null;
-            }
-
-            if (tag == UserDataTag)
-            {
-                userData.Add(new UserDataEntry(U32(entry, KindField), U32(entry, OffsetField), U32(entry, RegisterField), U32(entry, ValueField), U32(entry, LayoutField)));
-            }
-            else if (tag == ResourceTag)
-            {
-                resources.Add(new ResourceEntry(U32(entry, OffsetField), U32(entry, RegisterField), U32(entry, ValueField)));
-            }
-            else
+            if (entry.Length < EntrySize || !ReadEntry(entry, tag, userData, resources))
             {
                 return null;
             }
@@ -98,6 +96,77 @@ public static class ShaderMetaParser
         }
 
         return null;
+    }
+
+    private static bool ReadEntry(ReadOnlySpan<byte> entry, uint tag, List<UserDataEntry> userData, List<ResourceEntry> resources)
+    {
+        if (tag == UserDataTag)
+        {
+            var user = ReadUserData(entry);
+
+            if (user.HasValue)
+            {
+                userData.Add(user.Value);
+            }
+
+            return user.HasValue;
+        }
+
+        if (tag == ResourceTag)
+        {
+            var resource = ReadResource(entry);
+
+            if (resource.HasValue)
+            {
+                resources.Add(resource.Value);
+            }
+
+            return resource.HasValue;
+        }
+
+        return false;
+    }
+
+    private static UserDataEntry? ReadUserData(ReadOnlySpan<byte> entry)
+    {
+        var kindWord = U32(entry, KindField);
+        var kind = (UserDataKind)((kindWord >> ByteBits) & ByteMask);
+        var bindingClass = (BindingClass)(kindWord & ByteMask);
+
+        if (!Enum.IsDefined(kind) || !Enum.IsDefined(bindingClass))
+        {
+            return null;
+        }
+
+        var layout = U32(entry, LayoutField);
+
+        return new UserDataEntry(
+            kind,
+            bindingClass,
+            (int)U32(entry, OffsetField),
+            (int)U32(entry, RegisterField),
+            (int)U32(entry, ValueField),
+            (int)(layout & ByteMask),
+            (int)((layout >> ByteBits) & ByteMask),
+            (int)((layout >> HalfBits) & ByteMask));
+    }
+
+    private static ResourceEntry? ReadResource(ReadOnlySpan<byte> entry)
+    {
+        var type = U32(entry, OffsetField);
+        var classCode = (type >> ByteBits) & ByteMask;
+
+        if (classCode >= ResourceClasses.Length)
+        {
+            return null;
+        }
+
+        return new ResourceEntry(
+            (type & ByteMask) == UsedMarker,
+            ResourceClasses[classCode],
+            (int)(type >> HalfBits),
+            (int)U32(entry, RegisterField),
+            (int)U32(entry, ValueField));
     }
 
     private static uint U32(ReadOnlySpan<byte> entry, int field)

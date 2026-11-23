@@ -14,6 +14,10 @@
   <ItemGroup>
     <!-- The zlib inflater the DirectStorage queues decode archive chunks with. -->
     <ProjectReference Include="..\FiveStar.Formats\FiveStar.Formats.csproj" />
+    <!-- Pipeline creation: the pipeline-cache state decoders, shader containers and program index. -->
+    <ProjectReference Include="..\FiveStar.Shaders\FiveStar.Shaders.csproj" />
+    <!-- Pipeline creation: the root signature of translated programs. -->
+    <ProjectReference Include="..\FiveStar.Graphics\FiveStar.Graphics.csproj" />
   </ItemGroup>
 
   <ItemGroup>
