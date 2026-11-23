@@ -24,11 +24,11 @@
 | Item | State |
 |---|---|
 | D3D12.X runtime | adapters, device, the bindless root signature and pipeline creation exist; no command translation yet |
-| Shader linking | a vertex, geometry or mesh shader must use the pixel shader's interpolation modes when a pipeline is built |
+| Shader linking | real VS/MS+PS pairs link and build pipelines; values filled for inputs a producer never writes are not yet checked against real shading |
 | Wave size | emulated or pinned; still open: 19 compute programs with several waves per group need 64-lane waves, and 445 wave64 pixel, 1 vertex and 115 mesh programs read lanes a 32-lane GPU does not have ([details](Shader-Translation.md#wave-size)) |
 | Structured shader control flow | optional and working (DXIL 39% smaller); needs a check on real game data before it becomes the default, and the 3 largest programs still take 25 to 80 minutes in dxc |
 | Pipeline sweep | sampled runs done; a full run, and the AMD driver crashes on some pixel shaders, are open |
-| Call overhead benchmarks | measure game-to-runtime calls and command translation |
+| Call overhead benchmarks | GDK calls measured (58 ns per call); command translation needs the executable |
 | First frame | textured models draw with a real shader pair; depth and the game's material shaders are next |
 | Proton | test the Windows build on Linux and Steam Deck through Proton |
 
