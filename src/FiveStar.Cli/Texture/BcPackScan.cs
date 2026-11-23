@@ -147,11 +147,12 @@ internal sealed class BcPackScan
             return (new BcPackDecodeResult(BcPackDecodeStatus.InvalidArgument, 0, chunk.Length, 0, 0, 0), ReadOnlyMemory<byte>.Empty);
         }
 
-        if (job.Codec == BcPackCodec.Bc1)
+        if (BcPackPageDecoder.CanDecode((int)job.Codec))
         {
-            var blocks = Bc1Decoder.Decode(chunk, count, buffers.Blocks, job.Engine);
+            var size = count * BcPackPageSet.BytesPerSymbol;
+            var blocks = BcPackPageDecoder.Decode((int)job.Codec, chunk, size, buffers.Blocks, job.Engine);
 
-            return (blocks, buffers.Blocks.AsMemory(0, count * Bc1Decoder.BlockSize));
+            return (blocks, buffers.Blocks.AsMemory(0, size));
         }
 
         var symbols = (long)BcPackDecoder.Lanes(job.Codec) * count;

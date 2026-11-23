@@ -7,7 +7,8 @@ namespace FiveStar.Formats.Ttpf;
 
 /// <summary>
 /// Decides which textures of a page file can be extracted without reading their pages: a texture counts as ok when its
-/// layout is known and every page under its mip 0 can be decoded (stored, zlib or BCPack BC1).
+/// layout is known and every page under its mip 0 can be decoded exactly (stored, zlib or BCPack BC1), and as
+/// approximate when a page under it decodes only approximately (<see cref="TexturePage.IsApproximate"/>).
 /// </summary>
 public sealed class TextureCoverage
 {
@@ -38,7 +39,12 @@ public sealed class TextureCoverage
     }
 
     /// <summary>The codec of the first undecodable BCPack page overlapping [start, start + size), or null when there is none.</summary>
-    public int? BlockingCodec(long start, long size)
+    public int? BlockingCodec(long start, long size) => FirstCodec(start, size, page => !page.IsDecodable);
+
+    /// <summary>The codec of the first approximate BCPack page overlapping [start, start + size), or null when there is none.</summary>
+    public int? ApproximateCodec(long start, long size) => FirstCodec(start, size, page => page.IsApproximate);
+
+    private int? FirstCodec(long start, long size, Func<TexturePage, bool> match)
     {
         var index = Math.Max(_file.PageAt(start), 0);
 
@@ -46,7 +52,7 @@ public sealed class TextureCoverage
         {
             var page = _file.Pages[index];
 
-            if (!page.IsDecodable && page.VirtualAddress + page.EffectiveVirtualSize > start)
+            if (match(page) && page.VirtualAddress + page.EffectiveVirtualSize > start)
             {
                 return page.Codec;
             }
@@ -75,6 +81,16 @@ public sealed class TextureCoverage
                 blockers.Add((codec.Value, layout.Format.Name));
 
                 return new TextureStatus(TextureStatusKind.BcPack, codec.Value);
+            }
+        }
+
+        for (var face = 0; face < layout.Faces; face++)
+        {
+            var codec = ApproximateCodec(layout.Start + (face * layout.FaceSpan), layout.Size);
+
+            if (codec.HasValue)
+            {
+                return new TextureStatus(TextureStatusKind.Approximate, codec.Value);
             }
         }
 
