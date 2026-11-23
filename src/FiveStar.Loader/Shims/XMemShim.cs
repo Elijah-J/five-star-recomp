@@ -9,8 +9,8 @@ namespace FiveStar.Loader.Shims;
 /// xmem.dll entry points. GDK signatures (xmem.h): <c>void* XMemAlloc(SIZE_T size, uint64_t attributes)</c>,
 /// <c>void XMemFree(void* p, uint64_t attributes)</c> and their <c>XMemAllocDefault</c>/<c>XMemFreeDefault</c>
 /// twins. Inferred from the shipped DLLs' call sites:
-/// <c>BOOL XMemVirtualQuery(HANDLE process, const void* address, XMEM_BASIC_INFO* info)</c> and
-/// <c>BOOL XMemGetWorkingSetStatistics(uint32_t kind, STATS* out)</c>. The virtual and physical page functions are in
+/// <c>BOOL XMemVirtualQuery(HANDLE process, const void* address, XMEM_BASIC_INFO* info)</c>. The working set
+/// statistics are in <see cref="XMemWorkingSet"/>, the virtual and physical page functions in
 /// <see cref="XMemPhysicalMemory"/>.
 /// </summary>
 [ShimModule(Module)]
@@ -51,9 +51,9 @@ internal static unsafe class XMemShim
 
     [Shim(Module,"XMemGetWorkingSetStatistics")]
     [UnmanagedCallersOnly]
-    private static int XMemGetWorkingSetStatistics(uint kind, ulong* statistics)
+    private static int XMemGetWorkingSetStatistics(uint flags, byte* statistics)
     {
-        return ShimContext.Runtime.XMem.GetWorkingSetStatistics(kind, statistics);
+        return ShimContext.Runtime.XMemWorkingSet.GetStatistics(flags, statistics);
     }
 
     [Shim(Module, "XMemAllocDefault")]

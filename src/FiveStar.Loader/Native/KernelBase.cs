@@ -13,4 +13,20 @@ internal static unsafe class KernelBase
     /// <summary>BOOL IsApiSetImplemented(PCSTR contract) (apiquery2.h, Windows 10+): whether this OS answers the API set.</summary>
     [DllImport(Library)]
     public static extern int IsApiSetImplemented(byte* contract);
+
+    /// <summary>VirtualAlloc2 (memoryapi.h, Windows 10 1803+); here only to reserve and replace placeholders.</summary>
+    [DllImport(Library, SetLastError = true)]
+    public static extern nint VirtualAlloc2(nint process, nint address, nuint size, uint allocationType, uint protect, void* parameters, uint parameterCount);
+
+    [DllImport(Library, SetLastError = true)]
+    public static extern nint CreateFileMapping2(nint file, void* security, uint access, uint protect, uint attributes, ulong maximumSize, char* name, void* parameters, uint parameterCount);
+
+    [DllImport(Library, SetLastError = true)]
+    public static extern nint MapViewOfFile3(nint section, nint process, nint address, ulong offset, nuint size, uint allocationType, uint protect, void* parameters, uint parameterCount);
+
+    [DllImport(Library, SetLastError = true)]
+    public static extern int UnmapViewOfFile2(nint process, nint address, uint flags);
+
+    [DllImport(Library, SetLastError = true)]
+    public static extern int GlobalMemoryStatusEx(MemoryStatusEx* status);
 }

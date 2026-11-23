@@ -160,22 +160,6 @@ internal sealed unsafe class XMemAllocator
         return found;
     }
 
-    /// <summary>
-    /// XMemGetWorkingSetStatistics(kind, stats): signature inferred from a call site (the caller reads stats+8). Only
-    /// the first 16 bytes are written: peak and current working set of the process.
-    /// </summary>
-    public int GetWorkingSetStatistics(uint kind, ulong* statistics)
-    {
-        ProcessMemoryCountersEx counters = default;
-        counters.Size = (uint)sizeof(ProcessMemoryCountersEx);
-        _ = Kernel32.K32GetProcessMemoryInfo(Kernel32.GetCurrentProcess(), &counters, counters.Size);
-        statistics[0] = counters.PeakWorkingSetSize;
-        statistics[1] = counters.WorkingSetSize;
-        _log.Detail($"  [xmem] XMemGetWorkingSetStatistics(0x{kind:x}) -> ws=0x{counters.WorkingSetSize:x} (approximation)");
-
-        return 1;
-    }
-
     private void TraceAllocation()
     {
         _traceNextAllocation = false;

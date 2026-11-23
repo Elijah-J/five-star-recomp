@@ -73,8 +73,8 @@ ntdll answers only for OS-loaded modules; mapping it lets the loader bind that i
 
 | Shim | Behaviour |
 |---|---|
-| `xmem.dll` | `XMemAlloc`: requests of 64 KiB or more, or with a PageSize attribute, from `VirtualAlloc`; others from the aligned native heap, alignment from the attribute bits 24..28 (code n is 2^(n-1), at least 16). `XMemFree` releases what `XMemAlloc` returned and ignores other pointers. `XMemVirtualQuery` fills `MEMORY_BASIC_INFORMATION` and zeroes the 16-byte tail. `XMemGetWorkingSetStatistics` writes peak and current working set. `XMemAllocDefault`/`XMemFreeDefault` as `XMemAlloc`/`XMemFree` |
-| `xmem.dll` pages | `XMemVirtualAlloc` passes only MEM_RESERVE/MEM_COMMIT and the low protection byte to `VirtualAlloc` (a MEM_PHYSICAL reservation only reserves). Physical pages are numbers (64 KiB pages counted in 4 KiB frames, never 0); `XMemMapPhysicalPages` and `XMemMapPhysicalPagesScatter` commit read-write memory at the target (a null page array or a 0 entry decommits). `XMemIsToolsMemAvailable` and `XMemTransferMemory` return 0 |
+| `xmem.dll` | `XMemAlloc`: requests of 64 KiB or more, or with a PageSize attribute, from `VirtualAlloc`; others from the aligned native heap, alignment from the attribute bits 24..28 (code n is 2^(n-1), at least 16). `XMemFree` releases what `XMemAlloc` returned and ignores other pointers. `XMemVirtualQuery` fills `MEMORY_BASIC_INFORMATION` and zeroes the 16-byte tail. `XMemGetWorkingSetStatistics` writes total (resident set plus free physical memory) and used (resident set) bytes. `XMemAllocDefault`/`XMemFreeDefault` as `XMemAlloc`/`XMemFree` |
+| `xmem.dll` pages | Physical pages are 64 KiB pieces of pagefile-backed sections; a MEM_64K_PAGES reservation is a placeholder range and mapping replaces a 64 KiB placeholder with a view of the page, so pages alias and keep their contents across remaps ([physical-memory.md](physical-memory.md)). Other `XMemVirtualAlloc` calls go to `VirtualAlloc` with MEM_RESERVE/MEM_COMMIT and the low protection byte. `XMemIsToolsMemAvailable` and `XMemTransferMemory` return 0 |
 | `d3d12_xs.dll` | `D3D12SerializeRootSignature`, `D3D12SerializeVersionedRootSignature`, `D3D12Create[Versioned]RootSignatureDeserializer` forwarded to the PC `d3d12.dll`; `D3D12XboxCreateDevice` on a desktop device and `D3D12ConfigureVirtualMemoryX` as a no-op ([d3d12x-shim.md](d3d12x-shim.md)); everything else E_NOTIMPL |
 | `acphal.dll` | APU heap: `ApuCreateHeap` commits one region for both parts; `ApuAlloc` hands out zeroed, aligned blocks of it (first fit); an APU address is the offset plus 0x10000; `ApuFree`, `ApuIsVirtualAddressValid`, `ApuMapVirtualAddress`, `ApuMapApuAddress` follow. `AcpHalCreate` and `AcpHalAllocateShapeContexts` return E_NOTIMPL (no SHAPE hardware), so audio start-up fails cleanly |
 | `chad.dll`, `xapu.dll` | XDsp and XApu connect, activate, submit, enqueue and dequeue return E_NOTIMPL; `XApuGetResultCount` 0; disconnect and deactivate 0 |
@@ -327,11 +327,9 @@ Most of the thunk path is `QueryApiImpl`'s lookup of the (clsid, iid) object und
 - The names of console-only thunks the PC GDK lacks (43 in `libHttpClient.GDK.dll`, most of them XUser through a
   console-only interface id), and the API-set names the game imports GDK functions from (the alias is a pattern).
 - Signatures inferred from call sites: `InitializeApiImpl*`, `QueryApiImpl`, `XErrorReport`, `XMemVirtualQuery`,
-  `XMemGetWorkingSetStatistics`, `XMemVirtualAlloc`, the physical page functions, every `acphal.dll`, `chad.dll` and
-  `xapu.dll` function, `XGSuggestSwizzleMode`; the meaning of the `XMemVirtualQuery` tail (+0x30); the XALLOC
-  attribute layout; the console protection and allocation-type bits `XMemVirtualAlloc` drops; the second argument
-  of `ApuIsVirtualAddressValid`.
-- Physical page aliasing (one page mapped at two addresses) and contents following a remapped page are not emulated.
+  every `acphal.dll`, `chad.dll` and `xapu.dll` function, `XGSuggestSwizzleMode`; the meaning of the
+  `XMemVirtualQuery` tail (+0x30); the XALLOC attribute layout; the second argument of `ApuIsVirtualAddressValid`.
+  The xmem page functions are in [physical-memory.md](physical-memory.md).
 - What the game does when its audio start-up fails; the IDStorageFactoryX vtable (slot 8 is read as
   SetStagingBufferSize) and what the game does when a queue or file cannot be created.
 - XUser and XGameSave error HRESULT values; the members of `XPackageDetails` after `installing`; the

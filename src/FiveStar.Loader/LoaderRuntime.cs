@@ -41,6 +41,7 @@ internal sealed class LoaderRuntime : IDisposable
 
         XMem = new XMemAllocator(Images, log);
         XMemPhysical = new XMemPhysicalMemory(log);
+        XMemWorkingSet = new XMemWorkingSet(log);
         Apu = new ApuHeap(log);
         Storage = new DStorageFactoryStub(Stubs, CodeHeap, log);
 
@@ -93,6 +94,9 @@ internal sealed class LoaderRuntime : IDisposable
     /// <summary>The xmem.dll virtual and physical page functions.</summary>
     public XMemPhysicalMemory XMemPhysical { get; }
 
+    /// <summary>xmem.dll XMemGetWorkingSetStatistics.</summary>
+    public XMemWorkingSet XMemWorkingSet { get; }
+
     /// <summary>The acphal.dll APU heap.</summary>
     public ApuHeap Apu { get; }
 
@@ -117,6 +121,8 @@ internal sealed class LoaderRuntime : IDisposable
         Storage.Dispose();
         Apu.Dispose();
         LastError.Dispose();
+
+        XMemPhysical.Dispose();
     }
 
     private GdkServices CreateGdk(GdkOptions options, TimeProvider time)
