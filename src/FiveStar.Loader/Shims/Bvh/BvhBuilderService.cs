@@ -35,11 +35,13 @@ internal sealed unsafe class BvhBuilderService
     private readonly BvhBatchBuilder _builder;
     private readonly GameMemorySource _memory;
     private readonly OnceLog _once;
+    private readonly LoaderLog _log;
     private nint _device5;
 
     public BvhBuilderService(XboxObjects objects, ImageLoader loader, XMemPhysicalMemory memory, LoaderLog log)
     {
         _objects = objects;
+        _log = log;
         _once = new OnceLog(log);
         _console = new ConsoleBvhModule(loader, log);
         _memory = new GameMemorySource(memory);
@@ -78,7 +80,10 @@ internal sealed unsafe class BvhBuilderService
             return HResult.Ok;
         }
 
-        return _rehydrator.Rehydrate(count, (byte*)descs, sources);
+        int result = _rehydrator.Rehydrate(count, (byte*)descs, sources);
+        _log.Detail($"[bvh] rehydration of {count} descs: 0x{result:X8}");
+
+        return result;
     }
 
     /// <summary>Builds bottom-level structures on the CPU with ray tracing on; else skips the batch.</summary>
@@ -91,7 +96,8 @@ internal sealed unsafe class BvhBuilderService
             return;
         }
 
-        _builder.Build(count, (byte*)descs);
+        int built = _builder.Build(count, (byte*)descs);
+        _log.Detail($"[bvh] batched build: {built} of {count} structures written");
     }
 
     /// <summary>A compacting copy of a built or rehydrated structure with ray tracing on: its bytes, unchanged (node pointers are relative).</summary>
