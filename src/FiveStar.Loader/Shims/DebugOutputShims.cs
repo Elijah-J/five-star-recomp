@@ -10,7 +10,7 @@ namespace FiveStar.Loader.Shims;
 /// OutputDebugString from mapped code: the text goes to the loader log (the first <see cref="MaxLogged"/> messages),
 /// then on to the debugger as usual. Retail builds still print some start-up and error messages this way.
 /// </summary>
-internal static unsafe class DebugOutputShims
+internal static unsafe partial class DebugOutputShims
 {
     private const int MaxLogged = 4096;
     private const int MaxLength = 1024;

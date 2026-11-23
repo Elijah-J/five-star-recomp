@@ -48,6 +48,7 @@ internal sealed unsafe class TlsHostAttacher
         {
             throw new NotSupportedException($"{image.Name} has implicit TLS in slot 0, which the NativeAOT loader's runtime owns; use the JIT build");
         }
+
         string path = Path.Combine(_workDirectory, $"tlshost_{Path.GetFileNameWithoutExtension(image.Name)}_{_processId}.dll");
         System.IO.Directory.CreateDirectory(_workDirectory);
         File.WriteAllBytes(path, TlsHostBuilder.Build(template));
