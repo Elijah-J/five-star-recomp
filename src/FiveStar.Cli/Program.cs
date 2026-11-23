@@ -31,6 +31,8 @@ public static class Program
                 return TextureCommands.Run(rest);
             case "platform":
                 return PlatformCommands.Run(rest);
+            case "exe":
+                return ExeCommands.Run(rest);
             case "shader":
                 return ShaderCommands.Run(rest);
             case "graphics":
@@ -51,7 +53,7 @@ public static class Program
     private static void PrintUsage()
     {
         Console.Error.WriteLine("usage: fivestar setup <dump folder> [options]     prepare everything the port needs (fivestar setup help)");
-        Console.Error.WriteLine("       fivestar <archive|audio|texture|platform|shader|graphics|model|progress> <command> [arguments]");
+        Console.Error.WriteLine("       fivestar <archive|audio|texture|platform|exe|shader|graphics|model|progress> <command> [arguments]");
         Console.Error.WriteLine("       fivestar <group> help    lists the commands of a group");
     }
 }

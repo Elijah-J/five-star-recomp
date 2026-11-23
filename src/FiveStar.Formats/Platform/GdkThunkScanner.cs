@@ -51,6 +51,41 @@ public static class GdkThunkScanner
         return [.. found];
     }
 
+    /// <summary>Every accepted call site, with duplicates, so callers can count how often each thunk is reached.</summary>
+    public static IReadOnlyList<GdkThunkSite> ScanSites(PeImage image, IReadOnlySet<Guid> knownClasses)
+    {
+        var sites = new List<GdkThunkSite>();
+
+        foreach (var section in image.Sections.Where(section => section.Name.StartsWith(CodeSectionPrefix, StringComparison.Ordinal)))
+        {
+            ScanSectionSites(image, section, knownClasses, sites);
+        }
+
+        return sites;
+    }
+
+    private static void ScanSectionSites(PeImage image, PeSection section, IReadOnlySet<Guid> knownClasses, List<GdkThunkSite> sites)
+    {
+        var start = (int)image.RawStart(section);
+        var length = (int)Math.Min(section.RawSize, section.VirtualSize);
+        var code = image.Data.AsSpan(start, Math.Min(length, image.Data.Length - start));
+
+        for (var at = 0; at + CallLength <= code.Length; at++)
+        {
+            if (code[at] != CallRel32)
+            {
+                continue;
+            }
+
+            var thunk = ThunkAt(image, section, code, at, knownClasses);
+
+            if (thunk is not null)
+            {
+                sites.Add(new GdkThunkSite(thunk, (uint)(section.VirtualAddress + at)));
+            }
+        }
+    }
+
     private static GdkThunk? ThunkAt(PeImage image, PeSection section, ReadOnlySpan<byte> code, int call, IReadOnlySet<Guid> knownClasses)
     {
         Guid? clsid = null;

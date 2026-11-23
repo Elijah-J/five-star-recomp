@@ -87,6 +87,20 @@ internal sealed class CommandLineParser
             case "--help":
                 return StopWithHelp();
             default:
+                return ApplyOther(option);
+        }
+    }
+
+    /// <summary>Options handled past the main switch, to keep <see cref="Apply"/> within the line limit.</summary>
+    private bool ApplyOther(string option)
+    {
+        switch (option)
+        {
+            case "--classify":
+                return SetClassifyInput();
+            case "--classify-out":
+                return SetClassifyOutput();
+            default:
                 throw new CommandLineException($"unknown argument {option}");
         }
     }
@@ -235,6 +249,20 @@ internal sealed class CommandLineParser
     private bool SetVerbose()
     {
         _options.Verbose = true;
+
+        return true;
+    }
+
+    private bool SetClassifyInput()
+    {
+        _options.ClassifyInput = Path.GetFullPath(Next());
+
+        return true;
+    }
+
+    private bool SetClassifyOutput()
+    {
+        _options.ClassifyOutput = Path.GetFullPath(Next());
 
         return true;
     }

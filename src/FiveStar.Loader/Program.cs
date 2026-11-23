@@ -33,16 +33,21 @@ public static class Program
             return LoaderHost.Success;
         }
 
-        if (options.Loads.Count == 0)
+        if (!Environment.Is64BitProcess)
         {
-            Console.WriteLine(HostUsage.Text);
+            Console.Error.WriteLine("x64 only");
 
             return LoaderHost.UsageError;
         }
 
-        if (!Environment.Is64BitProcess)
+        if (options.ClassifyInput is not null)
         {
-            Console.Error.WriteLine("x64 only");
+            return ClassifyCommand.Run(options.ClassifyInput, options.ClassifyOutput);
+        }
+
+        if (options.Loads.Count == 0)
+        {
+            Console.WriteLine(HostUsage.Text);
 
             return LoaderHost.UsageError;
         }

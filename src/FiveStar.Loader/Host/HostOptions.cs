@@ -56,5 +56,11 @@ internal sealed record HostOptions
 
     public bool ListSafeCalls { get; set; }
 
+    /// <summary>File of <c>module!symbol</c> lines to classify through the shim table (the <c>--classify</c> mode).</summary>
+    public string? ClassifyInput { get; set; }
+
+    /// <summary>Where the classification goes; null writes it to standard output.</summary>
+    public string? ClassifyOutput { get; set; }
+
     public bool Help { get; set; }
 }

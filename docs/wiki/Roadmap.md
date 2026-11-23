@@ -2,6 +2,9 @@
 
 ## Needs the executable
 
+When the executable arrives, run `fivestar exe analyze` first: it reports the items below from the real imports and
+call sites. See [exe-intake.md](https://github.com/ThatRecompDev/five-star-recomp/blob/main/docs/exe-intake.md).
+
 | Item | Why |
 |---|---|
 | Archive file table | names and exact entry boundaries are encrypted; the key and algorithm are in the executable |

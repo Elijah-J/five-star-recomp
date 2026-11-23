@@ -36,5 +36,7 @@ internal static class HostUsage
           --log <file>           full log (every import and its resolution)
           -v                     verbose console (every import, every shim call)
           --list-safe-calls      list the export call recipes
+          --classify <file>      classify "module!symbol" lines through the shim table (for fivestar exe analyze)
+          --classify-out <file>  where the classification goes (default: standard output)
         """;
 }

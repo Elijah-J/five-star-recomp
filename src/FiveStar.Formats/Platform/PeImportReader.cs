@@ -53,7 +53,7 @@ public static class PeImportReader
 
             var table = lookup != 0 ? lookup : addresses;
             var dll = image.AsciiAt(name) ?? string.Empty;
-            imports.Add(new PeImport(dll, Thunks(image, table, dll), false));
+            imports.Add(new PeImport(dll, Thunks(image, table, dll), false, addresses));
         }
 
         return imports;
@@ -85,7 +85,7 @@ public static class PeImportReader
             var bias = (attributes & DelayRvaBased) != 0 ? 0 : (uint)image.ImageBase;
             var table = names != 0 ? names : addresses;
             var dll = image.AsciiAt(name - bias) ?? string.Empty;
-            imports.Add(new PeImport(dll, Thunks(image, table - bias, dll), true));
+            imports.Add(new PeImport(dll, Thunks(image, table - bias, dll), true, addresses - bias));
         }
 
         return imports;

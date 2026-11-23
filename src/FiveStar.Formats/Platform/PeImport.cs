@@ -7,4 +7,5 @@ namespace FiveStar.Formats.Platform;
 /// <param name="Dll">The DLL name as stored.</param>
 /// <param name="Functions">Function names in table order.</param>
 /// <param name="Delayed">True for a delay-load import.</param>
-public sealed record PeImport(string Dll, IReadOnlyList<string> Functions, bool Delayed);
+/// <param name="FirstThunkRva">RVA of the import address table: slot <c>i</c> of <see cref="Functions"/> is a pointer at <c>FirstThunkRva + i * pointer size</c>.</param>
+public sealed record PeImport(string Dll, IReadOnlyList<string> Functions, bool Delayed, uint FirstThunkRva);
