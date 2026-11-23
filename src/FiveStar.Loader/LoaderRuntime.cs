@@ -7,8 +7,10 @@ using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Loading;
 using FiveStar.Loader.Mods;
 using FiveStar.Loader.Shims;
+using FiveStar.Loader.Shims.Apu;
 using FiveStar.Loader.Shims.Gdk;
 using FiveStar.Loader.Shims.Input;
+using FiveStar.Loader.Shims.Storage;
 
 namespace FiveStar.Loader;
 
@@ -39,6 +41,10 @@ internal sealed class LoaderRuntime : IDisposable
         ModuleIdentity = new ModuleIdentity(Loader, Router, Images, VirtualModules, Shims, Stubs, LastError, Counters, log, environment.SystemDirectory);
 
         XMem = new XMemAllocator(Images, log);
+        XMemPhysical = new XMemPhysicalMemory(log);
+        Apu = new ApuHeap(log);
+        Storage = new DStorageFactoryStub(Stubs, CodeHeap, log);
+
         D3D12 = new D3D12Forwarder(log);
         Gdk = CreateGdk(gdk, environment.Time);
         Overlay = new FileOverlay(Gdk.Config, log);
@@ -89,6 +95,15 @@ internal sealed class LoaderRuntime : IDisposable
 
     public XMemAllocator XMem { get; }
 
+    /// <summary>The xmem.dll virtual and physical page functions.</summary>
+    public XMemPhysicalMemory XMemPhysical { get; }
+
+    /// <summary>The acphal.dll APU heap.</summary>
+    public ApuHeap Apu { get; }
+
+    /// <summary>The DirectStorage factory XCRDAPI.dll hands out.</summary>
+    public DStorageFactoryStub Storage { get; }
+
     public D3D12Forwarder D3D12 { get; }
 
     public GdkServices Gdk { get; }
@@ -101,6 +116,8 @@ internal sealed class LoaderRuntime : IDisposable
         Identity.RestorePeb();
         Gdk.Dispose();
         Input.Dispose();
+        Storage.Dispose();
+        Apu.Dispose();
         LastError.Dispose();
     }
 

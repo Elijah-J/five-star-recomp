@@ -6,16 +6,27 @@ using System.Runtime.InteropServices;
 namespace FiveStar.Loader.Shims;
 
 /// <summary>
-/// xmem.dll entry points. GDK signatures: <c>void* XMemAlloc(SIZE_T size, uint64_t attributes)</c>,
-/// <c>void XMemFree(void* p, uint64_t attributes)</c>. Inferred from the shipped DLLs' call sites:
+/// xmem.dll entry points. GDK signatures (xmem.h): <c>void* XMemAlloc(SIZE_T size, uint64_t attributes)</c>,
+/// <c>void XMemFree(void* p, uint64_t attributes)</c> and their <c>XMemAllocDefault</c>/<c>XMemFreeDefault</c>
+/// twins. Inferred from the shipped DLLs' call sites:
 /// <c>BOOL XMemVirtualQuery(HANDLE process, const void* address, XMEM_BASIC_INFO* info)</c> and
-/// <c>BOOL XMemGetWorkingSetStatistics(uint32_t kind, STATS* out)</c>.
+/// <c>BOOL XMemGetWorkingSetStatistics(uint32_t kind, STATS* out)</c>. The virtual and physical page functions are in
+/// <see cref="XMemPhysicalMemory"/>.
 /// </summary>
-[ShimModule("xmem.dll")]
+[ShimModule(Module)]
 internal static unsafe class XMemShim
 {
+    private const string Module = "xmem.dll";
+
+    [NotImplementedTable(Module)]
+    private static readonly (string Name, long ReturnValue)[] Catalog =
+    [
+        // No tools (development kit) memory on a retail machine; the callers do not act on the result.
+        ("XMemIsToolsMemAvailable", 0), ("XMemTransferMemory", 0),
+    ];
+
     [HotPath]
-    [Shim("xmem.dll", "XMemAlloc")]
+    [Shim(Module,"XMemAlloc")]
     [UnmanagedCallersOnly]
     private static nint XMemAlloc(nuint size, ulong attributes)
     {
@@ -23,7 +34,7 @@ internal static unsafe class XMemShim
     }
 
     [HotPath]
-    [Shim("xmem.dll", "XMemFree")]
+    [Shim(Module,"XMemFree")]
     [UnmanagedCallersOnly]
     private static void XMemFree(nint block, ulong attributes)
     {
@@ -31,17 +42,66 @@ internal static unsafe class XMemShim
     }
 
     [HotPath]
-    [Shim("xmem.dll", "XMemVirtualQuery")]
+    [Shim(Module,"XMemVirtualQuery")]
     [UnmanagedCallersOnly]
     private static int XMemVirtualQuery(nint process, nint address, byte* info)
     {
         return ShimContext.Runtime.XMem.VirtualQuery(process, address, info);
     }
 
-    [Shim("xmem.dll", "XMemGetWorkingSetStatistics")]
+    [Shim(Module,"XMemGetWorkingSetStatistics")]
     [UnmanagedCallersOnly]
     private static int XMemGetWorkingSetStatistics(uint kind, ulong* statistics)
     {
         return ShimContext.Runtime.XMem.GetWorkingSetStatistics(kind, statistics);
+    }
+
+    [Shim(Module, "XMemAllocDefault")]
+    [UnmanagedCallersOnly]
+    private static nint XMemAllocDefault(nuint size, ulong attributes)
+    {
+        return ShimContext.Runtime.XMem.Allocate(size, attributes);
+    }
+
+    [Shim(Module, "XMemFreeDefault")]
+    [UnmanagedCallersOnly]
+    private static void XMemFreeDefault(nint block, ulong attributes)
+    {
+        ShimContext.Runtime.XMem.Free(block, attributes);
+    }
+
+    [Shim(Module, "XMemVirtualAlloc")]
+    [UnmanagedCallersOnly]
+    private static nint XMemVirtualAlloc(nint address, nuint size, uint allocationType, ulong attributes, uint protect)
+    {
+        return ShimContext.Runtime.XMemPhysical.VirtualAlloc(address, size, allocationType, attributes, protect);
+    }
+
+    [Shim(Module, "XMemAllocatePhysicalPages")]
+    [UnmanagedCallersOnly]
+    private static int XMemAllocatePhysicalPages(ulong flags, ulong* count, ulong* pages)
+    {
+        return ShimContext.Runtime.XMemPhysical.AllocatePages(flags, count, pages);
+    }
+
+    [Shim(Module, "XMemFreePhysicalPages")]
+    [UnmanagedCallersOnly]
+    private static int XMemFreePhysicalPages(ulong count, ulong* pages)
+    {
+        return ShimContext.Runtime.XMemPhysical.FreePages(count, pages);
+    }
+
+    [Shim(Module, "XMemMapPhysicalPages")]
+    [UnmanagedCallersOnly]
+    private static nint XMemMapPhysicalPages(nint address, ulong count, ulong* pages)
+    {
+        return ShimContext.Runtime.XMemPhysical.MapPages(address, count, pages);
+    }
+
+    [Shim(Module, "XMemMapPhysicalPagesScatter")]
+    [UnmanagedCallersOnly]
+    private static int XMemMapPhysicalPagesScatter(nint* addresses, ulong count, ulong* pages)
+    {
+        return ShimContext.Runtime.XMemPhysical.MapPagesScatter(addresses, count, pages);
     }
 }

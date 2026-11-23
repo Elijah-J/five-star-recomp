@@ -30,7 +30,7 @@ internal static class HostUsage
           --manual <a.dll,b.dll> map these modules with this loader instead of LoadLibrary (repeatable)
           --system-crt           do not map the shipped MSVC runtime (default: msvcp140*/vcruntime140*/concrt140/
                                  vccorlib140/vcomp140 are mapped from the target's directory if present)
-          --search <dir>         extra directory for --manual modules
+          --search <dir>         extra directory for --manual modules and for modules the PC does not have
           --unresolved <mode>    stub (log + return 0, default) | trap (log + terminate on call) | error (fail load)
           --no-entry             do not call DllMain
           --no-shim <mod!func>   disable one shim (exercise the unresolved-import path)
@@ -40,7 +40,8 @@ internal static class HostUsage
           --log <file>           full log (every import and its resolution)
           -v                     verbose console (every import, every shim call)
           --list-safe-calls      list the export call recipes
-          --classify <file>      classify "module!symbol" lines through the shim table (for fivestar exe analyze)
+          --classify <file>      classify "module!symbol" lines (shim, Xbox stub, package, host or missing; the
+                                 --search directories are the package folder; for fivestar exe analyze)
           --classify-out <file>  where the classification goes (default: standard output)
         """;
 }

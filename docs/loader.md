@@ -44,7 +44,7 @@ flowchart TD
   shim -->|"no"| xbox{"Xbox-only module?"}
   xbox -->|"listed as not implemented"| ni["stub returning the listed value"]
   xbox -->|"any other symbol"| unres
-  xbox -->|"no"| img{"image already mapped, or a manual module<br/>in the search directories?"}
+  xbox -->|"no"| img{"image already mapped, or in the search directories<br/>and manual or absent from the PC?"}
   img -->|"yes"| exp{"exported?"}
   exp -->|"yes"| bimg["the image's export; a forwarder resolves again"]
   exp -->|"no"| unres
@@ -57,12 +57,14 @@ flowchart TD
 ```
 
 1. **Shim.** Matched on (module, symbol), then through a module alias, then on ("*", symbol). A module declared
-   Xbox-only (`xmem.dll`, `d3d12_xs.dll`, `xgameruntime.dll`, `gameinput.dll`) never falls through: a function listed as not
-   implemented binds to a stub that returns its listed value and logs its first call; any other symbol becomes an
-   unresolved stub returning the module's value (E_NOTIMPL for `xgameruntime.dll`, 0 otherwise).
-2. **Image mapped by the loader.** An image already mapped, or a manual module found in the search directories (the
-   directory of every loaded image, plus `--search`). By default the manual modules are the shipped MSVC runtime:
-   `msvcp140*`, `vcruntime140*`, `concrt140`, `vccorlib140`, `vcomp140`. Forwarders resolve through the same order.
+   Xbox-only (`xmem.dll`, `d3d12_xs.dll`, `xgameruntime.dll`, `gameinput.dll`, `acphal.dll`, `chad.dll`, `xapu.dll`,
+   `xg_xs.dll`, `xcrdapi.dll`) never falls through: a function listed as not implemented binds to a stub that returns
+   its listed value and logs its first call; any other symbol becomes an unresolved stub returning the module's value
+   (0 for `xmem.dll`, E_NOTIMPL for the others).
+2. **Image mapped by the loader.** An image already mapped, or a module found in the search directories (the
+   directory of every loaded image, plus `--search`) that is either manual or not on the PC (no System32 file, no
+   implemented API set). By default the manual modules are the shipped MSVC runtime: `msvcp140*`, `vcruntime140*`,
+   `concrt140`, `vccorlib140`, `vcomp140`. Forwarders resolve through the same order.
 3. **System32.** `LoadLibraryExW(name, LOAD_LIBRARY_SEARCH_SYSTEM32)`, so API sets resolve and a same-named DLL in
    the game folder is never picked up.
 4. **Packaged DLL.** A module System32 does not have is mapped from the search directories, so the DLLs shipped next
@@ -76,8 +78,13 @@ ntdll answers only for OS-loaded modules; mapping it lets the loader bind that i
 
 | Shim | Behaviour |
 |---|---|
-| `xmem.dll` | `XMemAlloc`: requests of 64 KiB or more, or with a PageSize attribute, from `VirtualAlloc`; others from the aligned native heap, alignment from the attribute bits 24..28 (code n is 2^(n-1), at least 16). `XMemFree` releases what `XMemAlloc` returned and ignores other pointers. `XMemVirtualQuery` fills `MEMORY_BASIC_INFORMATION` and zeroes the 16-byte tail. `XMemGetWorkingSetStatistics` writes peak and current working set |
-| `d3d12_xs.dll` | `D3D12SerializeRootSignature`, `D3D12SerializeVersionedRootSignature`, `D3D12Create[Versioned]RootSignatureDeserializer` forwarded to the PC `d3d12.dll`; everything else unresolved |
+| `xmem.dll` | `XMemAlloc`: requests of 64 KiB or more, or with a PageSize attribute, from `VirtualAlloc`; others from the aligned native heap, alignment from the attribute bits 24..28 (code n is 2^(n-1), at least 16). `XMemFree` releases what `XMemAlloc` returned and ignores other pointers. `XMemVirtualQuery` fills `MEMORY_BASIC_INFORMATION` and zeroes the 16-byte tail. `XMemGetWorkingSetStatistics` writes peak and current working set. `XMemAllocDefault`/`XMemFreeDefault` as `XMemAlloc`/`XMemFree` |
+| `xmem.dll` pages | `XMemVirtualAlloc` passes only MEM_RESERVE/MEM_COMMIT and the low protection byte to `VirtualAlloc` (a MEM_PHYSICAL reservation only reserves). Physical pages are numbers (64 KiB pages counted in 4 KiB frames, never 0); `XMemMapPhysicalPages` and `XMemMapPhysicalPagesScatter` commit read-write memory at the target (a null page array or a 0 entry decommits). `XMemIsToolsMemAvailable` and `XMemTransferMemory` return 0 |
+| `d3d12_xs.dll` | `D3D12SerializeRootSignature`, `D3D12SerializeVersionedRootSignature`, `D3D12Create[Versioned]RootSignatureDeserializer` forwarded to the PC `d3d12.dll`; everything else E_NOTIMPL (`D3D12XboxCreateDevice` is tested for failure) |
+| `acphal.dll` | APU heap: `ApuCreateHeap` commits one region for both parts; `ApuAlloc` hands out zeroed, aligned blocks of it (first fit); an APU address is the offset plus 0x10000; `ApuFree`, `ApuIsVirtualAddressValid`, `ApuMapVirtualAddress`, `ApuMapApuAddress` follow. `AcpHalCreate` and `AcpHalAllocateShapeContexts` return E_NOTIMPL (no SHAPE hardware), so audio start-up fails cleanly |
+| `chad.dll`, `xapu.dll` | XDsp and XApu connect, activate, submit, enqueue and dequeue return E_NOTIMPL; `XApuGetResultCount` 0; disconnect and deactivate 0 |
+| `xg_xs.dll` | `XGCreateTextureComputer`, `XGSuggestSwizzleMode` return E_NOTIMPL (console tiling not implemented) |
+| `xcrdapi.dll` `DStorageGetFactory` | one stub factory: IUnknown, slot 8 (the staging buffer size set at start-up) S_OK, every other slot E_NOTIMPL logged once |
 | `RtlPcToFileHeader` (any module) | the mapped image containing the address, else the real ntdll function |
 | `AddVectoredExceptionHandler` (any module) | registered as asked; the fault reporter of `--run` then moves back in front |
 | `terminate` (any module) | logs the native stack, then calls `ucrtbase!terminate` |
@@ -99,7 +106,7 @@ ntdll answers only for OS-loaded modules; mapping it lets the loader bind that i
 | `XDisplay*` | HDR: Enabled with the display's luminance when the primary display's desktop runs HDR10 (DXGI `GetDesc1`), else Disabled; a timeout deferral holds a "display required" power request |
 | `XClosedCaption*`, `XHighContrastGetMode`, `XSpeechSynthesizerEnumerateInstalledVoices` | captions white on black at scale 1, enabled as the game last set; high contrast from the Windows setting; no voices |
 | `XLaunchUri`, `XLaunchRestartOnCrash`, `XGameInvite*`, `XGameActivation*`, `XGameProtocol*` | an http(s) URI opens in the browser, others are logged; restart arguments recorded; invite, activation and protocol events register and never fire |
-| `gameinput.dll` `GameInputCreate` | an IGameInput over XInput, the keyboard, the mouse and a keyboard-and-mouse virtual gamepad (below); also registered as `xgameruntime.dll!GameInputCreate` for the thunk ABI table |
+| `gameinput.dll` `GameInputCreate` (also ordinal 1, how the executable imports it) | an IGameInput over XInput, the keyboard, the mouse and a keyboard-and-mouse virtual gamepad (below); also registered as `xgameruntime.dll!GameInputCreate` for the thunk ABI table |
 | other `xgameruntime.dll` functions of the public headers | not implemented: E_NOTIMPL, E_GAMESTREAMING_NOT_INITIALIZED for game streaming, or 0 for bool, count and void functions; first call logged |
 
 Of the 365 named thunks in `libHttpClient.GDK.dll`, 154 have a shim and 211 a not-implemented entry, so each one returns
@@ -347,7 +354,13 @@ Most of the thunk path is `QueryApiImpl`'s lookup of the (clsid, iid) object und
 - The names of console-only thunks the PC GDK lacks (43 in `libHttpClient.GDK.dll`, most of them XUser through a
   console-only interface id), and the API-set names the game imports GDK functions from (the alias is a pattern).
 - Signatures inferred from call sites: `InitializeApiImpl*`, `QueryApiImpl`, `XErrorReport`, `XMemVirtualQuery`,
-  `XMemGetWorkingSetStatistics`; the meaning of the `XMemVirtualQuery` tail (+0x30); the XALLOC attribute layout.
+  `XMemGetWorkingSetStatistics`, `XMemVirtualAlloc`, the physical page functions, every `acphal.dll`, `chad.dll` and
+  `xapu.dll` function, `XGSuggestSwizzleMode`; the meaning of the `XMemVirtualQuery` tail (+0x30); the XALLOC
+  attribute layout; the console protection and allocation-type bits `XMemVirtualAlloc` drops; the second argument
+  of `ApuIsVirtualAddressValid`.
+- Physical page aliasing (one page mapped at two addresses) and contents following a remapped page are not emulated.
+- What the game does when its audio start-up fails; the IDStorageFactoryX vtable (slot 8 is read as
+  SetStagingBufferSize) and what the game does when a queue or file cannot be created.
 - XUser and XGameSave error HRESULT values; the members of `XPackageDetails` after `installing`; the
   `XStoreGameLicense` layout; the array sizes of `XSystemAnalyticsInfo`; the member order of
   `XPersistentLocalStorageSpaceInfo`; what the console returns as package identifier.
@@ -356,8 +369,7 @@ Most of the thunk path is `QueryApiImpl`'s lookup of the (clsid, iid) object und
 - D3D12.X beyond root signatures, and whether its root-signature versions and flags match the PC ones.
 - Overrides of files inside `.rpf` archives: the archive file table is encrypted, so the overlay works on whole files
   only. Which functions the game executable opens its files with.
-- GameInput on the console: the module or API-set name `GameInputCreate` is imported from, or whether it is reached
-  through `QueryApiImpl`; the API version (v0 IIDs and vtables here; later versions change IIDs, slots and
+- GameInput on the console: the API version (v0 IIDs and vtables here; later versions change IIDs, slots and
   structures); the console's `GameInputDeviceInfo`, `GameInputKind` values and reading semantics (kind filter, the
   history depth, when readings are added); whether the game calls methods left as E_NOTIMPL (reading callbacks,
   dispatchers, aggregate devices, controller axis/button state).

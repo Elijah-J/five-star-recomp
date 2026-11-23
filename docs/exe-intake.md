@@ -22,7 +22,7 @@ run produces stays in that folder.
 | Section | What it answers |
 |---|---|
 | PE basics | sections (with entropy, so a packed or encrypted section stands out), entry point, TLS callbacks, `.pdata` function count, exports, and any non-standard or console section such as `.xbld` |
-| Imports against the loader | every imported function, how the loader resolves it (a shim, an Xbox-only stub, or the PC host), and how many call sites reach it. Gaps first, by call sites |
+| Imports against the loader | every imported function, how the loader resolves it, and how many call sites reach it. Gaps (`XboxStub`, `Missing`) first, by call sites |
 | GDK call sites | the GDK functions the game calls through the `QueryApiImpl` thunks, how many call sites each has, and the ones without a shim. Needs `--gdk-lib` to put names to the thunks |
 | D3D12.X and graphics | imports from `d3d12*`/`dxgi`, the D3D12.X (`d3d12_xs.dll`) entry points, and how the loader resolves them |
 | Archive file tables | where the executable uses the `RPF9` magic (0x39465052) and the archive names, as a pointer into the archive-parsing code |
@@ -31,7 +31,19 @@ run produces stays in that folder.
 
 The import classification is the loader's own, not a second copy of the list: `fivestar exe analyze` runs
 `fivestar-loader --classify` over the import names and reads its verdicts back, so the report and the loader always
-agree. If the loader cannot be found the report still prints, with the import classification left out.
+agree. If the loader cannot be found the report still prints, with the import classification left out. The folder the
+executable is in counts as the package folder (`--search`).
+
+| Class | Meaning |
+|---|---|
+| `Shim` | a loader shim answers it |
+| `XboxStub` | a module the loader declares Xbox-only, function without a shim: a logged stub returning a fixed value |
+| `Package` | a module in the package folder that the loader maps itself: the shipped CRT, or any module the PC does not have |
+| `Host` | the PC has the module: a System32 file or an API set the OS implements |
+| `Missing` | none of the above: an Xbox system module the loader does not know yet; its imports stay unresolved |
+
+`Host` and `Missing` are facts about the machine the report runs on, so an import that is `Host` here can be
+`Missing` on a PC without that DLL (Media Foundation on Windows N editions, for example).
 
 ## Why the loader library
 
