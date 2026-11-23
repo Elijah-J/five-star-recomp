@@ -1,14 +1,16 @@
-// Copyright (c) 2026 Five Star Recomp contributors.
+﻿// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 namespace FiveStar.Loader.Shims.D3D12X.Binding;
 
 /// <summary>
-/// One of the game's shader-visible heaps. Its descriptors live in title memory as on the console, one record per
-/// descriptor whose dword 0 is the desktop heap index standing behind it; the game copies these records itself (its
-/// per-draw tables, 0x144d9efc0), so a table in title memory names desktop descriptors wherever the game put it. The
+/// One of the game's shader-visible heaps, or one of its CPU-only view heaps. Its descriptors live in title memory as
+/// on the console, one record per descriptor whose dword 0 is the index in the desktop shader-visible heap standing
+/// behind it; the game copies these records itself (its per-draw tables, 0x144d9efc0, also from CPU-only heaps), so a
+/// table in title memory names desktop descriptors wherever the game put it. For a shader-visible heap the
 /// <see cref="DescriptorWindow"/> holds a mirror of dword 0 of every record, which programs read through a table's
-/// pointer; a record is mirrored when the shim writes it and again when a table that covers it is bound.
+/// pointer; a record is mirrored when the shim writes it and again when a table that covers it is bound. A CPU-only
+/// heap takes fresh desktop descriptors from a <see cref="DescriptorRing"/> on every write and is never mirrored.
 /// </summary>
 internal sealed unsafe class ShaderVisibleHeap
 {
@@ -18,6 +20,7 @@ internal sealed unsafe class ShaderVisibleHeap
     private readonly byte* _title;
     private readonly nint _desktopStart;
     private readonly DescriptorRemap? _remap;
+    private readonly DescriptorRing? _ring;
     private readonly DescriptorWindow _window;
     private readonly HeapRecords _layout;
 
@@ -31,8 +34,10 @@ internal sealed unsafe class ShaderVisibleHeap
     /// <param name="layout">Where the records of the heap lie in the window and which desktop indices they may name.</param>
     /// <param name="remap">Game to desktop indices; null when they are equal.</param>
     /// <param name="window">The window the records are mirrored to.</param>
-    public ShaderVisibleHeap(nint title, uint count, uint increment, nint desktopStart, HeapRecords layout, DescriptorRemap? remap, DescriptorWindow window)
+    /// <param name="ring">For a CPU-only heap, where its writes take desktop descriptors; null for a shader-visible heap.</param>
+    public ShaderVisibleHeap(nint title, uint count, uint increment, nint desktopStart, HeapRecords layout, DescriptorRemap? remap, DescriptorWindow window, DescriptorRing? ring)
     {
+        _ring = ring;
         _title = (byte*)title;
         Count = count;
         Increment = increment;
@@ -51,6 +56,9 @@ internal sealed unsafe class ShaderVisibleHeap
     public uint Increment { get; }
 
     public nint Title => (nint)_title;
+
+    /// <summary>Whether programs read the heap through the window (a shader-visible heap).</summary>
+    public bool Mirrored => _ring is null;
 
     /// <summary>The game index of a handle (CPU or GPU, both title memory addresses); false outside the heap.</summary>
     [HotPath]
@@ -76,7 +84,7 @@ internal sealed unsafe class ShaderVisibleHeap
     [HotPath]
     public nint Destination(uint index, uint count)
     {
-        uint desktop = DesktopIndex(index);
+        uint desktop = _ring is null ? DesktopIndex(index) : _ring.Next(count);
 
         if (desktop == DescriptorRemap.Unmapped)
         {
@@ -102,7 +110,7 @@ internal sealed unsafe class ShaderVisibleHeap
     [HotPath]
     public uint RunLength(uint index)
     {
-        if (_remap is null)
+        if (_remap is null || _ring is not null)
         {
             return Count - index;
         }
@@ -115,6 +123,14 @@ internal sealed unsafe class ShaderVisibleHeap
     public void CopyRecords(uint destination, uint source, uint count)
     {
         Buffer.MemoryCopy(Record(source), Record(destination), (ulong)(Count - destination) * Increment, (ulong)count * Increment);
+        Mirror(destination, count);
+    }
+
+    /// <summary>Copies records from another title-memory heap of the same kind: both name descriptors of the desktop shader-visible heap.</summary>
+    [HotPath]
+    public void CopyRecords(uint destination, ShaderVisibleHeap source, uint sourceIndex, uint count)
+    {
+        Buffer.MemoryCopy(source.Record(sourceIndex), Record(destination), (ulong)(Count - destination) * Increment, (ulong)count * Increment);
         Mirror(destination, count);
     }
 
@@ -173,7 +189,7 @@ internal sealed unsafe class ShaderVisibleHeap
     {
         byte* window = _window.Data;
 
-        if (_shadow[index] == value || window == null)
+        if (_ring is not null || _shadow[index] == value || window == null)
         {
             return;
         }

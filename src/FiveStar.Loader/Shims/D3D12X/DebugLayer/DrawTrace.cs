@@ -1,0 +1,379 @@
+﻿// Copyright (c) 2026 Five Star Recomp contributors.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+using System.Collections.Concurrent;
+using System.Runtime.InteropServices;
+using System.Text;
+using FiveStar.Loader.Diagnostics;
+using FiveStar.Loader.Native;
+using FiveStar.Loader.Shims.D3D12X.Binding;
+using FiveStar.Loader.Shims.D3D12X.Present;
+using FiveStar.Loader.Shims.D3D12X.Resources;
+using Vortice.Direct3D12;
+
+namespace FiveStar.Loader.Shims.D3D12X.DebugLayer;
+
+/// <summary>
+/// <c>--d3d12-trace-draws</c>: what draws bind, in the log. For the first <see cref="FirstDraws"/> draws and
+/// <see cref="WindowDraws"/> draws after each captured present: the pipeline (programs, input layout, target formats,
+/// fixed-function state), render targets, viewport, scissor and depth view, the vertex buffers with their first
+/// vertices, the graphics user SGPRs and the first records of every descriptor table with the view each names (and a
+/// constant buffer's first values). After each such draw the first render target is copied inside the game's list
+/// (<see cref="DrawProbes"/>) and reported <see cref="ReportDelay"/> presents later. Debug only: it allocates and locks.
+/// </summary>
+internal sealed unsafe class DrawTrace
+{
+    private const int FirstDraws = 24;
+    private const int WindowDraws = 8;
+    private const long ReportDelay = 2;
+    private const uint RecordsShown = 8;
+    private const uint VerticesShown = 3;
+    private const int UserDwordsShown = 32;
+    private const int ConstantsShown = 16;
+
+    /// <summary>Floats of a D3D12_VIEWPORT and ints of a D3D12_RECT (d3d12.h).</summary>
+    private const int ViewportFloats = 6;
+    private const int RectangleInts = 4;
+    private const uint TitleDwordsShown = 4;
+    private const uint FloatBytes = sizeof(float);
+
+    /// <summary>D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV and ID3D12Device::GetDescriptorHandleIncrementSize (d3d12.h).</summary>
+    private const int ViewHeapType = 0;
+    private const int IncrementSlot = 15;
+
+    private readonly ConcurrentDictionary<nint, string> _views = new();
+    private readonly ConcurrentDictionary<nint, ulong> _constantBuffers = new();
+    private readonly ConcurrentDictionary<nint, (nint Resource, int Home)> _targetViews = new();
+    private readonly ConcurrentDictionary<nint, DrawTraceList> _lists = new();
+    private readonly FrameCapture _capture;
+    private readonly DrawProbes _probes;
+    private readonly GameMemorySource _memory;
+    private readonly XboxDeviceFactory _d3d12;
+    private readonly LoaderLog _log;
+    private long _draws;
+    private long _windowEnd = FirstDraws;
+    private long _reportAt;
+    private long _lastPresent;
+
+    public DrawTrace(FrameCapture capture, GameMemorySource memory, XboxDeviceFactory d3d12, LoaderLog log)
+    {
+        _capture = capture;
+        _probes = new DrawProbes(log);
+        _memory = memory;
+        _d3d12 = d3d12;
+        _log = log;
+    }
+
+    /// <summary>A view was written at desktop CPU handle <paramref name="handle"/>.</summary>
+    public void View(nint handle, string text)
+    {
+        _views[handle] = text;
+    }
+
+    /// <summary>Slot 70 wrote a view of <paramref name="texture"/> (null: a buffer or null view) at <paramref name="handle"/>.</summary>
+    public void AddressView(nint handle, ResourceDescription* resource, AddressViewDescription* view, GpuTexture? texture)
+    {
+        string console = resource == null ? "no desc" : $"{resource->Width}x{resource->Height} dim {resource->Dimension} fmt {resource->Format}";
+        string desktop = "null view";
+
+        if (texture is null && _d3d12.GameMemory.TryFind(view->Address, out var range) && range.Resource != 0)
+        {
+            desktop = $"buffer view on 0x{range.Resource:x} +0x{view->Address - range.GameAddress:x}";
+            _constantBuffers[handle] = view->Address;
+        }
+
+        if (texture is not null)
+        {
+            string writer = texture.GpuWritten ? "GPU-written" : $"from memory, hash 0x{texture.UploadedHash:x}";
+            desktop = $"texture 0x{texture.Desktop:x} at 0x{texture.Address:x} fmt {texture.DesktopFormat}, {writer}";
+        }
+
+        View(handle, $"slot70 0x{view->Address:x} ({console}, view fmt {view->Format}) -> {desktop}");
+    }
+
+    /// <summary>Slot 17 wrote a CBV into the game's heaps (a raw SRV) at <paramref name="handle"/>.</summary>
+    public void ConstantBufferView(nint handle, ulong address, uint size)
+    {
+        _constantBuffers[handle] = address;
+        View(handle, $"CBV 0x{address:x} (0x{size:x} bytes) as raw SRV");
+    }
+
+    /// <summary>Slot 18 wrote a view of desktop <paramref name="resource"/> at <paramref name="handle"/>.</summary>
+    public void ShaderResourceView(nint resource, nint handle)
+    {
+        string text = resource == 0 ? "SRV of null" : $"SRV of 0x{resource:x} {Describe(resource)}";
+        View(handle, text);
+    }
+
+    /// <summary>A render-target view of <paramref name="resource"/> (a wrapper or a desktop resource).</summary>
+    public void RenderTargetView(nint resource, nint handle)
+    {
+        var wrapper = _d3d12.Objects.AsResource(resource);
+        int home = wrapper == null ? States.ResourceStates.RenderTarget : wrapper->HomeState;
+        _targetViews[handle] = (_d3d12.Objects.Unwrap(resource), home);
+    }
+
+    /// <summary>List slot 50 (<paramref name="single"/> ranges are not followed).</summary>
+    public void RenderTargets(XboxObject* list, uint count, nint* handles, bool single, nint depthStencil)
+    {
+        uint used = handles == null || single ? 0 : count;
+        var targets = new nint[used];
+
+        for (int i = 0; i < targets.Length; i++)
+        {
+            targets[i] = handles[i];
+        }
+
+        var state = List(list);
+        state.Targets = targets;
+        state.DepthStencil = depthStencil;
+    }
+
+    /// <summary>List slot 21: the first viewport.</summary>
+    public void Viewports(XboxObject* list, uint count, float* viewports)
+    {
+        List(list).Viewport = Values(count, viewports, ViewportFloats);
+    }
+
+    /// <summary>List slot 22: the first scissor rectangle.</summary>
+    public void Scissors(XboxObject* list, uint count, int* rects)
+    {
+        List(list).Scissor = Rectangle(count, rects);
+    }
+
+    /// <summary>List slot 48 with the console addresses.</summary>
+    public void VertexBuffers(XboxObject* list, uint start, uint count, VertexBufferView* views)
+    {
+        var text = new StringBuilder();
+
+        for (uint i = 0; i < count; i++)
+        {
+            var view = views[i];
+            bool translated = _d3d12.GameMemory.TryTranslate(view.Location, out ulong desktop);
+            string bound = translated ? $"desktop 0x{desktop:x}" : "unbound";
+            text.Append($"\n      vb{start + i}: 0x{view.Location:x} size 0x{view.Size:x} stride {view.StrideOrFormat} -> {bound}");
+            AppendVertices(text, view);
+        }
+
+        List(list).VertexBuffers = text.ToString();
+    }
+
+    /// <summary>A draw on <paramref name="list"/>; logged inside a trace window.</summary>
+    public void Draw(XboxObject* list, uint vertices, uint instances)
+    {
+        long draw = Interlocked.Increment(ref _draws);
+
+        if (draw > Volatile.Read(ref _windowEnd))
+        {
+            return;
+        }
+
+        var state = List(list);
+        var rectangles = RectangleListState.Of(list);
+        string pipeline = _d3d12.Rectangles.Pipelines?.Describe(rectangles->Pipeline) ?? "unknown";
+        var text = new StringBuilder($"  [draws] draw {draw}: list 0x{(nint)list:x}, {vertices} vertices x {instances}");
+        text.Append($"\n      pipeline 0x{rectangles->Pipeline:x} topology {rectangles->Topology} variant {rectangles->VariantBound}: {pipeline}");
+
+        AppendTargets(text, state);
+        text.Append($"\n      viewport {state.Viewport}; scissor {state.Scissor}; dsv 0x{state.DepthStencil:x}");
+        text.Append(state.VertexBuffers);
+        AppendUserData(text, CommandListBindings.Of(list));
+        _log.Info(text.ToString());
+    }
+
+    /// <summary>After a traced draw: the list's first render target is copied for <see cref="DrawProbes"/>.</summary>
+    public void AfterDraw(XboxObject* list)
+    {
+        long draw = Interlocked.Read(ref _draws);
+        var state = List(list);
+
+        if (draw > Volatile.Read(ref _windowEnd) || state.Targets.Length == 0 || !_targetViews.TryGetValue(state.Targets[0], out var target))
+        {
+            return;
+        }
+
+        int current = _d3d12.ListStates.Find(list)?.Current(target.Resource, target.Home) ?? target.Home;
+        _probes.Record(_d3d12.Objects.DesktopDevice, list->Inner, target.Resource, current, $"draw {draw} (target 0x{target.Resource:x})");
+        Interlocked.CompareExchange(ref _reportAt, Volatile.Read(ref _lastPresent) + ReportDelay, 0);
+    }
+
+    /// <summary>Called after every present; true when probes are due (the caller then waits for the GPU and calls <see cref="Report"/>).</summary>
+    public bool ReportDue(long present)
+    {
+        if (_capture.Wants(present))
+        {
+            Volatile.Write(ref _windowEnd, Interlocked.Read(ref _draws) + WindowDraws);
+        }
+
+        Volatile.Write(ref _lastPresent, present);
+
+        return present == Volatile.Read(ref _reportAt);
+    }
+
+    /// <summary>Logs the probes; the GPU finished everything submitted.</summary>
+    public void Report()
+    {
+        _probes.Report();
+        Volatile.Write(ref _reportAt, 0);
+    }
+
+    private DrawTraceList List(XboxObject* list)
+    {
+        return _lists.GetOrAdd((nint)list, static _ => new DrawTraceList());
+    }
+
+    private void AppendTargets(StringBuilder text, DrawTraceList state)
+    {
+        foreach (nint handle in state.Targets)
+        {
+            string target = _targetViews.TryGetValue(handle, out var view) ? $"resource 0x{view.Resource:x} {Describe(view.Resource)}, home state 0x{view.Home:x}" : "not a view this trace saw";
+            text.Append($"\n      rtv 0x{handle:x}: {target}");
+        }
+    }
+
+    private void AppendVertices(StringBuilder text, VertexBufferView view)
+    {
+        uint stride = view.StrideOrFormat;
+        ulong bytes = Math.Min(view.Size, stride * VerticesShown);
+        byte* data = bytes == 0 ? null : _memory.Find(view.Location, bytes);
+
+        if (data == null)
+        {
+            text.Append("\n        (memory not readable)");
+
+            return;
+        }
+
+        for (uint vertex = 0; vertex < VerticesShown && (vertex + 1) * stride <= bytes; vertex++)
+        {
+            text.Append($"\n        v{vertex}:");
+
+            for (uint offset = 0; offset + FloatBytes <= stride; offset += FloatBytes)
+            {
+                byte* value = data + (vertex * stride) + offset;
+                text.Append($" {*(float*)value:G4}/{*(uint*)value:x}");
+            }
+        }
+    }
+
+    private void AppendUserData(StringBuilder text, CommandListBindings* bindings)
+    {
+        text.Append("\n      user sgprs:");
+
+        for (int i = 0; i < UserDwordsShown; i++)
+        {
+            text.Append($" {bindings->Graphics[i]:x}");
+        }
+
+        var layout = bindings->GraphicsLayout;
+
+        for (uint parameter = 0; layout != null && parameter < (uint)layout->Count; parameter++)
+        {
+            if (layout->Kind(parameter) == RootParameterKind.Table)
+            {
+                uint pointer = bindings->Graphics[UserData.GraphicsBase + layout->Offsets[parameter]];
+                AppendTable(text, parameter, pointer, layout->Extents[parameter]);
+            }
+        }
+    }
+
+    private void AppendTable(StringBuilder text, uint parameter, uint pointer, uint extent)
+    {
+        var window = _d3d12.Bindings.Window;
+        text.Append($"\n      table {parameter} at window 0x{pointer:x} (root signature: {extent} records)");
+
+        if (window.Data == null || window.ViewHeap == 0)
+        {
+            return;
+        }
+
+        nint start = DesktopCalls.HeapCpuStart(window.ViewHeap);
+        nint device = _d3d12.Objects.DesktopDevice;
+        uint increment = ((delegate* unmanaged<nint, int, uint>)ComObject.Slot(device, IncrementSlot))(device, ViewHeapType);
+
+        for (uint record = 0; record < RecordsShown; record++)
+        {
+            uint offset = pointer + (record * DescriptorWindow.ViewRecordBytes);
+            uint index = *(uint*)(window.Data + offset);
+            nint handle = start + (nint)((ulong)index * increment);
+            string view = _views.TryGetValue(handle, out var known) ? known : "not a view this trace saw";
+
+            text.Append($"\n        [{record}] desktop {index}: {view}");
+            AppendTitleRecord(text, offset);
+            AppendConstants(text, handle);
+        }
+    }
+
+    private void AppendConstants(StringBuilder text, nint handle)
+    {
+        byte* data = _constantBuffers.TryGetValue(handle, out ulong address) ? _memory.Find(address, ConstantsShown * sizeof(float)) : null;
+
+        if (data == null)
+        {
+            return;
+        }
+
+        text.Append("\n            values:");
+
+        for (int i = 0; i < ConstantsShown; i++)
+        {
+            text.Append($" {((float*)data)[i]:G4}");
+        }
+    }
+
+    /// <summary>The game's own record behind a window record, at draw time.</summary>
+    private void AppendTitleRecord(StringBuilder text, uint windowOffset)
+    {
+        var heap = _d3d12.DescriptorHeaps.Views;
+
+        if (heap is null || windowOffset < DescriptorWindow.ViewBase)
+        {
+            return;
+        }
+
+        uint index = (windowOffset - DescriptorWindow.ViewBase) / DescriptorWindow.ViewRecordBytes;
+        var record = (uint*)(heap.Title + (nint)((ulong)index * heap.Increment));
+        text.Append($"\n            title record {index}:");
+
+        for (uint dword = 0; dword < TitleDwordsShown; dword++)
+        {
+            text.Append($" {record[dword]:x8}");
+        }
+    }
+
+    /// <summary>The first <paramref name="length"/> floats (a D3D12_VIEWPORT: x, y, width, height, min and max depth).</summary>
+    private static string Values(uint count, float* values, int length)
+    {
+        if (count == 0 || values == null)
+        {
+            return string.Empty;
+        }
+
+        return string.Join(' ', Enumerable.Range(0, length).Select(i => values[i].ToString("G6", System.Globalization.CultureInfo.InvariantCulture)));
+    }
+
+    /// <summary>The first D3D12_RECT (left, top, right, bottom).</summary>
+    private static string Rectangle(uint count, int* rect)
+    {
+        if (count == 0 || rect == null)
+        {
+            return string.Empty;
+        }
+
+        return string.Join(' ', Enumerable.Range(0, RectangleInts).Select(i => rect[i]));
+    }
+
+    private static string Describe(nint resource)
+    {
+        if (resource == 0)
+        {
+            return "null";
+        }
+
+        Marshal.AddRef(resource);
+        using var desktop = new ID3D12Resource(resource);
+        var description = desktop.Description;
+
+        return $"{description.Width}x{description.Height} format {(int)description.Format}";
+    }
+}

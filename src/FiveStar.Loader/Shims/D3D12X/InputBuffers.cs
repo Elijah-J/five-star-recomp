@@ -1,0 +1,97 @@
+﻿// Copyright (c) 2026 Five Star Recomp contributors.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+using System.Runtime.InteropServices;
+using FiveStar.Loader.Native;
+
+namespace FiveStar.Loader.Shims.D3D12X;
+
+/// <summary>
+/// Command-list slots 47 and 48, IASetIndexBuffer and IASetVertexBuffers (desktop 43 and 44). The views carry console
+/// GPU addresses (on the console GPU address == CPU address); each becomes the desktop address of the buffer over
+/// that memory (<see cref="XboxGameMemoryBuffers.TryTranslate"/>). A view outside known memory is unbound (address
+/// 0), warned once. Translated vertex programs read their attributes through the input layout, so without these the
+/// attributes read 0.
+/// </summary>
+internal static unsafe class InputBuffers
+{
+    public const int SetIndexBufferSlot = 47;
+    public const int SetVertexBuffersSlot = 48;
+
+    /// <summary>ID3D12GraphicsCommandList::IASetIndexBuffer and IASetVertexBuffers in the desktop vtable (d3d12.h).</summary>
+    private const int DesktopSetIndexBuffer = 43;
+    private const int DesktopSetVertexBuffers = 44;
+
+    /// <summary>D3D12_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT (d3d12.h).</summary>
+    private const uint MaxVertexBuffers = 32;
+
+    [HotPath]
+    [UnmanagedCallersOnly]
+    public static void SetIndexBuffer(XboxObject* self, VertexBufferView* view)
+    {
+        nint inner = self->Inner;
+        var set = (delegate* unmanaged<nint, VertexBufferView*, void>)ComObject.Slot(inner, DesktopSetIndexBuffer);
+
+        if (view == null)
+        {
+            set(inner, null);
+
+            return;
+        }
+
+        var desktop = *view;
+        desktop.Location = Translate(desktop.Location);
+        set(inner, &desktop);
+    }
+
+    [HotPath]
+    [UnmanagedCallersOnly]
+    public static void SetVertexBuffers(XboxObject* self, uint startSlot, uint count, VertexBufferView* views)
+    {
+        nint inner = self->Inner;
+        var set = (delegate* unmanaged<nint, uint, uint, VertexBufferView*, void>)ComObject.Slot(inner, DesktopSetVertexBuffers);
+
+        if (views == null || count == 0 || startSlot >= MaxVertexBuffers)
+        {
+            set(inner, startSlot, count, null);
+
+            return;
+        }
+
+        uint used = count;
+
+        if (used > MaxVertexBuffers - startSlot)
+        {
+            used = MaxVertexBuffers - startSlot;
+        }
+
+        VertexBufferView* desktop = stackalloc VertexBufferView[(int)MaxVertexBuffers];
+
+        for (uint i = 0; i < used; i++)
+        {
+            desktop[i] = views[i];
+            desktop[i].Location = Translate(views[i].Location);
+        }
+
+        ShimContext.Runtime.D3D12X.DrawTrace?.VertexBuffers(self, startSlot, used, views);
+        set(inner, startSlot, used, desktop);
+    }
+
+    [HotPath]
+    private static ulong Translate(ulong location)
+    {
+        if (location == 0)
+        {
+            return 0;
+        }
+
+        if (ShimContext.Runtime.D3D12X.GameMemory.TryTranslate(location, out ulong desktop))
+        {
+            return desktop;
+        }
+
+        ShimContext.Runtime.D3D12X.Warnings.Warn("ia-address", "[d3d12_xs] IASetVertexBuffers/IASetIndexBuffer: a GPU address outside known game memory, buffer unbound");
+
+        return 0;
+    }
+}

@@ -75,6 +75,26 @@ internal sealed class DescriptorRemap
         return PageSize - (index & PageMask);
     }
 
+    /// <summary>
+    /// Takes <paramref name="pages"/> consecutive desktop pages that no game page maps to; returns the desktop index of
+    /// the first, or <see cref="Unmapped"/> when too few are left.
+    /// </summary>
+    public uint Reserve(uint pages)
+    {
+        lock (_gate)
+        {
+            if (_mapped + pages > Capacity)
+            {
+                return Unmapped;
+            }
+
+            uint start = _first + (_mapped << PageShift);
+            Volatile.Write(ref _mapped, _mapped + pages);
+
+            return start;
+        }
+    }
+
     /// <summary>First use of a page: takes the next desktop page; 0 when none is left.</summary>
     private uint MapPage(uint page)
     {

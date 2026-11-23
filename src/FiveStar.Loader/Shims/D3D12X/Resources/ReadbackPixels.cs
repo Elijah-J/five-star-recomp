@@ -1,0 +1,191 @@
+﻿// Copyright (c) 2026 Five Star Recomp contributors.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+using System.Buffers.Binary;
+
+namespace FiveStar.Loader.Shims.D3D12X.Resources;
+
+/// <summary>
+/// Read-back texels as 8-bit RGBA with opaque alpha, for PNG captures and summaries: the 8-bit RGBA and BGRA families,
+/// R10G10B10A2, R16G16B16A16_FLOAT (clamped to 0..1) and one-channel 8-bit formats (as grey). DXGI_FORMAT values from
+/// dxgiformat.h.
+/// </summary>
+internal static class ReadbackPixels
+{
+    private const int Rgba16Typeless = 9;
+    private const int Rgba16Float = 10;
+    private const int Rgb10A2Typeless = 23;
+    private const int Rgb10A2Uint = 25;
+    private const int Rgba8Typeless = 27;
+    private const int Rgba8Uint = 30;
+    private const int R8Typeless = 60;
+    private const int R8Unorm = 61;
+    private const int A8Unorm = 65;
+    private const int Bgra8Unorm = 87;
+    private const int Bgra8SrgbX = 93;
+
+    private const int Channels = 4;
+
+    /// <summary>Byte offsets of the channels in an RGBA texel.</summary>
+    private const int Red = 0;
+    private const int Green = 1;
+    private const int Blue = 2;
+    private const int Alpha = 3;
+    private const int Opaque = 255;
+    private const float Scale = 255f;
+    private const int TenBitMask = 0x3FF;
+    private const int TenBitMax = 1023;
+    private const int GreenShift = 10;
+    private const int BlueShift = 20;
+    private const int HalfBytes = 2;
+
+    /// <summary>RGBA8 rows of <paramref name="image"/>, or null for a format this does not read.</summary>
+    public static byte[]? ToRgba(ReadbackImage image)
+    {
+        int format = image.Format;
+        var rgba = new byte[image.Width * image.Height * Channels];
+
+        for (int y = 0; y < image.Height; y++)
+        {
+            var row = image.Pixels.AsSpan(y * image.RowBytes, image.RowBytes);
+            var output = rgba.AsSpan(y * image.Width * Channels, image.Width * Channels);
+
+            if (!Row(format, row, output, image.Width))
+            {
+                return null;
+            }
+        }
+
+        return rgba;
+    }
+
+    /// <summary>Non-black pixel count, their bounding box and the mean colour of an RGBA8 image.</summary>
+    public static string Summarize(byte[] rgba, int width, int height)
+    {
+        long lit = 0;
+        long red = 0;
+        long green = 0;
+        long blue = 0;
+
+        int left = width;
+        int top = height;
+        int right = -1;
+        int bottom = -1;
+
+        for (int i = 0; i < rgba.Length; i += Channels)
+        {
+            red += rgba[i];
+            green += rgba[i + Green];
+            blue += rgba[i + Blue];
+
+            if ((rgba[i] | rgba[i + Green] | rgba[i + Blue]) == 0)
+            {
+                continue;
+            }
+
+            lit++;
+            int pixel = i / Channels;
+            left = Math.Min(left, pixel % width);
+            right = Math.Max(right, pixel % width);
+            top = Math.Min(top, pixel / width);
+            bottom = Math.Max(bottom, pixel / width);
+        }
+
+        long count = Math.Max(1L, (long)width * height);
+        string box = lit == 0 ? "none" : $"({left},{top})-({right},{bottom})";
+
+        return $"{lit} of {count} pixels not black, box {box}, mean rgb ({red / count}, {green / count}, {blue / count})";
+    }
+
+    private static bool Row(int format, ReadOnlySpan<byte> row, Span<byte> output, int width)
+    {
+        if (format is >= Rgba8Typeless and <= Rgba8Uint)
+        {
+            Swizzle(row, output, width, Red, Blue);
+
+            return true;
+        }
+
+        if (format is >= Bgra8Unorm and <= Bgra8SrgbX)
+        {
+            Swizzle(row, output, width, Blue, Red);
+
+            return true;
+        }
+
+        if (format is >= Rgb10A2Typeless and <= Rgb10A2Uint)
+        {
+            TenBit(row, output, width);
+
+            return true;
+        }
+
+        if (format is Rgba16Typeless or Rgba16Float)
+        {
+            Half(row, output, width);
+
+            return true;
+        }
+
+        if (format is R8Typeless or R8Unorm or A8Unorm)
+        {
+            Grey(row, output, width);
+
+            return true;
+        }
+
+        return false;
+    }
+
+    private static void Swizzle(ReadOnlySpan<byte> row, Span<byte> output, int width, int redAt, int blueAt)
+    {
+        for (int x = 0; x < width; x++)
+        {
+            int at = x * Channels;
+            output[at] = row[at + redAt];
+            output[at + Green] = row[at + Green];
+            output[at + Blue] = row[at + blueAt];
+            output[at + Alpha] = Opaque;
+        }
+    }
+
+    private static void TenBit(ReadOnlySpan<byte> row, Span<byte> output, int width)
+    {
+        for (int x = 0; x < width; x++)
+        {
+            uint texel = BinaryPrimitives.ReadUInt32LittleEndian(row[(x * Channels)..]);
+            int at = x * Channels;
+            output[at] = (byte)((texel & TenBitMask) * Opaque / TenBitMax);
+            output[at + Green] = (byte)(((texel >> GreenShift) & TenBitMask) * Opaque / TenBitMax);
+            output[at + Blue] = (byte)(((texel >> BlueShift) & TenBitMask) * Opaque / TenBitMax);
+            output[at + Alpha] = Opaque;
+        }
+    }
+
+    private static void Half(ReadOnlySpan<byte> row, Span<byte> output, int width)
+    {
+        for (int x = 0; x < width; x++)
+        {
+            for (int channel = 0; channel < Channels - 1; channel++)
+            {
+                var bits = BinaryPrimitives.ReadUInt16LittleEndian(row[(((x * Channels) + channel) * HalfBytes)..]);
+                float value = Math.Clamp((float)BitConverter.UInt16BitsToHalf(bits), 0f, 1f);
+                output[(x * Channels) + channel] = (byte)(value * Scale);
+            }
+
+            output[(x * Channels) + Channels - 1] = Opaque;
+        }
+    }
+
+    private static void Grey(ReadOnlySpan<byte> row, Span<byte> output, int width)
+    {
+        for (int x = 0; x < width; x++)
+        {
+            int at = x * Channels;
+            output[at] = row[x];
+            output[at + Green] = row[x];
+            output[at + Blue] = row[x];
+            output[at + Alpha] = Opaque;
+        }
+    }
+}

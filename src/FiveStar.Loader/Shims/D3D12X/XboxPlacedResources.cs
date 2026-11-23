@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Five Star Recomp contributors.
+﻿// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using FiveStar.Loader.Diagnostics;
@@ -139,7 +139,7 @@ internal sealed unsafe class XboxPlacedResources
                 continue;
             }
 
-            Addresses.Add(new AddressRange(address + run.Start, run.Length, GpuAddress(buffer)));
+            Addresses.Add(new AddressRange(address + run.Start, run.Length, GpuAddress(buffer), buffer));
 
             if (first == 0)
             {
@@ -238,7 +238,7 @@ internal sealed unsafe class XboxPlacedResources
         if (resource != 0)
         {
             _log.Warn($"[d3d12_xs] ID3D12Device.X::Slot133 at 0x{address:x}: no mapped page, committed buffer of 0x{description->Width:x} bytes (not shared with the game)");
-            Addresses.Add(new AddressRange(address, description->Width, GpuAddress(resource)));
+            Addresses.Add(new AddressRange(address, description->Width, GpuAddress(resource), resource));
         }
 
         return resource;

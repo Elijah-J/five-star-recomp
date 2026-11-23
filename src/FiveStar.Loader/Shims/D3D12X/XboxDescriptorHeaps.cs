@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Five Star Recomp contributors.
+﻿// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using FiveStar.Loader.Diagnostics;
@@ -34,6 +34,9 @@ internal sealed unsafe class XboxDescriptorHeaps
     /// </summary>
     private const ulong DescriptorAttributes = 0x00800004;
 
+    /// <summary>Desktop pages (of <see cref="DescriptorRemap.PageSize"/>) behind the game's CPU-only view heaps: 16 pages, 65,536 writes before reuse.</summary>
+    private const uint RingPages = 16;
+
     private readonly XboxObjects _objects;
     private readonly TitleMemoryHooks _hooks;
     private readonly DescriptorWindow _window;
@@ -44,6 +47,11 @@ internal sealed unsafe class XboxDescriptorHeaps
     private readonly List<byte[]> _ownMemory = [];
     private ShaderVisibleHeap? _views;
     private ShaderVisibleHeap? _samplers;
+    private ShaderVisibleHeap[] _cpuViews = [];
+    private DescriptorRemap? _remap;
+    private DescriptorRing? _ring;
+    private HeapRecords _viewRecords;
+    private nint _viewDesktopStart;
     private nint _sink;
 
     public XboxDescriptorHeaps(XboxObjects objects, TitleMemoryHooks hooks, DescriptorWindow window, LoaderLog log, OnceLog warnings)
@@ -114,6 +122,14 @@ internal sealed unsafe class XboxDescriptorHeaps
             return samplers;
         }
 
+        foreach (var heap in Volatile.Read(ref _cpuViews))
+        {
+            if (heap.TryIndex((ulong)handle, out index))
+            {
+                return heap;
+            }
+        }
+
         index = 0;
 
         return null;
@@ -125,7 +141,7 @@ internal sealed unsafe class XboxDescriptorHeaps
     {
         var heap = Find((nint)handle, out uint index);
 
-        if (heap is null)
+        if (heap is null || !heap.Mirrored)
         {
             _warnings.Warn("table-handle", "[d3d12_xs] SetRootDescriptorTable: a GPU handle outside the shader-visible heaps reads null descriptors");
 
@@ -165,6 +181,14 @@ internal sealed unsafe class XboxDescriptorHeaps
 
         _log.Detail($"  [d3d12_xs] CreateDescriptorHeap(type {description->Type}, {description->Count} descriptors, flags 0x{description->Flags:x}, node 0x{description->NodeMask:x}) -> {HResult.Format(hr)}");
 
+        if (!HResult.Failed(hr) && heap != null && !visible && desktop.Type == ViewHeapType && _views is not null)
+        {
+            *heap = _objects.Wrap(XboxInterfaceKind.DescriptorHeap, *heap);
+            PlaceCpuOnly((XboxDescriptorHeapObject*)*heap, description->Count);
+
+            return hr;
+        }
+
         if (HResult.Failed(hr) || heap == null || !visible)
         {
             return _objects.WrapResult(hr, XboxInterfaceKind.DescriptorHeap, heap);
@@ -201,14 +225,54 @@ internal sealed unsafe class XboxDescriptorHeaps
             _window.AttachViews(device, inner, description->Count, increment);
             var remap = new DescriptorRemap(DescriptorWindow.ReservedViews, desktopCount, description->Count);
             _sink = desktopStart + (nint)((ulong)DescriptorWindow.SinkSlot * increment);
-            _views = new ShaderVisibleHeap(memory, description->Count, increment, desktopStart, DescriptorWindow.ViewRecords(desktopCount), remap, _window);
+
+            _remap = remap;
+            _viewRecords = DescriptorWindow.ViewRecords(desktopCount);
+            _viewDesktopStart = desktopStart;
+            _views = new ShaderVisibleHeap(memory, description->Count, increment, desktopStart, _viewRecords, remap, _window, null);
             _log.Detail($"  [d3d12_xs]   game views on {remap.Capacity} desktop pages of {DescriptorRemap.PageSize} descriptors, mapped on first write");
         }
         else if (samplers)
         {
             _window.AttachSamplers(device, inner, desktopCount, increment);
-            _samplers = new ShaderVisibleHeap(memory, description->Count, increment, desktopStart, DescriptorWindow.SamplerRecords(desktopCount), null, _window);
+            _samplers = new ShaderVisibleHeap(memory, description->Count, increment, desktopStart, DescriptorWindow.SamplerRecords(desktopCount), null, _window, null);
         }
+    }
+
+    /// <summary>
+    /// A CPU-only view heap in title memory: the game copies its descriptors' bytes into shader-visible tables itself,
+    /// so its records name descriptors of the desktop shader-visible heap, taken from the ring on every write.
+    /// </summary>
+    private void PlaceCpuOnly(XboxDescriptorHeapObject* heap, uint count)
+    {
+        var views = _views!;
+        _ring ??= Ring();
+
+        if (_ring is null)
+        {
+            _warnings.Warn("cpu-heap-ring", "[d3d12_xs] no desktop pages left for CPU-only view heaps: their descriptors stay desktop ones");
+
+            return;
+        }
+
+        nint memory = TitleMemory((nuint)count * views.Increment);
+        new Span<byte>((void*)memory, (int)(count * views.Increment)).Clear();
+        heap->GameCpuStart = memory;
+        var placed = new ShaderVisibleHeap(memory, count, views.Increment, _viewDesktopStart, _viewRecords, null, _window, _ring);
+        Volatile.Write(ref _cpuViews, [.. _cpuViews, placed]);
+        _log.Detail($"  [d3d12_xs]   CPU-only view heap of {count} at title memory 0x{memory:x}, descriptors from the ring");
+    }
+
+    private DescriptorRing? Ring()
+    {
+        uint first = _remap!.Reserve(RingPages);
+
+        if (first == DescriptorRemap.Unmapped)
+        {
+            return null;
+        }
+
+        return new DescriptorRing(first, RingPages * DescriptorRemap.PageSize);
     }
 
     /// <summary>The title's memory for a heap's descriptors; without a game image (tests), pinned memory of the shim's own.</summary>

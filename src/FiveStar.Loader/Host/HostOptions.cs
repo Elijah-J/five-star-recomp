@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Five Star Recomp contributors.
+﻿// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using FiveStar.Loader.Loading;
@@ -93,6 +93,18 @@ internal sealed record HostOptions
 
     /// <summary>Queue submissions, signals and waits in the log (<c>--d3d12-trace-queues</c>).</summary>
     public bool D3D12TraceQueues { get; set; }
+
+    /// <summary>Presents read back when --capture-presents is not given: early, after the first seconds, later.</summary>
+    private static readonly long[] DefaultCapturePresents = [60, 300, 900, 1500];
+
+    /// <summary>What draws bind and what their targets hold, in the log (<c>--d3d12-trace-draws</c>).</summary>
+    public bool D3D12TraceDraws { get; set; }
+
+    /// <summary>Where captured presents go as PNG files (<c>--capture-dir</c>); null captures nothing to disk.</summary>
+    public string? CaptureDirectory { get; set; }
+
+    /// <summary>The present numbers whose plane is read back (<c>--capture-presents 60,600</c>).</summary>
+    public List<long> CapturePresents { get; } = [.. DefaultCapturePresents];
 
     /// <summary>Present a test pattern instead of the game's frame (<c>--present-test</c>).</summary>
     public bool PresentTest { get; set; }

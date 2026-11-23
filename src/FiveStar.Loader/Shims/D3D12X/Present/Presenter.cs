@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Five Star Recomp contributors.
+﻿// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Diagnostics;
@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text;
 using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Native;
+using FiveStar.Loader.Shims.D3D12X.DebugLayer;
 using FiveStar.Loader.Shims.D3D12X.Pipelines;
 
 namespace FiveStar.Loader.Shims.D3D12X.Present;
@@ -58,6 +59,12 @@ internal sealed unsafe class Presenter : IDisposable
 
     /// <summary>Draw the test pattern instead of the game's plane (<c>--present-test</c>).</summary>
     public bool ShowTestPattern { get; set; }
+
+    /// <summary>Reads back the plane at chosen presents (<c>--capture-dir</c>); null when off.</summary>
+    public FrameCapture? Capture { get; set; }
+
+    /// <summary>Reads back the render targets of traced draws (<c>--d3d12-trace-draws</c>); null when off.</summary>
+    public DrawTrace? Trace { get; set; }
 
     /// <summary>Frames shown so far.</summary>
     public long Presents => Volatile.Read(ref _presents);
@@ -164,6 +171,35 @@ internal sealed unsafe class Presenter : IDisposable
 
         recorder.Submit(_queue, index);
         Count(swapChain.Present(SyncInterval));
+
+        if (Capture is not null)
+        {
+            Inspect(source);
+        }
+    }
+
+    /// <summary>Debug readbacks after a present, once the presenting queue (all the game's work) is idle.</summary>
+    private void Inspect(PlaneSource source)
+    {
+        bool plane = Capture!.Wants(_presents);
+        bool targets = Trace is not null && Trace.ReportDue(_presents);
+
+        if (!plane && !targets)
+        {
+            return;
+        }
+
+        _recorder!.WaitIdle(_queue);
+
+        if (plane)
+        {
+            Capture.Save(_objects.DesktopDevice, source.Resource, source.State, $"present-{_presents}");
+        }
+
+        if (targets)
+        {
+            Trace!.Report();
+        }
     }
 
     [HotPath]

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Five Star Recomp contributors.
+﻿// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using FiveStar.Loader.Diagnostics;
@@ -28,6 +28,13 @@ internal sealed unsafe class DescriptorWindow
     /// byte offsets below 0x8000 (the 0x7fe0 mask at 0x144d9f04f), 1024 records.
     /// </summary>
     public const uint MaxTableRecords = 1024;
+
+    /// <summary>
+    /// Records mirrored for any table, whatever its root-signature ranges say: the game places a table's descriptors
+    /// at the offsets of its own binding entries (0x144d9efc0), and its programs read them there (default_ps_tex reads
+    /// its T# at record 1 of a table whose root signature spans one descriptor).
+    /// </summary>
+    public const uint MinTableRecords = 16;
 
     /// <summary>Heap slots the programs reach by constant: the window (rdna_prelude GPU_MEM_HEAP), its writable view, the mesh fallback table.</summary>
     public const uint WindowSlot = 0;

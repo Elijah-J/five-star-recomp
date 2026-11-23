@@ -31,7 +31,8 @@ flowchart LR
     S70[slot 70 view] -->|address in registry| R
     S70 -->|readable memory, texture desc| N[new read-only texture] --> R
     R -->|not GPU-written, bytes changed| U[detile with XG layout, upload]
-    S70 -->|buffer desc, unreadable, depth| Z[null SRV]
+    S70 -->|buffer desc| B[buffer SRV on the buffer over the address]
+    S70 -->|unreadable, depth| Z[null SRV]
 ```
 
 - **Registry** (`GpuTextureRegistry`): textures sorted by console address over the span of their XG layout; lookups
@@ -50,6 +51,10 @@ flowchart LR
   texture's state, waited for.
 - **Refresh points**: creation, and every slot-70 view of the texture. The game creates a texture's view once its
   data has arrived, so a view is where new bytes are taken. A 64-bit hash of the bytes skips unchanged memory.
+- **Buffer views** (`AddressBufferViews`): a slot-70 view with a buffer desc (or a texture desc without a format) is
+  the game's desktop buffer SRV desc on the desktop buffer over the address (`XboxGameMemoryBuffers.TryFind`), its
+  first element moved by the address's offset in that buffer; an address outside known memory, off the element size
+  or past the buffer's end gets a null view.
 - **Readability** (`GameMemorySource`): in an XMem reservation every 64 KiB page of the span must be mapped; elsewhere
   every byte must be committed and readable. Anything else gets no texture.
 
@@ -63,8 +68,6 @@ flowchart LR
 - Retired textures are never released before shutdown.
 - XG layout spans larger than the game's own (128x1 A8 with 4 KB swizzle: 0x2000 computed, views 0x1000 apart)
   make neighbours retire each other.
-- Buffer SRVs at console addresses (slot 70 with a buffer desc) are null descriptors: the desktop SRV needs the
-  buffer resource behind the address, which the address table does not keep.
 - Depth-stencil (two-plane) textures are not uploaded; a slot-70 view of a desktop depth-format texture is null.
 - GPU-written textures are not copied back to game memory; CPU reads of render targets see stale bytes, and
   resource Map on a slot-133 texture fails (default heap).

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Five Star Recomp contributors.
+﻿// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Numerics;
@@ -23,18 +23,20 @@ internal sealed unsafe class AddressShaderViews
     private const int SummaryInterval = 4096;
 
     private readonly GpuTextures _textures;
+    private readonly AddressBufferViews _buffers;
     private readonly OnceLog _warnings;
     private readonly LoaderLog _log;
 
-    public AddressShaderViews(GpuTextures textures, OnceLog warnings, LoaderLog log)
+    public AddressShaderViews(GpuTextures textures, AddressBufferViews buffers, OnceLog warnings, LoaderLog log)
     {
         _textures = textures;
+        _buffers = buffers;
         _warnings = warnings;
         _log = log;
     }
 
-    /// <summary>Writes the view into <paramref name="handle"/>, a desktop CPU descriptor handle.</summary>
-    public void Create(nint device, ResourceDescription* resource, AddressViewDescription* view, nint handle)
+    /// <summary>Writes the view into <paramref name="handle"/>, a desktop CPU descriptor handle; returns its texture, null for a null view.</summary>
+    public GpuTexture? Create(nint device, ResourceDescription* resource, AddressViewDescription* view, nint handle)
     {
         var counters = _textures.Counters;
 
@@ -43,6 +45,18 @@ internal sealed unsafe class AddressShaderViews
         if (BitOperations.IsPow2(views) || views % SummaryInterval == 0)
         {
             _log.Detail($"  [d3d12_xs] console-address textures: {counters}");
+        }
+
+        if (IsBuffer(resource) && view->Address != 0)
+        {
+            counters.Add(GpuResourceEvent.ViewBuffer);
+
+            if (_buffers.Create(device, view, handle))
+            {
+                return null;
+            }
+
+            _warnings.Warn("slot70-buffer", $"[d3d12_xs] ID3D12Device.X::Slot70: a buffer view at 0x{view->Address:x} outside known game memory or its buffer: null descriptor");
         }
 
         var texture = Resolve(device, resource, view);
@@ -62,10 +76,19 @@ internal sealed unsafe class AddressShaderViews
             _warnings.Warn("slot70-null", $"[d3d12_xs] ID3D12Device.X::Slot70: no readable texture at 0x{view->Address:x} (format {view->Format}): null descriptor");
             desktop.Format = viewFormat;
             target = 0;
+            texture = null;
         }
 
         var create = (delegate* unmanaged<nint, nint, AddressViewDescription*, nint, void>)ComObject.Slot(device, DesktopShaderResourceViewSlot);
         create(device, target, &desktop, handle);
+
+        return texture;
+    }
+
+    /// <summary>A buffer desc, or a texture desc without a format (raw or structured views): not a texture to make.</summary>
+    private static bool IsBuffer(ResourceDescription* resource)
+    {
+        return resource != null && (resource->Dimension == ResourceDescription.BufferDimension || resource->Format == ViewFormats.Unknown);
     }
 
     private GpuTexture? Resolve(nint device, ResourceDescription* resource, AddressViewDescription* view)
@@ -77,12 +100,8 @@ internal sealed unsafe class AddressShaderViews
             return null;
         }
 
-        // A buffer SRV (raw or structured, format 0) needs the desktop buffer over the address, not a texture.
-        if (resource->Dimension == ResourceDescription.BufferDimension || resource->Format == ViewFormats.Unknown)
+        if (IsBuffer(resource))
         {
-            _textures.Counters.Add(GpuResourceEvent.ViewBuffer);
-            _warnings.Warn("slot70-buffer", $"[d3d12_xs] ID3D12Device.X::Slot70: buffer views at console addresses (first 0x{address:x}, 0x{resource->Width:x} bytes) are null descriptors");
-
             return null;
         }
 

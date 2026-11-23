@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Five Star Recomp contributors.
+﻿// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Globalization;
@@ -128,6 +128,12 @@ internal sealed class CommandLineParser
                 return Add(_options.D3D12Skips);
             case "--d3d12-trace-queues":
                 return SetTraceQueues();
+            case "--d3d12-trace-draws":
+                return SetTraceDraws();
+            case "--capture-dir":
+                return SetCaptureDirectory();
+            case "--capture-presents":
+                return SetCapturePresents();
             case "--present-test":
                 return SetPresentTest();
             case "--raytracing":
@@ -355,6 +361,32 @@ internal sealed class CommandLineParser
     private bool SetTraceQueues()
     {
         _options.D3D12TraceQueues = true;
+
+        return true;
+    }
+
+    private bool SetTraceDraws()
+    {
+        _options.D3D12TraceDraws = true;
+
+        return true;
+    }
+
+    private bool SetCaptureDirectory()
+    {
+        _options.CaptureDirectory = Path.GetFullPath(Next());
+
+        return true;
+    }
+
+    private bool SetCapturePresents()
+    {
+        _options.CapturePresents.Clear();
+
+        foreach (string present in Next().Split(',', StringSplitOptions.RemoveEmptyEntries))
+        {
+            _options.CapturePresents.Add(long.Parse(present, CultureInfo.InvariantCulture));
+        }
 
         return true;
     }
