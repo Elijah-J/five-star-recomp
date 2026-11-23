@@ -16,6 +16,8 @@ internal static class GraphicsCommands
         "usage: fivestar graphics <command> [arguments]",
         "  " + DrawSampleCommand.Usage,
         "        draw a game texture with the translated immediate-mode unlit pass and the pipeline cache's state",
+        "  " + DrawModelCommand.Usage,
+        "        draw a drawable carved from an archive with the same pass, its diffuse texture and its normals",
     ];
 
     public static int Run(IReadOnlyList<string> args)
@@ -33,6 +35,8 @@ internal static class GraphicsCommands
             {
                 case "draw-sample":
                     return DrawSampleCommand.Run(args.Skip(1).ToList());
+                case "draw-model":
+                    return DrawModelCommand.Run(args.Skip(1).ToList());
                 case "help":
                     PrintUsage();
 

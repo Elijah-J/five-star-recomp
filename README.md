@@ -25,8 +25,9 @@ that can be built and verified without it.
 | Shader translation | Every shader stage the game uses is translated (vertex, pixel, compute, mesh, geometry, ray intersection), and all 25,884 programs compile. An optional structured control-flow form makes the output 39% smaller. Instruction behaviour is checked on D3D12 WARP. |
 | Archives | Contents can be extracted without the encrypted file table (no names yet). Metadata files parse completely. |
 | Textures | Most textures export; pages using the console's BCPack compression cannot be decoded yet. |
+| Models | Drawable geometry (meshlets, packed vertices) decodes and exports as OBJ ([docs/models.md](docs/models.md)). |
 | Loader | The game's support libraries load with all imports resolved; the console runtime is implemented for offline use. |
-| Graphics API | Needs the executable to see how the game drives the GPU. A first frame works: a game texture drawn with the game's translated unlit pass and its cached pipeline state on our own D3D12 code ([docs/rendering.md](docs/rendering.md)). |
+| Graphics API | Needs the executable to see how the game drives the GPU. A first frame works: game textures and models drawn with the game's translated unlit pass and its cached pipeline state on our own D3D12 code ([docs/rendering.md](docs/rendering.md)). |
 
 The [wiki](../../wiki) has the details, research notes and the current progress report.
 
@@ -72,7 +73,7 @@ The loader is a separate program, `fivestar-loader`; see [docs/loader.md](docs/l
 
 | Folder | Contents |
 |---|---|
-| `src/FiveStar.Formats` | archive, texture, metadata and platform file readers |
+| `src/FiveStar.Formats` | archive, texture, model, metadata and platform file readers |
 | `src/FiveStar.Shaders` | shader containers and the RDNA to HLSL translator |
 | `src/FiveStar.Loader` | the module loader and the console runtime replacements |
 | `src/FiveStar.Graphics` | D3D12 devices, the root signature of translated programs, shader variant selection, pipelines and rendering |

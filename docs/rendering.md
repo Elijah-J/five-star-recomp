@@ -71,21 +71,25 @@ VS: t7 buffer, b0), but its byte offsets belong to the cache's second compile, n
   number order before the unpacked f16 copies, and pixel shaders declare every input register of their signature,
   read or not, with the f16 halves last.
 
-## Geometry
+## Models
 
-Not decoded yet, so the sample draws quads. What is known so far, from `archive carve` of the first 150 MiB of
-`pack/core_restofworld/core_restofworld.rpf` (1,112 `rsc` blobs, each followed by a `phys` blob):
+```
+fivestar graphics draw-model <out.png> --archive <file.rpf> --from 0xOFFSET [--name TEXT] [--lod N] [--yaw DEG]
+                             [--pitch DEG] [--size N] [--plain] [--dump <folder>] [--programs <fssm folder>]
+                             [--adapter <index|name|warp>] [--work <dir>] [--debug-layer]
+```
 
-- Drawables are `rsc` virtual segments whose name string ends in `.#dr` (for example `gore_gib_l_calf_000.#dr`),
-  reached through a virtual pointer (0x50000000 + offset) in the root object.
-- The virtual segment holds physical pointers (0x60000000 + offset) next to counts, for example at +0x9A8 of that
-  drawable: u32 0x4D, u16 4, u16 9, u32 0x1601, pointer 0x60000000.
-- The carved physical segment of that drawable is 368 bytes: a float3 that repeats a vertex-range value of the
-  virtual segment, then small integer tables; no vertex or index buffer is recognisable in it. Either the carver
-  stops physical runs early or the buffers live elsewhere.
+Draws a drawable ([models.md](models.md)) with the same unlit pass:
 
-Vertex and index buffers, and the meshlet layout the mesh shaders read, still need to be found.
-
+1. Carves the archive from `--from` and takes the first drawable whose name contains `--name`.
+2. Takes the geometries of level of detail `--lod` that use the shader with the most triangles, and finds that
+   shader's `DiffuseTex` by its hash in the dump's `.ttpf` files. sRGB formats are read as their UNORM twins, so the
+   stored values reach the UNORM target unchanged. Without a texture (or with `--plain`) every geometry is drawn on a
+   1x1 white texture.
+3. Turns the model by `--yaw` (about z, default 35) and `--pitch` (default 20) and fits it into a square target
+   (`--size`, default 768) with an orthographic view.
+4. The pass has no depth test, so the CPU drops back faces, sorts the rest far to near and winds them to suit the
+   cache's front face. The vertex colour is a Lambert term from the decoded normals.
 ## Unknown
 
 - What s0..s7 hold for these programs (they are not read).

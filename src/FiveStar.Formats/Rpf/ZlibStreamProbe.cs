@@ -9,7 +9,7 @@ namespace FiveStar.Formats.Rpf;
 /// <summary>
 /// Finds and inflates the zlib streams stored in an RPF9 archive's data area. A stream starts on a 16-byte boundary
 /// with one of the four zlib headers <c>78 01</c>, <c>78 5E</c>, <c>78 9C</c>, <c>78 DA</c> and counts only when it
-/// inflates completely within a 4 MiB input window.
+/// inflates completely within a 16 MiB input window.
 /// </summary>
 public sealed class ZlibStreamProbe
 {
@@ -22,7 +22,7 @@ public sealed class ZlibStreamProbe
     /// <summary>The most output accepted from the first stream of an entry.</summary>
     public const int MaxStreamOutput = 64 << 20;
 
-    private const int InputWindow = 4 << 20;
+    private const int InputWindow = 16 << 20;
     private const byte ZlibFirstByte = 0x78;
     private const int HeaderLength = 2;
 

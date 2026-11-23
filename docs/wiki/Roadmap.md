@@ -16,7 +16,7 @@
 |---|---|
 | BCPack | header and entropy-coder parameters known; the data models are not ([details](Textures-and-BCPack.md)) |
 | Type names | PSO structures are identified by hashes; naming them needs lists of engine class names |
-| Geometry | the older paged resources with vertex and index data are mapped but not decoded |
+| Geometry | drawables decode (meshlets, packed positions, normals, texture coordinates); skinning, the other vertex streams and the meshlet culling data are not ([details](https://github.com/ThatMapleDev/five-star-recomp/blob/main/docs/models.md)) |
 | BVH data | ray tracing needs acceleration structures in AMD's layout ([details](Shader-Translation.md#ray-tracing)) |
 
 ## Engineering
@@ -29,7 +29,7 @@
 | Structured shader control flow | optional and working (DXIL 39% smaller); needs a check on real game data before it becomes the default, and the 3 largest programs still take 25 to 80 minutes in dxc |
 | Pipeline sweep | sampled runs done; a full run, and the AMD driver crashes on some pixel shaders, are open |
 | Call overhead benchmarks | measure game-to-runtime calls and command translation |
-| First frame | a textured quad draws with a real shader pair; real models need the geometry decode |
+| First frame | textured models draw with a real shader pair; depth and the game's material shaders are next |
 | Proton | test the Windows build on Linux and Steam Deck through Proton |
 
 Platform and performance strategy: [Platforms and performance](Platforms-and-Performance.md).

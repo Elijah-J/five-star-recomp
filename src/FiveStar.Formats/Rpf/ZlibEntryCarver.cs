@@ -27,6 +27,15 @@ public sealed class ZlibEntryCarver
     /// <summary>The entries whose first chunk starts before <paramref name="limit"/> (0 = whole archive), in archive order.</summary>
     public IEnumerable<CarvedBlob> Carve(long limit)
     {
+        return CarveFrom(0, limit);
+    }
+
+    /// <summary>
+    /// The entries whose first chunk starts at or after <paramref name="from"/> and before <paramref name="limit"/>
+    /// (0 = the end of the archive). <paramref name="from"/> should be an entry's first chunk.
+    /// </summary>
+    public IEnumerable<CarvedBlob> CarveFrom(long from, long limit)
+    {
         var end = _source.Length;
 
         if (limit > 0)
@@ -34,7 +43,7 @@ public sealed class ZlibEntryCarver
             end = Math.Min(end, limit);
         }
 
-        long position = 0;
+        var position = from;
         long previousEnd = -1;
         var previousKind = BlobKind.Bin;
 

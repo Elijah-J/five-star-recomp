@@ -18,9 +18,10 @@ work covers everything that can be built and checked without it.
 | Archives | about 68% of all archive bytes extract without the encrypted file table; file names are not known |
 | Metadata (PSO) | 6,026 metadata files and about 39,700 paged resources parse completely |
 | Textures | 315,483 of 357,115 (88.3%) export across all 57 texture files; most of the rest use BCPack pages |
+| Models | 4,304,262 of 4,306,994 geometries (99.94%) of 383,907 drawables decode across 7 archives: meshlets, packed positions, normals, texture coordinates; OBJ export |
 | Videos | 515 Bink 2 videos extract from `movies.rpf` |
 | Audio | all 1,603,231 sounds in `audio.rpf` export as Ogg Opus or WAV (Opus, XMA2, PCM) |
 | Loader | the six Xbox libraries in the package load with all 825 imports resolved |
 | Console runtime | task queues and async run for real; user, saves, package and store work offline |
-| Graphics API (D3D12.X) | a game texture draws through the game's own translated shaders and cached pipeline state on PC; translating the game's calls needs the executable |
+| Graphics API (D3D12.X) | game textures and textured models draw through the game's own translated shaders and cached pipeline state on PC; translating the game's calls needs the executable |
 | Setup | `fivestar setup` prepares a dump in one resumable command; a re-run with nothing changed takes under a second |

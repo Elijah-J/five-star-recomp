@@ -35,6 +35,8 @@ public static class Program
                 return ShaderCommands.Run(rest);
             case "graphics":
                 return GraphicsCommands.Run(rest);
+            case "model":
+                return ModelCommands.Run(rest);
             case "progress":
                 return ProgressCommands.Run(rest);
             case "setup":
@@ -49,7 +51,7 @@ public static class Program
     private static void PrintUsage()
     {
         Console.Error.WriteLine("usage: fivestar setup <dump folder> [options]     prepare everything the port needs (fivestar setup help)");
-        Console.Error.WriteLine("       fivestar <archive|audio|texture|platform|shader|graphics|progress> <command> [arguments]");
+        Console.Error.WriteLine("       fivestar <archive|audio|texture|platform|shader|graphics|model|progress> <command> [arguments]");
         Console.Error.WriteLine("       fivestar <group> help    lists the commands of a group");
     }
 }

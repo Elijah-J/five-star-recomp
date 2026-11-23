@@ -34,7 +34,7 @@ The carver applies these rules:
 
 | Situation | Rule |
 |---|---|
-| Entry start | A 16-byte aligned zlib stream that inflates completely (Adler-32 checked) within a 4 MiB input window, to at most 64 MiB |
+| Entry start | A 16-byte aligned zlib stream that inflates completely (Adler-32 checked) within a 16 MiB input window, to at most 64 MiB |
 | Next chunk | Read while the entry is a multiple of 64 KiB: a zlib chunk of at most 64 KiB output at the next 16-byte boundary |
 | Raw chunk in a PSO file | Taken up to the size declared in `CHKS` (64 KiB while `CHKS` is not yet in view; cut back once it is) |
 | Raw chunk in another entry | Taken as a full 64 KiB only when a zlib chunk follows exactly 64 KiB later |

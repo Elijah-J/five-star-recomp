@@ -24,22 +24,34 @@ public static class UnlitRenderer
 
     public static SampleFrame Render(GpuDevice gpu, SamplePipeline pipeline, TranslatedShader vertex, TranslatedShader pixel, TextureData texture)
     {
-        var device = gpu.Device;
         var scene = new UnlitScene(texture.Width, texture.Height);
+        var image = Draw(gpu, pipeline, vertex, pixel, texture, scene.Width, scene.Height, scene.Vertices());
+
+        return new SampleFrame(scene, image.Pixels, image.Errors);
+    }
+
+    /// <summary>
+    /// Draws a triangle list of <see cref="UnlitScene"/>-layout vertices (pixel positions, RGBA8 colour, texture
+    /// coordinate) with one texture onto a cleared target of the given size.
+    /// </summary>
+    public static DrawnImage Draw(GpuDevice gpu, SamplePipeline pipeline, TranslatedShader vertex, TranslatedShader pixel, TextureData texture, int width, int height, byte[] vertexData)
+    {
+        var device = gpu.Device;
         var targets = CacheStateMapping.Targets(pipeline.State);
+        var vertexCount = vertexData.Length / UnlitScene.VertexStride;
         using var root = BindlessRootSignature.Create(device);
         using var state = CreatePipeline(gpu, root, pipeline, vertex, pixel);
 
         using var context = new CommandContext(device);
         using var arena = new ResourceArena(device);
         using var heaps = new BindlessHeaps(device, UnlitBindings.ResourceSlots, HardwareSampler.SamplerHeapSlots);
-        using var target = new RenderTarget(device, targets[0], scene.Width, scene.Height);
+        using var target = new RenderTarget(device, targets[0], width, height);
 
         var list = context.List;
-        Bind(heaps, arena, list, scene, texture);
+        Bind(heaps, arena, list, width, height, texture);
         StaticSamplers(heaps, pixel);
         var userData = arena.UploadBuffer(UnlitBindings.UserData());
-        var vertices = arena.UploadBuffer(scene.Vertices());
+        var vertices = arena.UploadBuffer(vertexData);
 
         heaps.Bind(list);
         list.SetGraphicsRootSignature(root);
@@ -48,12 +60,12 @@ public static class UnlitRenderer
 
         target.Begin(list, Clear);
         list.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
-        list.IASetVertexBuffers(0, new VertexBufferView(vertices.GPUVirtualAddress, (uint)(UnlitScene.VertexCount * UnlitScene.VertexStride), UnlitScene.VertexStride));
-        list.DrawInstanced((uint)UnlitScene.VertexCount, 1, 0, 0);
+        list.IASetVertexBuffers(0, new VertexBufferView(vertices.GPUVirtualAddress, (uint)vertexData.Length, UnlitScene.VertexStride));
+        list.DrawInstanced((uint)vertexCount, 1, 0, 0);
         target.CopyOut(list);
         context.ExecuteAndWait();
 
-        return new SampleFrame(scene, target.ReadPixels(), gpu.TakeErrors());
+        return new DrawnImage(width, height, target.ReadPixels(), gpu.TakeErrors());
     }
 
     /// <summary>The pass's pipeline state; a rejection reports the debug layer's messages when it runs.</summary>
@@ -76,12 +88,12 @@ public static class UnlitRenderer
     }
 
     /// <summary>Fills the heap slots the descriptor table names: the window, the three constant buffers and the texture.</summary>
-    private static void Bind(BindlessHeaps heaps, ResourceArena arena, ID3D12GraphicsCommandList list, UnlitScene scene, TextureData texture)
+    private static void Bind(BindlessHeaps heaps, ResourceArena arena, ID3D12GraphicsCommandList list, int width, int height, TextureData texture)
     {
         heaps.RawBuffer(arena.UploadBuffer(UnlitBindings.Window()), UnlitBindings.WindowBytes, UnlitBindings.WindowSlot);
         heaps.RawBuffer(arena.UploadBuffer(UnlitBindings.PixelConstants(AlphaScale, ColourScale)), UnlitBindings.PixelConstantsBytes, UnlitBindings.PixelConstantsSlot);
         heaps.RawBuffer(arena.UploadBuffer(UnlitBindings.ObjectConstants()), UnlitBindings.ObjectConstantsBytes, UnlitBindings.ObjectConstantsSlot);
-        heaps.RawBuffer(arena.UploadBuffer(UnlitBindings.ViewConstants(scene.Width, scene.Height)), UnlitBindings.ViewConstantsBytes, UnlitBindings.ViewConstantsSlot);
+        heaps.RawBuffer(arena.UploadBuffer(UnlitBindings.ViewConstants(width, height)), UnlitBindings.ViewConstantsBytes, UnlitBindings.ViewConstantsSlot);
         heaps.Texture(arena.Texture2D(list, texture), UnlitBindings.TextureSlot);
     }
 
