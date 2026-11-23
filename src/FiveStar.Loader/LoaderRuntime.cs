@@ -154,6 +154,7 @@ internal sealed class LoaderRuntime : IDisposable
         Apu.Dispose();
         LastError.Dispose();
 
+        D3D12X.Dispose();
         XMemPhysical.Dispose();
     }
 

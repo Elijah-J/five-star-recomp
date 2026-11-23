@@ -104,6 +104,7 @@ internal sealed unsafe class XboxPlacedResources
                 continue;
             }
 
+            _log.Detail($"  [d3d12_xs]   run +0x{run.Start:x} 0x{run.Length:x} bytes at section offset 0x{run.Offset:x} (section 0x{run.Chunk.Section:x})");
             var desktop = DesktopBuffer(description);
             desktop.Width = run.Length;
             desktop.Flags |= AllowCrossAdapter;

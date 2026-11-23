@@ -70,6 +70,14 @@ internal sealed unsafe class D3D12Forwarder
         return hr;
     }
 
+    /// <summary>HRESULT D3D12GetDebugInterface(REFIID, void**): the debug layer and DRED settings objects.</summary>
+    public int GetDebugInterface(Guid* iid, nint* result)
+    {
+        var target = (delegate* unmanaged<Guid*, nint*, int>)Export("D3D12GetDebugInterface");
+
+        return target(iid, result);
+    }
+
     private nint Export(string name)
     {
         lock (_gate)

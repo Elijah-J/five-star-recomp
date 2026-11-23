@@ -84,6 +84,11 @@ internal sealed class LoaderHost
             _log.Info($"  [input] mapping from {_options.InputConfig}");
         }
 
+        if (_options.D3D12Debug)
+        {
+            _runtime.D3D12X.Debugging.Enable(_options.D3D12GpuValidation);
+        }
+
         if (_options.FidelityFxLibrary is not null)
         {
             _runtime.FidelityFx.Load(_options.FidelityFxLibrary);

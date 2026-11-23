@@ -6,6 +6,7 @@ using FiveStar.Loader.Codegen;
 using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Loading;
 using FiveStar.Loader.Native;
+using FiveStar.Loader.Shims.D3D12X.DebugLayer;
 using FiveStar.Loader.Shims.D3D12X.Pipelines;
 using FiveStar.Shaders.Cache;
 
@@ -16,7 +17,7 @@ namespace FiveStar.Loader.Shims.D3D12X;
 /// and every object it creates; this class binds the slots that need managed code: creation (results wrapped), the
 /// X-only device and queue slots with a desktop translation, and the getters whose D3D12.X form differs.
 /// </summary>
-internal sealed unsafe class XboxDeviceFactory
+internal sealed unsafe class XboxDeviceFactory : IDisposable
 {
     /// <summary>Device slot 80, read as WaitFrameEventX (*inferred*: type, timeout, null, flags, UINT64* token).</summary>
     private const int WaitFrameEventSlot = 80;
@@ -41,7 +42,8 @@ internal sealed unsafe class XboxDeviceFactory
         _pipelineFolders = pipelines;
         _log = log;
 
-        Objects = new XboxObjects(stubs, heap, log);
+        Debugging = new D3D12Debugging(d3d12, images, log);
+        Objects = new XboxObjects(stubs, heap, Debugging, log);
         CommandLists = new XboxCommandLists(Objects);
         PlacedResources = new XboxPlacedResources(memory, Objects, log);
         DescriptorHeaps = new XboxDescriptorHeaps(Objects, new TitleMemoryHooks(images), log);
@@ -52,6 +54,9 @@ internal sealed unsafe class XboxDeviceFactory
 
     /// <summary>The wrappers and their vtables; <see cref="XboxObjects.SetHandler"/> is where other shims bind slots.</summary>
     public XboxObjects Objects { get; }
+
+    /// <summary>The opt-in debug layer, info-queue log and DRED report (<c>--d3d12-debug</c>).</summary>
+    public D3D12Debugging Debugging { get; }
 
     /// <summary>The command-list wrappers device slots 12 and 73 hand out.</summary>
     public XboxCommandLists CommandLists { get; }
@@ -77,6 +82,7 @@ internal sealed unsafe class XboxDeviceFactory
         LogParameters(adapter, parameters, iid);
         Guid desktopIid = D3D12XLayout.DeviceIid;
         nint inner;
+        Debugging.BeforeDevice();
         int hr = _d3d12.CreateDevice(D3D12XLayout.MinimumFeatureLevel, &desktopIid, &inner);
 
         if (HResult.Failed(hr))
@@ -86,6 +92,7 @@ internal sealed unsafe class XboxDeviceFactory
             return hr;
         }
 
+        Debugging.AttachDevice(inner);
         *device = Objects.WrapDevice(inner);
         CreatePipelines(inner);
 
@@ -144,6 +151,11 @@ internal sealed unsafe class XboxDeviceFactory
         _log.Detail($"  [d3d12_xs] pipeline slots on: programs {programs}, translated {translated}");
     }
 
+    public void Dispose()
+    {
+        Debugging.Dispose();
+    }
+
     private void BindDeviceSlots()
     {
         delegate* unmanaged<XboxObject*, void*, Guid*, nint*, int> queue = &XboxDeviceCreation.CreateCommandQueue;
@@ -151,10 +163,10 @@ internal sealed unsafe class XboxDeviceFactory
         delegate* unmanaged<XboxObject*, uint, int, nint, nint, Guid*, nint*, int> list = &XboxDeviceCreation.CreateCommandList;
         delegate* unmanaged<XboxObject*, DescriptorHeapDescription*, Guid*, nint*, int> descriptorHeap = &XboxDeviceCreation.CreateDescriptorHeap;
 
-        delegate* unmanaged<XboxObject*, void*, int, void*, int, void*, Guid*, nint*, int> committed = &XboxDeviceCreation.CreateCommittedResource;
+        delegate* unmanaged<XboxObject*, void*, int, ResourceDescription*, int, void*, Guid*, nint*, int> committed = &XboxDeviceCreation.CreateCommittedResource;
         delegate* unmanaged<XboxObject*, void*, Guid*, nint*, int> heap = &XboxDeviceCreation.CreateHeap;
-        delegate* unmanaged<XboxObject*, nint, ulong, void*, int, void*, Guid*, nint*, int> placed = &XboxDeviceCreation.CreatePlacedResource;
-        delegate* unmanaged<XboxObject*, void*, int, void*, Guid*, nint*, int> reserved = &XboxDeviceCreation.CreateReservedResource;
+        delegate* unmanaged<XboxObject*, nint, ulong, ResourceDescription*, int, void*, Guid*, nint*, int> placed = &XboxDeviceCreation.CreatePlacedResource;
+        delegate* unmanaged<XboxObject*, ResourceDescription*, int, void*, Guid*, nint*, int> reserved = &XboxDeviceCreation.CreateReservedResource;
 
         delegate* unmanaged<XboxObject*, uint, nint*, int> residency = &XboxDeviceCreation.Residency;
         delegate* unmanaged<XboxObject*, ulong, int, Guid*, nint*, int> fence = &XboxDeviceCreation.CreateFence;
@@ -176,8 +188,18 @@ internal sealed unsafe class XboxDeviceFactory
         BindDevice(XboxDeviceCreation.CreateQueryHeapSlot, (nint)queryHeap);
 
         BindDevice(XboxDeviceCreation.CreateCommandSignatureSlot, (nint)signature);
+        BindResourceQueries();
         BindDescriptorSlots();
         BindXboxDeviceSlots();
+    }
+
+    /// <summary>The queries that take resource descs, which may carry console flags and layouts.</summary>
+    private void BindResourceQueries()
+    {
+        delegate* unmanaged<ResourceAllocationInfo*, XboxObject*, uint, uint, ResourceDescription*, ResourceAllocationInfo*> allocationInfo = &XboxDeviceCreation.GetResourceAllocationInfo;
+        delegate* unmanaged<XboxObject*, ResourceDescription*, uint, uint, ulong, void*, uint*, ulong*, ulong*, void> footprints = &XboxDeviceCreation.GetCopyableFootprints;
+        BindDevice(XboxDeviceCreation.GetResourceAllocationInfoSlot, (nint)allocationInfo);
+        BindDevice(XboxDeviceCreation.GetCopyableFootprintsSlot, (nint)footprints);
     }
 
     /// <summary>View creation and descriptor copies, whose CPU handles may be title memory (<see cref="XboxDescriptorMethods"/>).</summary>

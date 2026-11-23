@@ -112,6 +112,10 @@ internal sealed class CommandLineParser
                 return SetTraceSystem();
             case "--ffx":
                 return SetFidelityFxLibrary();
+            case "--d3d12-debug":
+                return SetD3D12Debug(false);
+            case "--d3d12-gpu-validation":
+                return SetD3D12Debug(true);
             default:
                 throw new CommandLineException($"unknown argument {option}");
         }
@@ -296,6 +300,15 @@ internal sealed class CommandLineParser
     private bool SetFidelityFxLibrary()
     {
         _options.FidelityFxLibrary = Path.GetFullPath(Next());
+
+        return true;
+    }
+
+    /// <summary>--d3d12-debug, or --d3d12-gpu-validation, which implies it.</summary>
+    private bool SetD3D12Debug(bool gpuValidation)
+    {
+        _options.D3D12Debug = true;
+        _options.D3D12GpuValidation |= gpuValidation;
 
         return true;
     }

@@ -27,6 +27,9 @@ internal static class HostUsage
           --input <file>         GameInput keyboard-and-mouse gamepad mapping ("setting value" per line)
           --ffx <dll>            PC FidelityFX API DLL (AMD FidelityFX SDK, DX12) the game's FidelityFX calls go to;
                                  without it FidelityFX reports no provider
+          --d3d12-debug          D3D12 debug layer and DRED; their messages and the removal report go to the log
+                                 (needs the Graphics Tools optional feature)
+          --d3d12-gpu-validation --d3d12-debug plus GPU-based validation (slow)
           --package-root <dir>  package root for XPackage / MicrosoftGame.config (default: main image directory)
           --device-type <n>      XSystemGetDeviceType result (default 7 = XboxScarlettAnaconda)
           --patches <path>       code patch file, or folder of *.fspatch files (repeatable, applied in order)

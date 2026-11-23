@@ -25,15 +25,19 @@ internal sealed unsafe class XMemReservation
     private readonly ulong[] _slots;
     private readonly nint _process;
 
-    public XMemReservation(nint process, nint address, ulong size, uint viewProtection)
+    public XMemReservation(nint process, nint address, ulong size, uint viewProtection, nint origin)
     {
         _process = process;
         Address = address;
+        Origin = origin;
         _slots = new ulong[(size + PageSize - 1) / PageSize];
         ViewProtection = viewProtection;
     }
 
     public nint Address { get; }
+
+    /// <summary>The start of the game placeholder this reservation was split from, else <see cref="Address"/>.</summary>
+    public nint Origin { get; }
 
     /// <summary>The CPU protection of every view mapped here.</summary>
     public uint ViewProtection { get; }
