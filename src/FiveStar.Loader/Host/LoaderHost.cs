@@ -1,8 +1,9 @@
-﻿// Copyright (c) 2026 Five Star Recomp contributors.
+// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using FiveStar.Formats.Platform;
 using FiveStar.Loader.Calls;
+using FiveStar.Loader.Cpu;
 using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Loading;
 using FiveStar.Loader.Mods;
@@ -59,6 +60,8 @@ internal sealed class LoaderHost
             _runtime.Faults.Install();
         }
 
+        CheckCpu();
+
         if (!ConfigureMods())
         {
             return UsageError;
@@ -80,6 +83,37 @@ internal sealed class LoaderHost
         _log.Info($"done, exit code {rc}");
 
         return rc;
+    }
+
+    /// <summary>
+    /// Logs which AMD-only instructions the host lacks. With --cpu intel, also checks their emulation through the
+    /// exception handler (installed for it when --run did not).
+    /// </summary>
+    private void CheckCpu()
+    {
+        var features = CpuFeatures.None;
+
+        if (!_options.AssumeIntelCpu)
+        {
+            features = CpuFeatures.Detect();
+        }
+
+        _runtime.Cpu.ReportHost(features, _options.AssumeIntelCpu);
+
+        if (!_options.AssumeIntelCpu)
+        {
+            return;
+        }
+
+        _runtime.Faults.Install();
+        var result = new AmdInstructionSelfTest(_runtime.CodeHeap, _runtime.Cpu).Run();
+
+        foreach (string failure in result.Failures)
+        {
+            _log.Error($"cpu self-test: {failure}");
+        }
+
+        _log.Info($"cpu self-test: {result.Cases - result.Failures.Count} of {result.Cases} cases agree with the CPU and the reference");
     }
 
     private void LoadAbiTable()
@@ -294,6 +328,7 @@ internal sealed class LoaderHost
     private void EndTimedOutRun()
     {
         _runtime.D3D12X.Presenter.LogSummary();
+        _runtime.Cpu.LogSummary();
         _log.Info($"done, exit code {ExecutableRunner.TimedOut} (the game's threads are still running: the process ends without cleanup)");
         Console.Out.Flush();
         _ = Kernel32.TerminateProcess(Kernel32.GetCurrentProcess(), (uint)ExecutableRunner.TimedOut);
@@ -301,6 +336,7 @@ internal sealed class LoaderHost
 
     private void Finish()
     {
+        _runtime.Cpu.LogSummary();
         var stubs = _runtime.Stubs;
 
         if (stubs.CallCount > 0)

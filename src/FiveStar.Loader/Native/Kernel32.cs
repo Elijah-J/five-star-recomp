@@ -35,6 +35,9 @@ internal static unsafe class Kernel32
     public static extern int TerminateProcess(nint process, uint exitCode);
 
     [DllImport(Library)]
+    public static extern int SwitchToThread();
+
+    [DllImport(Library)]
     public static extern uint RemoveVectoredExceptionHandler(nint handle);
 
     [DllImport(Library, SetLastError = true)]

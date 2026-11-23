@@ -3,6 +3,7 @@
 
 using System.Runtime.InteropServices;
 using FiveStar.Loader.Codegen;
+using FiveStar.Loader.Cpu;
 using FiveStar.Loader.Loading;
 using FiveStar.Loader.Native;
 using FiveStar.Loader.Shims;
@@ -18,6 +19,9 @@ internal sealed unsafe class FaultReporter
 {
     /// <summary>EXCEPTION_CONTINUE_SEARCH (excpt.h).</summary>
     private const int ContinueSearch = 0;
+
+    /// <summary>EXCEPTION_CONTINUE_EXECUTION (excpt.h): resume the thread with its (changed) CONTEXT.</summary>
+    private const int ContinueExecution = -1;
 
     /// <summary>AddVectoredExceptionHandler's First argument: call this handler before the others.</summary>
     private const uint CallFirst = 1;
@@ -47,6 +51,7 @@ internal sealed unsafe class FaultReporter
     private readonly FaultRecordWriter _writer;
     private readonly CodeHeap _heap;
     private readonly LoaderLog _log;
+    private readonly AmdInstructionHandler _cpu;
     private nint _entry;
     private int _reported;
 
@@ -54,8 +59,9 @@ internal sealed unsafe class FaultReporter
     private int _reporting;
     private nint _handle;
 
-    public FaultReporter(ImageTable images, CallTrace trace, CodeHeap heap, LoaderLog log)
+    public FaultReporter(ImageTable images, CallTrace trace, CodeHeap heap, AmdInstructionHandler cpu, LoaderLog log)
     {
+        _cpu = cpu;
         _images = images;
         _writer = new FaultRecordWriter(images, trace, log);
         _heap = heap;
@@ -144,9 +150,14 @@ internal sealed unsafe class FaultReporter
         return code == StatusBreakpoint || (code & ErrorSeverity) == ErrorSeverity;
     }
 
-    /// <summary>EXCEPTION_POINTERS: ExceptionRecord at +0, ContextRecord at +8 (winnt.h).</summary>
+    /// <summary>EXCEPTION_POINTERS: ExceptionRecord at +0, ContextRecord at +8 (winnt.h). AMD-only instructions are emulated first.</summary>
     private int Handle(nint pointers)
     {
+        if (_cpu.TryEmulate(pointers))
+        {
+            return ContinueExecution;
+        }
+
         byte* record = *(byte**)pointers;
         byte* context = *(byte**)(pointers + sizeof(nint));
 

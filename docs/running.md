@@ -14,6 +14,9 @@ work folder (once; later runs reuse it), then starts `fivestar-loader` on the ga
 The first run extracts and translates every shader program (25,884 programs, about an hour on 24 cores, 16 GB of
 disk) before the game starts; it can be stopped and resumed. Later runs start the game in under a second.
 
+The game uses four AMD-only instruction families (SSE4a, CLZERO, MONITORX/MWAITX, CLWB). On an Intel CPU the loader
+emulates them in its exception handler and logs a `cpu:` line for each place it does ([cpu.md](cpu.md)).
+
 `fivestar` is `artifacts/bin/FiveStar.Cli/debug/fivestar.exe` after the build (or `dotnet run --project
 src/FiveStar.Cli --`).
 

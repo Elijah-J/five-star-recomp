@@ -71,6 +71,12 @@ internal sealed record HostOptions
     /// <summary>How long --run lets the entry point run before reporting the main thread and exiting; null waits.</summary>
     public TimeSpan? RunTimeout { get; set; }
 
+    /// <summary>
+    /// <c>--cpu intel</c>: report the AMD-only instructions as missing and run the emulation self-test through the
+    /// exception handler, as on an Intel CPU; the game's own instructions still run natively where the CPU has them.
+    /// </summary>
+    public bool AssumeIntelCpu { get; set; }
+
     /// <summary>With --run, log call counts and every thread's stack at this interval (<c>--sample-threads</c>).</summary>
     public TimeSpan? SampleThreads { get; set; }
 
