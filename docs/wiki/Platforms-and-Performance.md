@@ -25,7 +25,7 @@ into that layer, thousands per frame.
 
 | Platform | Route |
 |---|---|
-| Windows | primary target; D3D12 is the closest match to the console's D3D12.X |
+| Windows | primary target; D3D12 is the closest match to the console's D3D12.X. The game uses four instruction families only AMD CPUs have (SSE4a, CLZERO, MONITORX/MWAITX, CLWB); on Intel CPUs the loader emulates them ([cpu.md](https://github.com/ThatRecompDev/five-star-recomp/blob/main/docs/cpu.md)), checked so far only through a forced self-test on AMD |
 | Linux and Steam Deck | the Windows build through Proton (Wine with vkd3d-proton); tested as a supported target |
 | Linux, native | later: a runtime for the Windows parts the game uses and thunks between the Windows and Linux x64 calling conventions |
 | macOS | the Windows build through CrossOver or Apple's Game Porting Toolkit (Rosetta 2 for x86-64, D3D12 on Metal); a native port would need x86-64 to ARM64 recompilation and is out of scope |
