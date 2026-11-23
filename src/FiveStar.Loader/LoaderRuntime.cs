@@ -53,6 +53,7 @@ internal sealed class LoaderRuntime : IDisposable
         Apu = new ApuHeap(log);
         AcpHal = new AcpHalDevice(Apu, log);
         XApu = new XApuDevice(log);
+        XDsp = new XDspDevice(log);
 
         D3D12 = new D3D12Forwarder(log);
         D3D12X = new XboxDeviceFactory(D3D12, Stubs, CodeHeap, XMemPhysical, Images, pipelines, log);
@@ -124,6 +125,9 @@ internal sealed class LoaderRuntime : IDisposable
     /// <summary>xapu.dll: the Opus decode queue.</summary>
     public XApuDevice XApu { get; }
 
+    /// <summary>chad.dll: the audio DSP streams.</summary>
+    public XDspDevice XDsp { get; }
+
     /// <summary>The DirectStorage factory XCRDAPI.dll hands out.</summary>
     public DStorageFactory Storage { get; }
 
@@ -154,6 +158,7 @@ internal sealed class LoaderRuntime : IDisposable
         Storage.Dispose();
         Xg.Dispose();
 
+        XDsp.Dispose();
         XApu.Dispose();
         AcpHal.Dispose();
         Apu.Dispose();
