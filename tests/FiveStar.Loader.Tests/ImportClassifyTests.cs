@@ -38,7 +38,7 @@ public sealed class ImportClassifyTests
         var package = classifier.Classify("Middleware.dll", "Start", 0);
         var missing = classifier.Classify("consolehal.dll", "Connect", 0);
         var apiSet = classifier.Classify("api-ms-win-core-synch-l1-1-0.dll", "Sleep", 0);
-        var audio = classifier.Classify("chad.dll", "XDspActivate", 0);
+        var audio = classifier.Classify("chad.dll", "XDspGetStatistics", 0);
         var inputByOrdinal = classifier.Classify("GameInput.dll", null, 1);
 
         Assert.Equal(ImportClassKind.Shim, inputByOrdinal.Kind);
