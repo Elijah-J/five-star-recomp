@@ -9,7 +9,8 @@ namespace FiveStar.Shaders.Tests;
 
 /// <summary>
 /// An NGG program through the two-phase mesh path, drawn natively and through the mesh-to-compute fallback (descriptor
-/// table, root descriptors, and an overflowing dispatch whose extra group must be dropped).
+/// table, root descriptors, and an overflowing dispatch whose extra group must be dropped). A variant whose regions
+/// WARP's 4-lane waves skip while the 64-lane console wave runs them is classified as right on 4 lanes and draws so.
 /// </summary>
 public sealed class MeshShaderTests : IClassFixture<WarpFixture>
 {
@@ -27,6 +28,31 @@ public sealed class MeshShaderTests : IClassFixture<WarpFixture>
     public void A_mesh_program_draws_the_reference_image(string variant)
     {
         var mismatches = new MeshStageRunner(_fixture).Run(variant);
+
+        Assert.True(mismatches.Count == 0, $"{mismatches.Count} mismatches:\n{string.Join("\n", mismatches.Take(16))}");
+    }
+
+    [WarpFact]
+    public void A_mesh_program_that_skips_regions_draws_the_reference_image_on_narrower_waves()
+    {
+        var runner = new MeshStageRunner(_fixture);
+
+        Assert.StartsWith("// program wave 64; console results on hardware waves >= 4 lanes\n", runner.Translate(MeshStageRunner.Windows), StringComparison.Ordinal);
+
+        var mismatches = runner.Run(MeshStageRunner.Windows);
+
+        Assert.True(mismatches.Count == 0, $"{mismatches.Count} mismatches:\n{string.Join("\n", mismatches.Take(16))}");
+    }
+
+    [WarpFact]
+    public void A_mesh_group_of_two_console_waves_gets_console_results_in_supersteps()
+    {
+        var runner = new MeshSuperstepRunner(_fixture);
+
+        Assert.StartsWith("// program wave 64; console results on hardware waves >= 64 lanes\n", runner.Translate(), StringComparison.Ordinal);
+        Assert.StartsWith("// program wave 64; console results on hardware waves >= 4 lanes\n", runner.Supersteps(), StringComparison.Ordinal);
+
+        var mismatches = runner.Run();
 
         Assert.True(mismatches.Count == 0, $"{mismatches.Count} mismatches:\n{string.Join("\n", mismatches.Take(16))}");
     }

@@ -4,6 +4,7 @@
 using System.Buffers.Binary;
 using System.Text.RegularExpressions;
 using FiveStar.Shaders.Translation.Core;
+using FiveStar.Shaders.Translation.Waves;
 
 namespace FiveStar.Shaders.Translation.Stages;
 
@@ -17,6 +18,7 @@ internal sealed partial class ProgramEmitter
     public const string GeometryEntryPlaceholder = "/*GS_MAIN*/";
 
     private const string OutStruct = "struct Out {";
+    private const string SuperstepHeader = "rdna_superstep.hlsli";
     private const int DefaultComputeThreads = 64;
     private const int BytesPerDword = 4;
     private const int CodeLoadLine = 2;
@@ -69,6 +71,12 @@ internal sealed partial class ProgramEmitter
             lines[0] = string.Join("\n", WaveDefines()) + "\n" + Include;
         }
 
+        if (_state.Supersteps)
+        {
+            // Written into the program, not included: the headers every program includes stay as they are.
+            lines[0] += "\n" + RuntimeIncludes.Read(SuperstepHeader).TrimEnd('\n');
+        }
+
         if (_state.UsesBvh)
         {
             lines.Add("#include \"rdna_bvh.hlsli\"");
@@ -92,14 +100,26 @@ internal sealed partial class ProgramEmitter
         var floor = Math.Max(_state.LaneReach, WaveOps.NarrowestHardwareWave);
         var lines = new List<string> { $"#define VW_WAVE {wave}", "#define VW_EMULATE 1" };
 
+        if (_state.Supersteps)
+        {
+            // Every wave operation exchanges through groupshared memory; quads stay native.
+            lines.AddRange(["#define VW_GROUP_LANES 1", $"#define VW_GROUP_THREADS {_state.MeshThreads}u"]);
+            lines.Insert(0, WaveOps.FloorLine(wave, WaveOps.NarrowestHardwareWave));
+
+            return lines;
+        }
+
         if (_state.Stage == ShaderStage.Mesh)
         {
             lines.Add("#define VW_GROUP_LANES 1");
 
-            // The other lanes of a mesh wave are live threads: a narrower hardware wave sees only part of a lane mask.
-            if (_state.Blocks.Any(block => block.Lines.Any(line => WholeWavePattern().IsMatch(line))))
+            // The other lanes of a mesh wave are live threads of other hardware waves (see WindowAnalysis).
+            var reason = new WindowAnalysis(_state.Blocks, _state.Prologue, _state.MeshThreads).Check();
+
+            if (reason is not null)
             {
                 floor = wave;
+                lines.Insert(0, WaveOps.NarrowerLine(reason));
             }
         }
 
@@ -251,9 +271,6 @@ internal sealed partial class ProgramEmitter
 
         return text.Replace("\nOut main(", "\n[WaveOpsIncludeHelperLanes]\nOut main(", StringComparison.Ordinal);
     }
-
-    [GeneratedRegex(@"\b(vw_ballot|vw_any|vw_count|readfirstlane)\(")]
-    private static partial Regex WholeWavePattern();
 
     [GeneratedRegex(@"\bf32tof16\(")]
     private static partial Regex F32ToF16Pattern();

@@ -22,7 +22,7 @@ fivestar setup <dump folder> --clean-cache
 | `textures` | `fivestar texture extract` of every page file | `textures/<page file path>/*.dds` | `verify` |
 | `gdk-abi` | `fivestar platform gdk-abi` from the PC GDK's `xgameruntime.lib`, for `fivestar-loader --gdk-abi`. Without a GDK it finishes with a note | `loader/gdk-abi.txt` | `verify` |
 
-`variants.json` lists every compiled program with its DXIL forms (native, wave32 variant, mesh fallback) and wave
+`variants.json` lists every compiled program with its DXIL forms (native, wave32 variant or mesh superstep form, mesh fallback) and wave
 floor, so the runtime picks the form for the GPU without reading HLSL (see
 [shader-translation.md](shader-translation.md#wave-size), Variant selection). Mesh fallbacks are compiled for every
 mesh program, for GPUs without mesh shaders.

@@ -7,7 +7,8 @@ namespace FiveStar.Graphics.Programs;
 /// Picks the form of each program an adapter runs (docs/shader-translation.md, "Wave size"). The driver chooses the
 /// hardware wave of pixel, vertex, geometry and mesh shaders anywhere between WaveLaneCountMin and Max, so a floor is
 /// met only when WaveLaneCountMin reaches it. A compute program pinned to a lane count the adapter lacks runs its
-/// wave32 variant when it has one. A mesh program runs its fallback on an adapter without mesh shaders.
+/// wave32 variant when it has one. A mesh program runs its fallback on an adapter without mesh shaders, and its superstep
+/// form (the same .w32 file) where the adapter may run waves narrower than its floor.
 /// </summary>
 public static class VariantSelector
 {
@@ -91,6 +92,12 @@ public static class VariantSelector
         }
 
         var reason = $"floor {floor} above {adapter.WaveLaneCountMin}-lane waves";
+
+        if (choice.Outcome == ChoiceOutcome.Native && choice.Program.Stage == Mesh && choice.Program.GroupWave is not null)
+        {
+            // The superstep form gives console results on any wave.
+            return choice with { Outcome = ChoiceOutcome.Variant, Files = [choice.Program.GroupWave], Reason = reason };
+        }
 
         if (choice.Reason is not null)
         {

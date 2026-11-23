@@ -200,7 +200,7 @@ program wave of W lanes:
 | H = W | the native operations | console results |
 | H > W | every aligned W-lane segment is one program wave: reads add the segment's first lane, masks are cut out of the ballot, `any`, `count` and branch conditions are per segment | console results |
 | H < W, pixel and vertex | the hardware wave is program lanes 0 .. H-1, a partly filled console wave; a lane at H or above is missing and reads 0 | console results when no read leaves aligned groups of H lanes |
-| H < W, mesh | the hardware wave is program lanes k·H .. k·H+H-1 of the wave (64 consecutive threads, `VW_GROUP_LANES`) | reads inside the window are right; masks, counts, branch conditions and first lanes see only the window, while the console sees all 64 live threads |
+| H < W, mesh | the hardware wave is program lanes k·H .. k·H+H-1 of the wave (64 consecutive threads, `VW_GROUP_LANES`) | reads inside the window are right; masks, counts, branch conditions and first lanes see only the window, while the console sees all 64 live threads; console results when the window analysis below finds that never matters |
 
 The choice between paths depends only on `WaveGetLaneCount()`, which is a constant once the driver compiles the
 program, so a GPU runs one path. The DXIL still holds every path: on a sample of 99 lane-indexed programs it is 14 %
@@ -215,8 +215,43 @@ Each emulated program's first line names its floor, the narrowest hardware wave 
 The floor is the widest aligned lane group a cross-lane read reaches: quads 4, `row_half_mirror` and DPP8 8, DPP rows and
 `v_permlane16` 16, `v_permlanex16` and `BITMASK_PERM` 32, `SWAP`/`REVERSE`/`BROADCAST` their group, `v_readlane` of a
 constant lane c the next power of two above c, of a lane found in a lane mask (`s_ff1`) 1, of any other lane
-(`v_readlane` from an SGPR, `ds_bpermute`, `ds_permute`) the whole wave. A mesh program that reads a lane mask, a first
-lane or branches on any lane has the whole wave as floor.
+(`v_readlane` from an SGPR, `ds_bpermute`, `ds_permute`) the whole wave.
+
+**Mesh windows** (`Translation/Waves/WindowAnalysis`). The other lanes of a mesh console wave are live threads in
+other hardware waves, so a narrower hardware wave (a window) sees only its part of every mask. The analysis runs over
+the translated blocks and tracks, per variable, which bits are the console's; the floor is the whole wave unless every
+branch, output, store and message reads only console values. On H < W:
+
+| Operation | Window result | Rule |
+|---|---|---|
+| `vw_any`/`vw_count`/`vw_ballot` result, e.g. the SCC of `s_and_saveexec` | not the console's | fine while never read (SCC is nearly always overwritten) |
+| `vw_any(m)`, m = EXEC and a uniform value (`s_cselect` + `s_and vcc, exec`) | the console's when the window holds an active lane | a window known to hold one: right |
+| execz / execnz / vccz / vccnz on such an m | a window without active lanes may take the other path than its console wave | fine when both paths, run with the window's lanes inactive, leave what is read where they meet as it was (below) |
+| `v_readfirstlane` | first active lane of the window | right in the bits equal on all active lanes, when the window holds an active lane: after `exec = -1`, on the taken side of an execz branch, or for a value only written by lanes that are active then (EXEC only shrank since) |
+| ballot used as a mask (`lane_bit`, `s_xor exec`) | each window lane's own bit is the console's | right |
+| ballot read as a number (popcount, compare with 0) | not the console's | floor = wave |
+
+A path a window may skip or take alone is fine when: EXEC stays empty on the window's lanes (every write ands with an
+empty mask, ors empty masks or restores one saved inside), every other write to those lanes is guarded by EXEC, no
+SGPR, SCC, mask or unguarded VGPR it writes is live where the paths meet (a mask may be when empty on those lanes before
+and after), and it has no other effect: no `s_endpgm`, store or barrier inside a block. On the path the console runs,
+GS_ALLOC_REQ is fine (the window with the active lanes sends it), and so is a mesh barrier after GS_ALLOC_REQ when the
+skipping window writes no output before its next barrier: without memory shared between lanes a barrier only decides
+in which phase outputs are written. Programs that share LDS or memory between lanes are not analysed (floor = wave): the
+windows of one console wave run unordered between barriers. The first header line names the floor; when it is the whole
+wave, the second line names the first reason (`// narrower hardware waves differ: ...`).
+
+**Mesh supersteps** (`HlslTranslator.MeshSuperstepVariant`, `rdna_superstep.hlsli`). For a mesh program with a floor
+above 4, `fivestar shader translate` also writes `<name>.w32.hlsl`/`.dxil`, which gives console results on any hardware
+wave. The blocks are cut at every wave operation: the thread deposits its value and bit in groupshared memory and
+stops; when every thread of the group has stopped (at an operation, an `s_barrier` or the end), one group barrier
+passes and each thread reads its console wave's result. Threads at an `s_barrier` wait until no thread is at an
+operation, so the barrier holds as on the console; an LDS access is a step of its own, so the windows of one wave reach
+it together. The group's console waves may be at different operations in one step, since each reads only its own
+part. Every thread enters the dispatch loop each step (a stopped one through an idle case): WARP otherwise waits at
+one copy of the step barrier for threads that are at another. A statement with two wave operations, or a temporary of
+resource type read across a cut, gets no superstep form. Every wave operation costs a group barrier, so this form is
+only for adapters whose waves are narrower than the floor.
 
 **Compute programs** keep native wave operations and are pinned. A wave64 program whose group has at most 32 threads
 is pinned to 32 lanes instead, since lanes 32..63 never exist. For a program pinned to 64 lanes, which GPUs with only
@@ -243,6 +278,7 @@ wave size, wave32 variant and mesh fallback, so a runtime picks the DXIL without
 | cs, pin outside, no variant | native (fails to load) | incorrect |
 | ms, adapter with mesh shaders | native, or the fallback when only that compiled | ok / fallback |
 | ms, adapter without mesh shaders | the fallback (`--mesh-fallbacks`), else native (fails) | fallback / incorrect |
+| ms with a floor above `WaveLaneCountMin`, with mesh shaders and a superstep form | `<name>.w32.dxil` | variant |
 | ps, vs, gs, ms with a floor above `WaveLaneCountMin` | as above | incorrect |
 
 The driver picks a graphics wave anywhere between `WaveLaneCountMin` and `Max`, so a floor counts only as met when
@@ -258,7 +294,11 @@ Corpus (lane-indexed programs, by floor):
 | vs wave64 (1) | | | | | 1 |
 | ms wave64 (115) | | | | | 115 |
 
-All 1,982 compile (115 mesh programs, 15 of them through the fallback). Of the 203 compute programs pinned to 64 lanes,
+All 1,982 compile (115 mesh programs, 15 of them through the fallback). Of all 8,765 mesh programs (structured
+form), 6,217 now have floor 4 and 2,548 the whole wave (first reasons: a first-lane read of a per-lane value in an
+output or GS_ALLOC_REQ 1,338, an integer VCC branch 588, a VCC branch whose mask lost its relation to EXEC 304, an
+execz path that cannot be skipped 246); 2,511 of those get a superstep form that compiles, the other 37 compile only
+through the fallback. On the RTX 4090 every mesh program but those 37 now gives console results (before: none). Of the 203 compute programs pinned to 64 lanes,
 3 have groups of at most 32 threads and are pinned to 32, 181 get a variant that NVIDIA (RTX 4090) accepts, and 19
 have groups of 128 to 512 threads.
 
@@ -267,11 +307,8 @@ What cannot be emulated:
 - Pixel and vertex waves narrower than the program wave cannot read a missing lane: those stages have no groupshared
   memory and no barrier, so the value exists in no wave that could share it. Example: a wave64 reduction that ends with
   `v_readlane 32` or `63` on a 32-lane GPU.
-- Mesh waves narrower than the program wave: one console wave spans several hardware waves. Every lane mask, branch
-  condition and cross-lane read would have to go through groupshared memory with a barrier, but a barrier needs the
-  whole thread group at the same point, and the two console waves of a 128-thread group branch independently. It would
-  take either supersteps (run every thread to its next wave operation, barrier, exchange, repeat) or invocations that
-  each run W/H lanes; neither is built.
+- Mesh programs the window analysis rejects run correctly on narrower waves only in the superstep form, which needs
+  mesh shaders (there is no superstep form of the mesh fallback).
 - Mesh lane numbers assume `SV_GroupIndex` fills hardware lanes in order. Drivers do this; D3D12 does not promise it.
 
 ## Runtime headers
@@ -297,11 +334,10 @@ Translates every `*.fssm` (in name order; `--step K` takes every K-th, `--limit 
 `<out>/<name>.hlsl`, compiles it to `<name>.dxil` and writes `<out>/results.json`. `--cache` keeps translations and
 DXIL between runs (see Cache). `--retry` re-runs only programs whose status in that file is not final and merges the
 results. `--no-compile` skips dxc. `--dispatch` emits the dispatch form instead of structured control flow (see Control
-flow). `--mesh-fallbacks` builds the mesh fallback for every mesh program that compiles natively too, for GPUs without
-mesh shaders; its reason in results.json is `fallback ok` or the fallback's error.
-`--native-waves` turns wave emulation off (see Wave size). A compute program pinned to 64 lanes also gets
-`<name>.w32.hlsl`/`.dxil` where possible; its reason in results.json says so. `--mesh-fallbacks` also compiles the
-mesh fallback of every mesh program that compiles (reason `fallback ok`), for GPUs without mesh shaders. A compiling
+flow). `--native-waves` turns wave emulation off (see Wave size). A compute program pinned to 64 lanes, and a mesh program
+with a floor above 4 (its superstep form), also gets `<name>.w32.hlsl`/`.dxil` where possible; its reason in
+results.json says so (`wave32 variant ok`). `--mesh-fallbacks` also compiles the mesh fallback of every mesh program
+that compiles (reason `fallback ok`, after `; ` when there is a superstep form), for GPUs without mesh shaders. A compiling
 run ends by writing `variants.json` (see Variant selection). `--llvm-disassembler` disassembles with
 llvm-mc/llvm-objdump instead of `RdnaDecoder` (see Disassembly). Every 10 seconds the command prints programs done,
 elapsed time, estimated time left and finish time, and the cache counts.
@@ -457,7 +493,12 @@ or WARP is missing. WARP runs 4-lane waves only (a pipeline with any other `[Wav
 that need a full 32/64-lane wave are skipped, and `v_fma_f32` is compared unfused (see FMA above). The wave emulation
 is checked there with test-sized program waves of 2, 4, 16 and 64 lanes (wider, equal and narrower hardware waves), by
 the mesh program, which reads lanes by console number, and by running every wave64 compute case as its group-wave
-variant with full-wave expectations (including the two full-wave cases WARP otherwise skips). Pair-time linking is
+variant with full-wave expectations (including the two full-wave cases WARP otherwise skips). Mesh windows: a variant
+of the mesh program whose 4-lane waves skip regions their console wave runs (an SGPR written there, `v_readfirstlane`
+inside) is classified as right on 4 lanes and draws the reference; small programs check that an SGPR read after a
+skipped region or a first-lane read of a per-lane value keep the whole wave as floor. Supersteps: the mesh program in
+the superstep form, and a 128-thread group whose two console waves branch apart (first lane under EXEC, readlane 63, a
+ballot count, a readlane only one wave runs), give console results on 4-lane waves. Pair-time linking is
 checked with a VS whose two float2 outputs share a register while the PS reads one of them flat: unlinked the
 pipeline fails, linked it draws the flat value of the provoking vertex. Test
 classes run one at a time (`xunit.runner.json`): WARP crashes the test host when they run in parallel.

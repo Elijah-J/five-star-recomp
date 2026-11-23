@@ -3,6 +3,7 @@
 
 using FiveStar.Shaders.Disassembly;
 using FiveStar.Shaders.Translation.Core;
+using FiveStar.Shaders.Translation.Waves;
 
 namespace FiveStar.Shaders.Translation.Stages;
 
@@ -15,10 +16,32 @@ internal static class ProgramTranslator
     {
         // Compute programs pin their wave size instead; geometry programs run one lane per HLSL invocation.
         var emulate = options.EmulateWaveSize && !copyShader && stage is ShaderStage.Pixel or ShaderStage.Vertex or ShaderStage.Mesh;
-        var state = new TranslationState(program, instructions, stage, copyShader) { EmulateWaves = emulate };
+
+        return Emit(new TranslationState(program, instructions, stage, copyShader) { EmulateWaves = emulate }, options);
+    }
+
+    /// <summary>The superstep form of a mesh program (see Waves.SuperstepSplitter): console results on any hardware wave.</summary>
+    public static string TranslateSupersteps(ShaderProgram program, TranslationOptions options)
+    {
+        var state = new TranslationState(program, program.Instructions, ShaderStage.Mesh, false) { EmulateWaves = true, Supersteps = true };
+
+        return Emit(state, options with { StructuredControlFlow = false });
+    }
+
+    private static string Emit(TranslationState state, TranslationOptions options)
+    {
         var operands = new OperandAccess(state, new ImplicitInputs(state));
         var translator = new InstructionTranslator(state, operands, InstructionEmitters.Create(state, operands));
         new ControlFlowTranslator(state, operands, translator).Run();
+
+        if (state.Supersteps)
+        {
+            var splitter = new SuperstepSplitter();
+            var blocks = splitter.Split(state.Blocks);
+            state.Blocks.Clear();
+            state.Blocks.AddRange(blocks);
+            state.Hoisted.AddRange(splitter.Hoisted);
+        }
 
         var mesh = new MeshDeclarations(state);
         var body = new BodyWriter(state, mesh, new StructuredBodyWriter(state), options.StructuredControlFlow);

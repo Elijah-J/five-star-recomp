@@ -39,6 +39,12 @@ internal static class WaveOps
         return $"// program wave {wave}; console results on hardware waves >= {floor} lanes";
     }
 
+    /// <summary>The second header line of a mesh program that needs its whole console wave: the first reason found.</summary>
+    public static string NarrowerLine(string reason)
+    {
+        return $"// narrower hardware waves differ: {reason}";
+    }
+
     /// <summary>D3D12's narrowest wave.</summary>
     public const int NarrowestHardwareWave = 4;
 }

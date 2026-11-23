@@ -61,12 +61,14 @@ internal static class ManifestBuilder
             dxil = Existing(folder, result.Name + ".dxil");
         }
 
-        if (result.Reason == CorpusTranslator.GroupWaveReady)
+        var notes = (result.Reason ?? string.Empty).Split(CorpusTranslator.ReasonSeparator);
+
+        if (notes.Contains(CorpusTranslator.GroupWaveReady))
         {
             groupWave = Existing(folder, Path.ChangeExtension(result.Name + CorpusTranslator.GroupWaveSuffix, ".dxil"));
         }
 
-        if (result.Status == ProgramStatus.OkMeshFallback || result.Reason == CorpusTranslator.MeshFallbackReady)
+        if (result.Status == ProgramStatus.OkMeshFallback || notes.Contains(CorpusTranslator.MeshFallbackReady))
         {
             fallback = Fallback(folder, result.Name);
         }

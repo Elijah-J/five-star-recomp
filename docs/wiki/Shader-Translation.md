@@ -55,11 +55,11 @@ wave the GPU runs:
 | same as the console's | console results |
 | wider (AMD running a wave32 program in wave64) | console results: each part of the wave acts as one console wave |
 | narrower, pixel and vertex | console results unless the program reads a lane the narrower wave does not have |
-| narrower, mesh | only reads within the narrower wave are right |
+| narrower, mesh | console results when an analysis shows the narrower wave never needs the rest of the console wave (6,217 of 8,765 programs); the others get a "superstep" form that exchanges every wave operation through groupshared memory (2,511, slower) |
 
 Each translated program states the narrowest GPU wave on which it gives console results. Of the 1,982 lane-indexed
 pixel, vertex and mesh programs, all compile; on 32-lane GPUs 462 of the 907 wave64 pixel programs give console
-results, while 445 pixel, 1 vertex and 115 mesh programs read lanes such a GPU does not have. The [developer
+results, while 445 pixel and 1 vertex program read lanes such a GPU does not have; every mesh program that compiles natively runs correctly there, natively or in the superstep form. The [developer
 documentation](https://github.com/ThatMapleDev/five-star-recomp/blob/main/docs/shader-translation.md#wave-size) has the
 details and the limits.
 

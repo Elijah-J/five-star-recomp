@@ -9,7 +9,8 @@ namespace FiveStar.Cli.Shader;
 /// <summary>
 /// The pipelines of a translate run on one adapter: the form of every compiled program the adapter runs
 /// (<see cref="VariantSelector"/>): the native DXIL, the wave32 variant of a pinned compute program (kind
-/// <c>cs_w32</c>) or the mesh fallback as two pipelines (<c>msfb_cs</c>, <c>msfb_vs</c>). Programs are taken in
+/// <c>cs_w32</c>), the superstep form of a mesh program (<c>ms_w32</c>) or the mesh fallback as two pipelines
+/// (<c>msfb_cs</c>, <c>msfb_vs</c>). Programs are taken in
 /// results.json order, filtered by <c>--stages</c> and then thinned by <c>--step</c> and <c>--limit</c>.
 /// </summary>
 internal static class PsoTargets
@@ -17,6 +18,7 @@ internal static class PsoTargets
     private const string MeshFallbackCompute = "msfb_cs";
     private const string MeshFallbackVertex = "msfb_vs";
     private const string GroupWaveCompute = "cs_w32";
+    private const string SuperstepMesh = "ms_w32";
 
     public static List<PsoTarget> Read(string folder, CommandArguments arguments, AdapterInfo adapter)
     {
@@ -58,7 +60,11 @@ internal static class PsoTargets
 
         var kind = choice.Program.Stage;
 
-        if (choice.Outcome == ChoiceOutcome.Variant)
+        if (choice.Outcome == ChoiceOutcome.Variant && kind == "ms")
+        {
+            kind = SuperstepMesh;
+        }
+        else if (choice.Outcome == ChoiceOutcome.Variant)
         {
             kind = GroupWaveCompute;
         }

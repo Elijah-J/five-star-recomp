@@ -9,7 +9,8 @@ namespace FiveStar.Shaders.Compilation;
 /// <summary>
 /// Translates many FSSM programs and validates each with dxc: writes <c>&lt;name&gt;.hlsl</c> and <c>.dxil</c> (and the mesh
 /// fallback pair <c>.msfb_cs</c>/<c>.msfb_vs</c> where needed or asked for, the wave32 variant <c>.w32</c> of wave64-pinned compute
-/// programs), the runtime headers and results.json.
+/// programs and the superstep form <c>.w32</c> of mesh programs that need more lanes than D3D12's narrowest wave), the
+/// runtime headers and results.json.
 /// </summary>
 public sealed partial class CorpusTranslator
 {
@@ -24,7 +25,13 @@ public sealed partial class CorpusTranslator
     /// <summary>The reason of a mesh program whose fallback also compiled (<see cref="CorpusOptions.MeshFallbacks"/>).</summary>
     public const string MeshFallbackReady = MeshFallbackNote + " ok";
 
+    /// <summary>Between the notes of a mesh program with a superstep form and a fallback.</summary>
+    public const string ReasonSeparator = "; ";
+
     private const string Wave64Pin = "[WaveSize(64)]";
+
+    // D3D12's narrowest wave: a mesh program with a higher floor also gets its superstep form.
+    private const int NarrowestHardwareWave = 4;
     private const string GroupWaveNote = "wave32 variant";
     private const string MeshFallbackNote = "fallback";
 
@@ -149,7 +156,8 @@ public sealed partial class CorpusTranslator
 
         if (status == ProgramStatus.Ok && translated.Stage == ShaderStage.Mesh && options.MeshFallbacks && _fallback is not null)
         {
-            reason = MeshFallbackReason(_fallback.Compile(hlslPath, translated.Hlsl, translated.Hlsl.Length > _compiler.Options.LargeSourceLength));
+            var fallback = MeshFallbackReason(_fallback.Compile(hlslPath, translated.Hlsl, translated.Hlsl.Length > _compiler.Options.LargeSourceLength));
+            reason = string.Join(ReasonSeparator, new[] { reason, fallback }.OfType<string>());
         }
 
         return new ProgramResult(translated.Name, stageName, status, reason);
@@ -239,6 +247,11 @@ public sealed partial class CorpusTranslator
     /// </summary>
     private static GroupWaveVariant? GroupWave(ShaderProgram program, string hlsl, TranslationOptions options)
     {
+        if (program.Stage == ShaderStage.Mesh)
+        {
+            return MeshSupersteps(program, hlsl, options);
+        }
+
         if (program.Stage != ShaderStage.Compute || !hlsl.Contains(Wave64Pin, StringComparison.Ordinal))
         {
             return null;
@@ -249,6 +262,29 @@ public sealed partial class CorpusTranslator
             var structured = HlslTranslator.Translate(program, options with { StructuredControlFlow = true }).Hlsl;
 
             return new GroupWaveVariant(HlslTranslator.GroupWaveVariant(structured), null);
+        }
+        catch (UnsupportedProgramException exception)
+        {
+            return new GroupWaveVariant(null, Cut($"{GroupWaveNote}: {exception.Message}", CompileReasonLength));
+        }
+    }
+
+    /// <summary>
+    /// The superstep form of a mesh program whose floor is above the narrowest hardware wave
+    /// (<see cref="HlslTranslator.MeshSuperstepVariant"/>): console results on any wave; null for the others.
+    /// </summary>
+    private static GroupWaveVariant? MeshSupersteps(ShaderProgram program, string hlsl, TranslationOptions options)
+    {
+        var floor = Analysis.WaveFacts.Read(hlsl).Floor;
+
+        if (floor is null || floor <= NarrowestHardwareWave)
+        {
+            return null;
+        }
+
+        try
+        {
+            return new GroupWaveVariant(HlslTranslator.MeshSuperstepVariant(program, options), null);
         }
         catch (UnsupportedProgramException exception)
         {

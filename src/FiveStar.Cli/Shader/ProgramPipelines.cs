@@ -50,6 +50,7 @@ internal sealed class ProgramPipelines
             case "gs":
                 return Geometry(program);
             case "ms":
+            case "ms_w32":
                 return _builder.Mesh(new MeshProgram(program, null, [], Format.Unknown));
             case "vs+ps":
             case "msfb_vs+ps":

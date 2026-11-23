@@ -3,6 +3,7 @@
 
 using FiveStar.Shaders.Translation.Core;
 using FiveStar.Shaders.Translation.Structure;
+using FiveStar.Shaders.Translation.Waves;
 
 namespace FiveStar.Shaders.Translation.Stages;
 
@@ -45,7 +46,11 @@ internal sealed class BodyWriter
     {
         WriteDeclarations(lines);
 
-        if (!_state.HasControlFlow)
+        if (_state.Supersteps)
+        {
+            lines.AddRange(SuperstepWriter.Body(_state, _state.Hoisted, _mesh));
+        }
+        else if (!_state.HasControlFlow)
         {
             foreach (var block in _state.Blocks)
             {

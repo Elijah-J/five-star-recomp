@@ -63,6 +63,12 @@ internal sealed class TranslationState
     /// <summary>Wave operations keep console lane numbers on any hardware wave size (see TranslationOptions).</summary>
     public bool EmulateWaves { get; init; }
 
+    /// <summary>Mesh superstep form: wave operations exchange through groupshared memory, one group step each.</summary>
+    public bool Supersteps { get; init; }
+
+    /// <summary>Superstep form: temporaries declared at function scope because a step cuts their block.</summary>
+    public List<string> Hoisted { get; } = [];
+
     /// <summary>
     /// The widest aligned group of program lanes one cross-lane read may reach: a hardware wave at least this wide gives
     /// console results under wave emulation (<see cref="WaveOps.FloorLine"/>).

@@ -89,6 +89,21 @@ public static partial class HlslTranslator
     }
 
     /// <summary>
+    /// The superstep form of a mesh program for hardware waves narrower than its floor: every wave operation is a step of
+    /// the whole thread group through groupshared memory (rdna_superstep.hlsli), so the program gives console results on
+    /// any hardware wave. Throws <see cref="UnsupportedProgramException"/> when a statement cannot be cut into steps.
+    /// </summary>
+    public static string MeshSuperstepVariant(ShaderProgram program, TranslationOptions options)
+    {
+        if (program.Stage != ShaderStage.Mesh)
+        {
+            throw new UnsupportedProgramException("superstep: not a mesh program");
+        }
+
+        return ProgramTranslator.TranslateSupersteps(program, options);
+    }
+
+    /// <summary>
     /// Adds [WaveSize(n)] (compute only in SM 6.7) when the program reads other lanes by lane number. A wave64 program
     /// whose group has at most 32 threads never has lanes 32..63, so it gets the wave32 pin every GPU offers.
     /// </summary>

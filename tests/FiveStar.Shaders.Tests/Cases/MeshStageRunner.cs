@@ -27,6 +27,27 @@ public sealed partial class MeshStageRunner
     public const string FallbackRoot = "msfb_ngg_strips_rootdesc";
     public const string FallbackOverflow = "msfb_overflow_dropped";
 
+    /// <summary>
+    /// The program without the ds_bpermute round trip, with an SGPR the vertex region writes but nothing reads after
+    /// it, and the culled primitive's index taken with v_readfirstlane inside the primitive region: WARP's 4-lane waves
+    /// above the vertex and primitive counts skip those regions while their console wave runs them.
+    /// </summary>
+    public const string Windows = "ms_ngg_windows";
+
+    /// <summary>The program in the superstep form (HlslTranslator.MeshSuperstepVariant): its barrier and both phases as steps.</summary>
+    public const string Supersteps = "ms_ngg_supersteps";
+
+    private const string RoundTrip = """
+        v_xor_b32_e32 v30, 1, v1
+        v_lshlrev_b32_e32 v30, 2, v30
+        ds_bpermute_b32 v31, v30, v1
+        s_waitcnt lgkmcnt(0)
+        v_xor_b32_e32 v1, 1, v31
+        """;
+
+    private const string VertexRegion = "s_cbranch_execz .Lprim";
+    private const string PrimitiveRegion = "s_cbranch_execz .Lend";
+
     private const int Vertices = 18;
     private const int Primitives = 16;
     private const int Culled = 5;
@@ -103,7 +124,7 @@ public sealed partial class MeshStageRunner
         _fixture = fixture;
     }
 
-    public static IReadOnlyList<string> Variants => [Native, FallbackTable, FallbackRoot, FallbackOverflow];
+    public static IReadOnlyList<string> Variants => [Native, FallbackTable, FallbackRoot, FallbackOverflow, Supersteps];
 
     public IReadOnlyList<string> Run(string variant)
     {
@@ -114,7 +135,7 @@ public sealed partial class MeshStageRunner
         var bindings = new Bindings { UserSgprs = [(Primitives << 12) | Vertices, Culled, FloatBits.Of(AttributeBase)] };
         var image = Reference();
 
-        if (variant == Native)
+        if (variant is Native or Windows or Supersteps)
         {
             var result = _fixture.Runner.Mesh(new MeshJob(_fixture.Workbench.Compile(variant, mesh, "ms"), pixel, framebuffer, bindings, 1));
 
@@ -164,12 +185,27 @@ public sealed partial class MeshStageRunner
         return mismatches;
     }
 
-    private string Translate(string variant)
+    /// <summary>The translated program (HLSL) of a variant.</summary>
+    public string Translate(string variant)
     {
-        var assembled = _fixture.Workbench.Assemble(variant, Program, 64);
+        var source = Program;
+
+        if (variant == Windows)
+        {
+            source = Program.Replace(RoundTrip, string.Empty, StringComparison.Ordinal)
+                .Replace(VertexRegion, VertexRegion + "\ns_mov_b32 s40, 7", StringComparison.Ordinal)
+                .Replace(PrimitiveRegion, PrimitiveRegion + "\nv_mov_b32 v32, s9\nv_readfirstlane_b32 s9, v32", StringComparison.Ordinal);
+        }
+
+        var assembled = _fixture.Workbench.Assemble(variant, source, 64);
         var config = new ShaderConfig { Stage = HardwareStage.Ngg, WaveSize = 64, UserSgprs = 4, Ngg = new NggConfig(8, 0, 0), LdsBytes = 4 };
         var pipeline = new PipelineStateInfo { Stage = "ms", NumThreads = new ThreadGroupSize(64, 1, 1), MaxVertices = MaxOutputs, MaxPrimitives = MaxOutputs };
         var program = new ShaderProgram(ShaderStage.Mesh, assembled.Instructions, assembled.Code, ShaderSignatures.None, config, pipeline);
+
+        if (variant == Supersteps)
+        {
+            return HlslTranslator.MeshSuperstepVariant(program, new TranslationOptions(StructuredControlFlow: false, PinWaveSize: false, EmulateWaveSize: true));
+        }
 
         return ShaderWorkbench.Translate(program);
     }

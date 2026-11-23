@@ -50,5 +50,5 @@ Under Proton, run the same executables with `proton run`, with `STEAM_COMPAT_DAT
 and `STEAM_COMPAT_CLIENT_INSTALL_PATH` to the Steam folder.
 The loader result to compare with Windows is the import summary (825 imports, none unresolved) and the export calls.
 
-GPUs with 32-lane waves (NVIDIA, Apple) run the emulated wave; 561 pixel, vertex and mesh programs and 19 compute
+GPUs with 32-lane waves (NVIDIA, Apple) run the emulated wave; 446 pixel and vertex programs, 37 mesh programs and 19 compute
 programs read lanes a 32-lane wave does not have; see [Shader translation](Shader-Translation.md#wave-size).

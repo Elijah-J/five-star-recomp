@@ -14,7 +14,9 @@ namespace FiveStar.Shaders.Tests;
 /// <summary>
 /// The prelude's emulated wave operations (vw_*) on WARP's 4-lane waves for program waves wider, as wide and narrower
 /// (with pixel-style and mesh-style lane numbers): each thread must see its console wave (<see cref="ProgramWave"/>).
-/// A translated program names the narrowest hardware wave with console results from what its reads reach.
+/// A translated program names the narrowest hardware wave with console results from what its reads reach; a mesh
+/// program also from whether a narrower wave that skips a region sees the console's values after it (s40, written
+/// there) and whether its first-lane reads are the console's (v1 differs per lane).
 /// </summary>
 public sealed class WaveEmulationTests : IClassFixture<WarpFixture>
 {
@@ -69,6 +71,36 @@ public sealed class WaveEmulationTests : IClassFixture<WarpFixture>
         var assembled = _fixture.Workbench.Assemble($"floor_{floor}_{code.Length}", code + "\ns_endpgm", 64);
         var config = new ShaderConfig { Stage = HardwareStage.Pixel, WaveSize = 64 };
         var program = new ShaderProgram(ShaderStage.Pixel, assembled.Instructions, assembled.Code, ShaderSignatures.None, config, null);
+
+        Assert.StartsWith($"// program wave 64; console results on hardware waves >= {floor} lanes\n", ShaderWorkbench.Translate(program), StringComparison.Ordinal);
+    }
+
+    // Lanes 0..17 export from a region that the 64-lane console wave runs and a narrower hardware wave above them skips.
+    private const string SkippedRegion = """
+        v_mbcnt_lo_u32_b32 v1, -1, 0
+        v_mbcnt_hi_u32_b32 v1, -1, v1
+        s_mov_b32 s40, 0
+        v_mov_b32 v2, 0
+        v_cmp_gt_u32_e32 vcc, 18, v1
+        s_and_saveexec_b64 s[22:23], vcc
+        s_cbranch_execz .Lskip
+        s_mov_b32 s40, 1
+        v_cvt_f32_u32_e32 v2, v1
+        .Lskip:
+        s_mov_b64 exec, s[22:23]
+        """;
+
+    [WarpTheory]
+    [InlineData("v_mov_b32 v3, v2", 4)]
+    [InlineData("v_mov_b32 v3, s40", 64)]
+    [InlineData("v_readfirstlane_b32 s41, v1\nv_mov_b32 v3, s41", 64)]
+    public void A_mesh_program_states_whether_narrower_waves_give_console_results(string tail, int floor)
+    {
+        var code = $"{SkippedRegion}\n{tail}\nexp pos0 v2, v3, v2, v2 done\ns_endpgm";
+        var assembled = _fixture.Workbench.Assemble($"mesh_floor_{floor}_{tail.Length}", code, 64);
+        var config = new ShaderConfig { Stage = HardwareStage.Ngg, WaveSize = 64, UserSgprs = 4, Ngg = new NggConfig(8, 0, 0) };
+        var pipeline = new PipelineStateInfo { Stage = "ms", NumThreads = new ThreadGroupSize(128, 1, 1), MaxVertices = 128, MaxPrimitives = 128 };
+        var program = new ShaderProgram(ShaderStage.Mesh, assembled.Instructions, assembled.Code, ShaderSignatures.None, config, pipeline);
 
         Assert.StartsWith($"// program wave 64; console results on hardware waves >= {floor} lanes\n", ShaderWorkbench.Translate(program), StringComparison.Ordinal);
     }

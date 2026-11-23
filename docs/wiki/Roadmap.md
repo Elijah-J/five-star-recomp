@@ -25,8 +25,8 @@
 |---|---|
 | D3D12.X runtime | adapters, device, the bindless root signature and pipeline creation exist; no command translation yet |
 | Shader linking | real VS/MS+PS pairs link and build pipelines; values filled for inputs a producer never writes are not yet checked against real shading |
-| Wave size | emulated or pinned; still open: 19 compute programs with several waves per group need 64-lane waves, and 445 wave64 pixel, 1 vertex and 115 mesh programs read lanes a 32-lane GPU does not have ([details](Shader-Translation.md#wave-size)) |
-| Structured shader control flow | the default since a differential check on real programs (see [Status](Status.md)); the 3 largest programs still take 25 to 80 minutes in dxc |
+| Wave size | emulated or pinned; still open: 19 compute programs with several waves per group need 64-lane waves, 445 wave64 pixel and 1 vertex program read lanes a 32-lane GPU does not have, and 37 mesh programs that compile only through the mesh fallback need 64-lane waves ([details](Shader-Translation.md#wave-size)) |
+| Structured shader control flow | the default since a differential check on real programs (see [Status](Status.md)) |
 | Pipeline sweep | sampled runs done; a full run, and the AMD driver crashes on some pixel shaders, are open |
 | Call overhead benchmarks | GDK calls measured (58 ns per call); command translation needs the executable |
 | First frame | textured models draw with a real shader pair; depth and the game's material shaders are next |

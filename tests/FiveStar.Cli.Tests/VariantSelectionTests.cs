@@ -16,6 +16,7 @@ public sealed class VariantSelectionTests
     private static readonly ProgramVariants PinnedCompute = new("cs", "cs", "cs.dxil", null, null, 64, "cs.w32.dxil", null);
     private static readonly ProgramVariants Mesh = new("ms", "ms", "ms.dxil", 64, 32, null, null, new MeshFallbackFiles("ms.msfb_cs.dxil", "ms.msfb_vs.dxil"));
     private static readonly ProgramVariants WidePixel = new("ps", "ps", "ps.dxil", 64, 64, null, null, null);
+    private static readonly ProgramVariants WideMesh = new("wm", "ms", "wm.dxil", 64, 64, null, "wm.w32.dxil", null);
 
     [Fact]
     public void Wave_pins_mesh_support_and_floors_pick_the_form()
@@ -29,6 +30,9 @@ public sealed class VariantSelectionTests
         // The AMD driver may run a pixel shader on 32-lane waves, below the floor of 64.
         Assert.Equal(ChoiceOutcome.Incorrect, VariantSelector.Choose(Nvidia, WidePixel).Outcome);
         Assert.Equal(ChoiceOutcome.Incorrect, VariantSelector.Choose(Amd, WidePixel).Outcome);
+
+        // A mesh program that needs its whole console wave runs its superstep form on 32-lane waves.
+        Assert.Equal((ChoiceOutcome.Variant, "wm.w32.dxil"), Pick(Nvidia, WideMesh));
     }
 
     private static (ChoiceOutcome Outcome, string File) Pick(AdapterInfo adapter, ProgramVariants program)
