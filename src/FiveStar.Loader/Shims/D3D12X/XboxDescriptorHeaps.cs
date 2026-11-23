@@ -27,6 +27,9 @@ internal sealed unsafe class XboxDescriptorHeaps
     /// <summary>D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE (d3d12.h).</summary>
     private const int ShaderVisible = 1;
 
+    /// <summary>D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV (d3d12.h).</summary>
+    private const int ViewHeapType = 0;
+
     /// <summary>
     /// XMemAlloc attributes of a descriptor range: allocator id 128 (bits 16..23) and object type 4 (bits 0..13), the
     /// pair the game's hook at 0x145eb2730 answers.
@@ -62,16 +65,16 @@ internal sealed unsafe class XboxDescriptorHeaps
     public int Create(nint device, DescriptorHeapDescription* description, Guid* iid, nint* heap)
     {
         var desktop = *description;
-        int hr = CreateDesktop(device, &desktop, iid, heap);
 
-        if (hr == HResult.InvalidArgument && desktop.Count > MaxShaderVisibleViews)
+        if ((desktop.Flags & ShaderVisible) != 0 && desktop.Type == ViewHeapType && desktop.Count > MaxShaderVisibleViews)
         {
-            // The game's shader-visible CBV/SRV/UAV heap has 1245184 descriptors, above the tier-2 limit: the heap
-            // shrinks to the limit and descriptors past it are unusable.
+            // The game's shader-visible CBV/SRV/UAV heap has 1245184 descriptors, above the limit the desktop runtime
+            // enforces: the heap shrinks to the limit and descriptors past it are unusable.
             desktop.Count = MaxShaderVisibleViews;
-            hr = CreateDesktop(device, &desktop, iid, heap);
             _log.Warn($"[d3d12_xs] descriptor heap of {description->Count} descriptors shrunk to {desktop.Count}: the desktop device takes no more");
         }
+
+        int hr = CreateDesktop(device, &desktop, iid, heap);
 
         _log.Detail($"  [d3d12_xs] CreateDescriptorHeap(type {description->Type}, {description->Count} descriptors, flags 0x{description->Flags:x}, node 0x{description->NodeMask:x}) -> {HResult.Format(hr)}");
 

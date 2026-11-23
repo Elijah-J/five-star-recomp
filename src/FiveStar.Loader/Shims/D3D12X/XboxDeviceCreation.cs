@@ -17,6 +17,7 @@ internal static unsafe class XboxDeviceCreation
     public const int CreateCommandAllocatorSlot = 9;
     public const int CreateCommandListSlot = 12;
     public const int CreateDescriptorHeapSlot = 14;
+    public const int GetResourceAllocationInfoSlot = 25;
     public const int CreateCommittedResourceSlot = 27;
     public const int CreateHeapSlot = 28;
     public const int CreatePlacedResourceSlot = 29;
@@ -24,10 +25,19 @@ internal static unsafe class XboxDeviceCreation
     public const int MakeResidentSlot = 34;
     public const int EvictSlot = 35;
     public const int CreateFenceSlot = 36;
+    public const int GetCopyableFootprintsSlot = 38;
+
+    /// <summary>ID3D12Device4::GetResourceAllocationInfo1 (d3d12.h) and the D3D12.X slot the game calls it through.</summary>
+    public const int GetResourceAllocationInfo1Slot = 56;
+    public const int XboxAllocationInfo1Slot = 108;
+
+    private static readonly Guid Device4Iid = new("e865df17-a9ee-46f9-a463-3098315aa2e5");
     public const int CreateQueryHeapSlot = 39;
     public const int CreateCommandSignatureSlot = 41;
 
     private static XboxObjects Objects => ShimContext.Runtime.D3D12X.Objects;
+
+    private static DesktopResourceDescriptions Descriptions => ShimContext.Runtime.D3D12X.Descriptions;
 
     [UnmanagedCallersOnly]
     public static int CreateCommandQueue(XboxObject* self, void* description, Guid* iid, nint* queue)
@@ -76,31 +86,78 @@ internal static unsafe class XboxDeviceCreation
     }
 
     [UnmanagedCallersOnly]
-    public static int CreateCommittedResource(XboxObject* self, void* properties, int flags, void* description, int state, void* clear, Guid* iid, nint* resource)
+    public static int CreateCommittedResource(XboxObject* self, void* properties, int flags, ResourceDescription* description, int state, void* clear, Guid* iid, nint* resource)
     {
         nint inner = self->Inner;
-        var create = (delegate* unmanaged<nint, void*, int, void*, int, void*, Guid*, nint*, int>)ComObject.Slot(inner, CreateCommittedResourceSlot);
+        var desktop = Descriptions.ToDesktop(inner, description);
+        var create = (delegate* unmanaged<nint, void*, int, ResourceDescription*, int, void*, Guid*, nint*, int>)ComObject.Slot(inner, CreateCommittedResourceSlot);
 
-        return Objects.WrapResult(create(inner, properties, flags, description, state, clear, iid, resource), XboxInterfaceKind.Resource, resource);
+        return Objects.WrapResult(create(inner, properties, flags, &desktop, state, clear, iid, resource), XboxInterfaceKind.Resource, resource);
     }
 
     [UnmanagedCallersOnly]
-    public static int CreatePlacedResource(XboxObject* self, nint heap, ulong offset, void* description, int state, void* clear, Guid* iid, nint* resource)
+    public static int CreatePlacedResource(XboxObject* self, nint heap, ulong offset, ResourceDescription* description, int state, void* clear, Guid* iid, nint* resource)
     {
         nint inner = self->Inner;
-        var create = (delegate* unmanaged<nint, nint, ulong, void*, int, void*, Guid*, nint*, int>)ComObject.Slot(inner, CreatePlacedResourceSlot);
-        int hr = create(inner, Objects.Unwrap(heap), offset, description, state, clear, iid, resource);
+        var desktop = Descriptions.ToDesktop(inner, description);
+        var create = (delegate* unmanaged<nint, nint, ulong, ResourceDescription*, int, void*, Guid*, nint*, int>)ComObject.Slot(inner, CreatePlacedResourceSlot);
+        int hr = create(inner, Objects.Unwrap(heap), offset, &desktop, state, clear, iid, resource);
 
         return Objects.WrapResult(hr, XboxInterfaceKind.Resource, resource);
     }
 
     [UnmanagedCallersOnly]
-    public static int CreateReservedResource(XboxObject* self, void* description, int state, void* clear, Guid* iid, nint* resource)
+    public static int CreateReservedResource(XboxObject* self, ResourceDescription* description, int state, void* clear, Guid* iid, nint* resource)
     {
         nint inner = self->Inner;
-        var create = (delegate* unmanaged<nint, void*, int, void*, Guid*, nint*, int>)ComObject.Slot(inner, CreateReservedResourceSlot);
+        var desktop = Descriptions.ToDesktop(inner, description);
+        var create = (delegate* unmanaged<nint, ResourceDescription*, int, void*, Guid*, nint*, int>)ComObject.Slot(inner, CreateReservedResourceSlot);
 
-        return Objects.WrapResult(create(inner, description, state, clear, iid, resource), XboxInterfaceKind.Resource, resource);
+        return Objects.WrapResult(create(inner, &desktop, state, clear, iid, resource), XboxInterfaceKind.Resource, resource);
+    }
+
+    /// <summary>
+    /// Slot 25 with the console's struct-return order (result in rcx, device in rdx): the descs made desktop ones. The
+    /// game breaks into the debugger when the size does not fit 32 bits (0x140344196), which a rejected desc gives.
+    /// </summary>
+    [UnmanagedCallersOnly]
+    public static ResourceAllocationInfo* GetResourceAllocationInfo(ResourceAllocationInfo* result, XboxObject* self, uint visibleMask, uint count, ResourceDescription* descriptions)
+    {
+        nint inner = self->Inner;
+
+        return QueryAllocationInfo(inner, ComObject.Slot(inner, GetResourceAllocationInfoSlot), result, visibleMask, count, descriptions, null);
+    }
+
+    /// <summary>
+    /// Slot 108, GetResourceAllocationInfo1 (ID3D12Device4, *inferred*: struct return, mask, count, descs, per-desc
+    /// offsets; call at 0x140abfe07, the same check as slot 25 follows). Answered by the desktop ID3D12Device4.
+    /// </summary>
+    [UnmanagedCallersOnly]
+    public static ResourceAllocationInfo* GetResourceAllocationInfo1(ResourceAllocationInfo* result, XboxObject* self, uint visibleMask, uint count, ResourceDescription* descriptions, void* infos)
+    {
+        Guid iid = Device4Iid;
+        nint device4 = 0;
+        nint inner = self->Inner;
+
+        if (HResult.Failed(((delegate* unmanaged<nint, Guid*, nint*, int>)ComObject.Slot(inner, ComObject.QueryInterfaceSlot))(inner, &iid, &device4)))
+        {
+            return QueryAllocationInfo(inner, ComObject.Slot(inner, GetResourceAllocationInfoSlot), result, visibleMask, count, descriptions, null);
+        }
+
+        QueryAllocationInfo(device4, ComObject.Slot(device4, GetResourceAllocationInfo1Slot), result, visibleMask, count, descriptions, infos);
+        ComObject.Release(device4);
+
+        return result;
+    }
+
+    /// <summary>GetCopyableFootprints with the desc made a desktop one.</summary>
+    [UnmanagedCallersOnly]
+    public static void GetCopyableFootprints(XboxObject* self, ResourceDescription* description, uint first, uint count, ulong baseOffset, void* layouts, uint* rows, ulong* rowSizes, ulong* totalBytes)
+    {
+        nint inner = self->Inner;
+        var desktop = Descriptions.ToDesktop(inner, description);
+        var query = (delegate* unmanaged<nint, ResourceDescription*, uint, uint, ulong, void*, uint*, ulong*, ulong*, void>)ComObject.Slot(inner, GetCopyableFootprintsSlot);
+        query(inner, &desktop, first, count, baseOffset, layouts, rows, rowSizes, totalBytes);
     }
 
     [UnmanagedCallersOnly]
@@ -112,13 +169,35 @@ internal static unsafe class XboxDeviceCreation
         return Objects.WrapResult(create(inner, initialValue, flags, iid, fence), XboxInterfaceKind.Fence, fence);
     }
 
+    /// <summary>Desktop CreateCommandSignature with the D3D12.X argument type 0x69 read as a dispatch.</summary>
     [UnmanagedCallersOnly]
-    public static int CreateCommandSignature(XboxObject* self, void* description, nint rootSignature, Guid* iid, nint* signature)
+    public static int CreateCommandSignature(XboxObject* self, CommandSignatureDescription* description, nint rootSignature, Guid* iid, nint* signature)
     {
-        nint inner = self->Inner;
-        var create = (delegate* unmanaged<nint, void*, nint, Guid*, nint*, int>)ComObject.Slot(inner, CreateCommandSignatureSlot);
+        const int MaxArguments = 32;
 
-        return Objects.WrapResult(create(inner, description, rootSignature, iid, signature), XboxInterfaceKind.CommandSignature, signature);
+        if (description == null || description->ArgumentCount > MaxArguments)
+        {
+            return HResult.InvalidArgument;
+        }
+
+        var desktop = *description;
+        IndirectArgument* arguments = stackalloc IndirectArgument[MaxArguments];
+
+        for (uint i = 0; i < desktop.ArgumentCount; i++)
+        {
+            arguments[i] = description->Arguments[i];
+
+            if (arguments[i].Type == IndirectArgument.XboxDispatchType)
+            {
+                arguments[i].Type = IndirectArgument.DispatchType;
+            }
+        }
+
+        desktop.Arguments = arguments;
+        nint inner = self->Inner;
+        var create = (delegate* unmanaged<nint, CommandSignatureDescription*, nint, Guid*, nint*, int>)ComObject.Slot(inner, CreateCommandSignatureSlot);
+
+        return Objects.WrapResult(create(inner, &desktop, rootSignature, iid, signature), XboxInterfaceKind.CommandSignature, signature);
     }
 
     /// <summary>
@@ -137,5 +216,55 @@ internal static unsafe class XboxDeviceCreation
         var create = (delegate* unmanaged<nint, void*, Guid*, nint*, int>)ComObject.Slot(inner, slot);
 
         return Objects.WrapResult(create(inner, description, iid, result), kind, result);
+    }
+
+    /// <summary>
+    /// GetResourceAllocationInfo or GetResourceAllocationInfo1 (<paramref name="query"/>) on desktop copies of the
+    /// descs; the extra <paramref name="infos"/> argument is passed to both and read only by the second.
+    /// </summary>
+    private static ResourceAllocationInfo* QueryAllocationInfo(nint device, nint query, ResourceAllocationInfo* result, uint visibleMask, uint count, ResourceDescription* descriptions, void* infos)
+    {
+        const int MaxStackDescriptions = 16;
+        bool onStack = count <= MaxStackDescriptions;
+        ResourceDescription* stack = stackalloc ResourceDescription[MaxStackDescriptions];
+        ResourceDescription* desktop = onStack ? stack : (ResourceDescription*)NativeMemory.Alloc(count, (nuint)sizeof(ResourceDescription));
+
+        var call = (delegate* unmanaged<nint, ResourceAllocationInfo*, uint, uint, ResourceDescription*, void*, ResourceAllocationInfo*>)query;
+        ConvertDescriptions(device, descriptions, desktop, count);
+        call(device, result, visibleMask, count, desktop, infos);
+
+        // A refused UAV format gives the error size; the query runs again without the flag on those textures.
+        if (result->Size == ulong.MaxValue && RefuseUavs(descriptions, count))
+        {
+            ConvertDescriptions(device, descriptions, desktop, count);
+            call(device, result, visibleMask, count, desktop, infos);
+        }
+
+        if (!onStack)
+        {
+            NativeMemory.Free(desktop);
+        }
+
+        return result;
+    }
+
+    private static void ConvertDescriptions(nint device, ResourceDescription* descriptions, ResourceDescription* desktop, uint count)
+    {
+        for (uint i = 0; i < count; i++)
+        {
+            desktop[i] = Descriptions.ToDesktop(device, descriptions + i);
+        }
+    }
+
+    private static bool RefuseUavs(ResourceDescription* descriptions, uint count)
+    {
+        bool changed = false;
+
+        for (uint i = 0; i < count; i++)
+        {
+            changed |= Descriptions.RefuseUav(descriptions + i);
+        }
+
+        return changed;
     }
 }

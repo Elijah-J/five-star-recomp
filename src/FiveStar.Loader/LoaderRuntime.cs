@@ -8,6 +8,7 @@ using FiveStar.Loader.Loading;
 using FiveStar.Loader.Mods;
 using FiveStar.Loader.Shims;
 using FiveStar.Loader.Shims.Apu;
+using FiveStar.Loader.Shims.Bvh;
 using FiveStar.Loader.Shims.D3D12X;
 using FiveStar.Loader.Shims.D3D12X.Pipelines;
 using FiveStar.Loader.Shims.Ffx;
@@ -56,6 +57,7 @@ internal sealed class LoaderRuntime : IDisposable
         D3D12 = new D3D12Forwarder(log);
         D3D12X = new XboxDeviceFactory(D3D12, Stubs, CodeHeap, XMemPhysical, Images, pipelines, log);
         FidelityFx = new FidelityFxBridge(new XboxObjectResolver(D3D12X.Objects), log);
+        BvhBuilder = new BvhBuilderService(D3D12X.Objects, log);
 
         Gdk = CreateGdk(gdk, environment.Time);
         Overlay = new FileOverlay(Gdk.Config, log);
@@ -136,6 +138,9 @@ internal sealed class LoaderRuntime : IDisposable
     /// <summary>The console FidelityFX loader's entry points, forwarded to a PC FidelityFX DLL when one is given.</summary>
     public FidelityFxBridge FidelityFx { get; }
 
+    /// <summary>XboxBvhBuilder.dll's exports: sizes from the desktop device, no builds yet.</summary>
+    public BvhBuilderService BvhBuilder { get; }
+
     public GdkServices Gdk { get; }
 
     /// <summary>GameInputCreate and the gamepad, keyboard and mouse sources behind it.</summary>
@@ -154,6 +159,7 @@ internal sealed class LoaderRuntime : IDisposable
         Apu.Dispose();
         LastError.Dispose();
 
+        D3D12X.Dispose();
         XMemPhysical.Dispose();
     }
 

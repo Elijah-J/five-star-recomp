@@ -117,6 +117,39 @@ public sealed unsafe class PhysicalMemoryTests : IDisposable
         Assert.Equal(3, *(long*)whole);
     }
 
+    [Fact]
+    public void Pieces_mapped_out_of_order_from_one_allocation_lie_in_address_order_in_one_section()
+    {
+        const uint ReservePlaceholder = 0x42000;
+        const uint ReplacePlaceholder64K = 0x20406000;
+        const uint SplitPlaceholder = 0x8002;
+        const uint GpuReadWrite = 0x2004;
+        const int Pages = 4;
+
+        // The GPU pool at 0x141E86400: one placeholder split in two pieces, mapped later piece first from one allocation.
+        var pages = stackalloc ulong[Pages];
+        AllocatePages(pages, Pages);
+        nint whole = _virtualAlloc(0, (nuint)(Pages * Page), ReservePlaceholder, 0x7, 0x1);
+        Assert.NotEqual(0, Kernel32.VirtualFree(whole, (nuint)(2 * Page), SplitPlaceholder));
+
+        nint second = whole + (nint)(2 * Page);
+        Assert.Equal(whole, _virtualAlloc(whole, (nuint)(2 * Page), ReplacePlaceholder64K, 0x27, GpuReadWrite));
+        Assert.Equal(second, _virtualAlloc(second, (nuint)(2 * Page), ReplacePlaceholder64K, 0x27, GpuReadWrite));
+
+        Assert.Equal(second, _map(second, 2, pages));
+        Assert.Equal(whole, _map(whole, 2, pages + 2));
+
+        var memory = _test.Runtime.XMemPhysical;
+        Assert.True(memory.TryLocate(whole, out var chunk, out ulong offset));
+
+        for (int page = 1; page < Pages; page++)
+        {
+            Assert.True(memory.TryLocate(whole + (nint)(page * (long)Page), out var next, out ulong nextOffset));
+            Assert.Same(chunk, next);
+            Assert.Equal(offset + ((ulong)page * Page), nextOffset);
+        }
+    }
+
     public void Dispose()
     {
         _test.Dispose();

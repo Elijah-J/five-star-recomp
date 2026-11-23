@@ -92,6 +92,40 @@ public sealed unsafe class D3D12XObjectTests
         Assert.Equal(Marker, XboxDevice.ReadFirst(readback));
     }
 
+    [Fact]
+    public void Fence_slot_12_hands_out_a_completed_value_cell_that_follows_the_fence()
+    {
+        const int FenceSignalSlot = 10;
+        const int CompletedValueSlot = 12;
+        const ulong Value = 7;
+        using var test = TestRuntime.Create();
+        nint fence = new XboxDevice(test).Fence();
+
+        ulong* cell = ((delegate* unmanaged<nint, ulong*>)XboxDevice.Vtable(fence)[CompletedValueSlot])(fence);
+        Assert.Equal(0UL, *cell);
+        Assert.Equal(0, ((delegate* unmanaged<nint, ulong, int>)XboxDevice.Vtable(fence)[FenceSignalSlot])(fence, Value));
+
+        Assert.True(SpinWait.SpinUntil(() => Volatile.Read(ref *cell) == Value, TimeSpan.FromSeconds(5)));
+    }
+
+    [Fact]
+    public void A_gpu_address_in_memory_the_game_committed_translates_to_a_desktop_buffer()
+    {
+        const uint ReserveCommitLargePages = 0x20003000;
+        const uint GpuReadWrite = 0x2404;
+        const ulong Offset = 0x10010;
+
+        using var test = TestRuntime.Create();
+        var virtualAlloc = (delegate* unmanaged<nint, nuint, uint, ulong, uint, nint>)test.Shim("xmem.dll", "XMemVirtualAlloc");
+        nint address = virtualAlloc(0, 0x20000, ReserveCommitLargePages, 0x283, GpuReadWrite);
+        _ = new XboxDevice(test);
+        var memory = test.Runtime.D3D12X.GameMemory;
+
+        Assert.True(memory.TryTranslate((ulong)address, out ulong start));
+        Assert.True(memory.TryTranslate((ulong)address + Offset, out ulong inside));
+        Assert.Equal(start + Offset, inside);
+    }
+
     [UnmanagedCallersOnly]
     private static int Handler(nint self)
     {

@@ -70,6 +70,12 @@ internal sealed record HostOptions
     /// <summary>With --run, also trace calls to System32 imports.</summary>
     public bool TraceSystemCalls { get; set; }
 
+    /// <summary>The D3D12 debug layer, its messages and DRED in the loader log (<c>--d3d12-debug</c>).</summary>
+    public bool D3D12Debug { get; set; }
+
+    /// <summary>With the debug layer, also GPU-based validation (<c>--d3d12-gpu-validation</c>).</summary>
+    public bool D3D12GpuValidation { get; set; }
+
     public bool Verbose { get; set; }
 
     public bool ListSafeCalls { get; set; }

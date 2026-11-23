@@ -29,10 +29,33 @@ internal static unsafe class XboxDescriptorMethods
 
     [HotPath]
     [UnmanagedCallersOnly]
-    public static void CreateConstantBufferView(XboxObject* self, void* description, nint handle)
+    public static void CreateConstantBufferView(XboxObject* self, ConstantBufferViewDescription* description, nint handle)
     {
         nint inner = self->Inner;
-        ((delegate* unmanaged<nint, void*, nint, void>)ComObject.Slot(inner, CreateConstantBufferViewSlot))(inner, description, Handle(handle));
+        ConstantBufferViewDescription desktop = default;
+        ConstantBufferViewDescription* view = null;
+
+        // The console address becomes a desktop one and the size grows to the desktop's 256-byte granularity.
+        if (description != null)
+        {
+            desktop = *description;
+            desktop.Size = (desktop.Size + ConstantBufferViewDescription.Alignment - 1) & ~(ConstantBufferViewDescription.Alignment - 1);
+            view = &desktop;
+
+            if (desktop.Location != 0 && !D3D12X.GameMemory.TryTranslate(desktop.Location, out desktop.Location))
+            {
+                D3D12X.Warnings.Warn("cbv", "[d3d12_xs] CreateConstantBufferView: a GPU address outside known game memory, null view written");
+                view = null;
+            }
+            else if ((desktop.Location & (ConstantBufferViewDescription.Alignment - 1)) != 0)
+            {
+                // The console takes constant buffers at 16-byte boundaries; the desktop removes the device for these.
+                D3D12X.Warnings.Warn("cbv-alignment", "[d3d12_xs] CreateConstantBufferView: an address off the desktop's 256-byte alignment, null view written");
+                view = null;
+            }
+        }
+
+        ((delegate* unmanaged<nint, ConstantBufferViewDescription*, nint, void>)ComObject.Slot(inner, CreateConstantBufferViewSlot))(inner, view, Handle(handle));
     }
 
     [HotPath]

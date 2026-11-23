@@ -89,6 +89,7 @@ ntdll answers only for OS-loaded modules; mapping it lets the loader bind that i
 | `chad.dll` | XDsp connect, activate and submit return E_NOTIMPL; disconnect and deactivate 0 |
 | `xg_xs.dll` | `XGCreateTextureComputer` returns a texture address computer over the console tiling: layout, tiling, copies in and out ([xg.md](xg.md)); `XGSuggestSwizzleMode` writes 0x100 + a 4 KB or 64 KB mode |
 | `xcrdapi.dll` `DStorageGetFactory` | a CPU DirectStorage factory: files through the overlay, a worker thread per queue, overlapped unbuffered reads, zlib chunks inflated into system memory, status arrays; slots the game does not call return E_NOTIMPL logged once ([directstorage.md](directstorage.md)) |
+| `XboxBvhBuilder.dll` | the acceleration-structure builder class: prebuild sizes from the desktop device; builds, copies and rehydration logged once and skipped ([d3d12x-shim.md](d3d12x-shim.md)) |
 | `amd_fidelityfx_loader_xbox.dll` | the five FidelityFX API functions: forwarded to the PC DLL of `--ffx` with the D3D12.X objects unwrapped, else creation reports no provider and the jitter queries are answered ([middleware.md](middleware.md)) |
 | `RtlPcToFileHeader` (any module) | the mapped image containing the address, else the real ntdll function |
 | `AddVectoredExceptionHandler` (any module) | registered as asked; the fault reporter of `--run` then moves back in front |
@@ -311,6 +312,7 @@ fivestar-loader --load $dump\XboxBvhBuilder.dll --load $dump\Bink2Scarlett.dll -
 | `--input <file>` | the keyboard-and-mouse gamepad mapping |
 | `--shader-dir <dir>`, `--translated-dir <dir>` | extracted FSSM programs and their translated DXIL; with both, the D3D12.X pipeline slots create pipelines |
 | `--ffx <dll>` | the PC FidelityFX API DLL the game's FidelityFX calls go to ([middleware.md](middleware.md)) |
+| `--d3d12-debug`, `--d3d12-gpu-validation` | the D3D12 debug layer (and GPU-based validation) and DRED, with their messages and the removal report in the log ([d3d12x-shim.md](d3d12x-shim.md)); needs the Graphics Tools optional feature |
 | `--manual <a.dll,b.dll>`, `--system-crt`, `--search <dir>` | which modules the loader maps itself |
 | `--unresolved stub\|trap\|error`, `--no-shim <module!symbol>` | unresolved-import handling; disable one shim |
 | `--no-entry`, `--no-exports`, `--unload`, `--work-dir <dir>` | skip DllMain; skip the export listing; unload at the end; folder of the TLS host DLLs |

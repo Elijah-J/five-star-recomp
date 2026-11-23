@@ -3,6 +3,7 @@
 
 using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Native;
+using FiveStar.Loader.Shims.D3D12X.Pipelines;
 
 namespace FiveStar.Loader.Shims.D3D12X;
 
@@ -44,12 +45,14 @@ internal sealed unsafe class XboxPlacedResources
     private readonly List<nint> _runBuffers = [];
     private readonly XMemPhysicalMemory _memory;
     private readonly XboxObjects _objects;
+    private readonly OnceLog _warnings;
     private readonly LoaderLog _log;
 
-    public XboxPlacedResources(XMemPhysicalMemory memory, XboxObjects objects, LoaderLog log)
+    public XboxPlacedResources(XMemPhysicalMemory memory, XboxObjects objects, OnceLog warnings, LoaderLog log)
     {
         _memory = memory;
         _objects = objects;
+        _warnings = warnings;
         _log = log;
     }
 
@@ -57,15 +60,13 @@ internal sealed unsafe class XboxPlacedResources
     public AddressTable Addresses { get; } = new();
 
     /// <summary>Creates the buffers over the game's pages at <paramref name="address"/> and returns the first wrapped.</summary>
-    public int Create(nint device, ulong address, ResourceDescription* description, void* clear, nint* resource)
+    public int Create(nint device, ulong address, ResourceDescription* description, int initialLayout, void* clear, nint* resource)
     {
         *resource = 0;
 
         if (description->Dimension != ResourceDescription.BufferDimension)
         {
-            _log.Warn($"[d3d12_xs] ID3D12Device.X::Slot133 at 0x{address:x}: dimension {description->Dimension} is not a buffer (not implemented)");
-
-            return HResult.NotImplemented;
+            return CreateTexture(device, address, description, initialLayout, clear, resource);
         }
 
         lock (_gate)
@@ -92,6 +93,33 @@ internal sealed unsafe class XboxPlacedResources
         }
     }
 
+    /// <summary>
+    /// A texture at a game address. A desktop texture with the driver's layout cannot sit on a heap over game memory,
+    /// so it is a committed texture of its own: right for render targets and other GPU-written textures, while data
+    /// the CPU writes at the address does not reach it. GetGPUVirtualAddress still answers the game's address.
+    /// </summary>
+    private int CreateTexture(nint device, ulong address, ResourceDescription* description, int initialLayout, void* clear, nint* resource)
+    {
+        _warnings.Warn("slot133-texture", "[d3d12_xs] ID3D12Device.X::Slot133: textures at game addresses become committed desktop textures, not shared with game memory");
+        var desktop = ShimContext.Runtime.D3D12X.Descriptions.ToDesktop(device, description);
+
+        int* properties = stackalloc int[] { DefaultHeapType, 0, 0, 0, 0 };
+        Guid iid = ResourceIid;
+        nint inner = 0;
+        var create = (delegate* unmanaged<nint, int*, int, ResourceDescription*, int, void*, Guid*, nint*, int>)ComObject.Slot(device, DesktopCreateCommittedResourceSlot);
+        int hr = create(device, properties, NoHeapFlags, &desktop, BarrierLayouts.ToState(initialLayout), clear, &iid, &inner);
+        _log.Detail($"  [d3d12_xs] ID3D12Device.X::Slot133 texture at 0x{address:x}: dimension {description->Dimension}, {description->Width}x{description->Height}, format {description->Format}, layout {initialLayout} -> {HResult.Format(hr)}");
+
+        if (HResult.Failed(hr))
+        {
+            return _objects.WrapResult(hr, XboxInterfaceKind.Resource, resource);
+        }
+
+        *resource = _objects.WrapResource(inner, address);
+
+        return hr;
+    }
+
     /// <summary>One placed buffer per mapped run; returns the first, keeps the others alive.</summary>
     private nint PlaceRuns(nint device, ulong address, ResourceDescription* description, List<PageRun> runs)
     {
@@ -104,6 +132,7 @@ internal sealed unsafe class XboxPlacedResources
                 continue;
             }
 
+            _log.Detail($"  [d3d12_xs]   run +0x{run.Start:x} 0x{run.Length:x} bytes at section offset 0x{run.Offset:x} (section 0x{run.Chunk.Section:x})");
             var desktop = DesktopBuffer(description);
             desktop.Width = run.Length;
             desktop.Flags |= AllowCrossAdapter;

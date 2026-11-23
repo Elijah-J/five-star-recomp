@@ -25,6 +25,7 @@ internal sealed unsafe class XMemPhysicalMemory : IDisposable
     private readonly nint _process;
     private readonly XMemPageStore _pages;
     private readonly XMemReservationTable _reservations = new();
+    private readonly List<(nint Address, nuint Size)> _placeholders = [];
 
     public XMemPhysicalMemory(LoaderLog log)
     {
@@ -47,7 +48,7 @@ internal sealed unsafe class XMemPhysicalMemory : IDisposable
 
         if ((allocationType & MemoryConstants.MemReservePlaceholder) != 0)
         {
-            result = ReservePlaceholder(address, size);
+            result = ReserveGamePlaceholder(address, size);
         }
         else if ((allocationType & MemoryConstants.MemPhysical) != 0 && (allocationType & Win32Constants.MemCommit) == 0)
         {
@@ -201,7 +202,7 @@ internal sealed unsafe class XMemPhysicalMemory : IDisposable
             return reservation.Unmap(address);
         }
 
-        if (!_pages.TryLocate(frame, out var chunk, out ulong offset))
+        if (!_pages.TryLocate(frame, address, reservation.Origin, out var chunk, out ulong offset))
         {
             return false;
         }
@@ -217,6 +218,41 @@ internal sealed unsafe class XMemPhysicalMemory : IDisposable
         {
             reservation.Coalesce();
         }
+    }
+
+    /// <summary>A placeholder the game splits into reservations itself; remembered as their common origin.</summary>
+    private nint ReserveGamePlaceholder(nint address, nuint size)
+    {
+        nint result = ReservePlaceholder(address, size);
+
+        if (result != 0)
+        {
+            lock (_placeholders)
+            {
+                _placeholders.Add((result, size));
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>The game placeholder holding <paramref name="address"/> (the last one made there), else the address.</summary>
+    private nint OriginOf(nint address)
+    {
+        lock (_placeholders)
+        {
+            for (int i = _placeholders.Count - 1; i >= 0; i--)
+            {
+                var (start, size) = _placeholders[i];
+
+                if ((nuint)(address - start) < size)
+                {
+                    return start;
+                }
+            }
+        }
+
+        return address;
     }
 
     private nint ReservePlaceholder(nint address, nuint size)
@@ -236,7 +272,7 @@ internal sealed unsafe class XMemPhysicalMemory : IDisposable
 
         if (result != 0)
         {
-            _reservations.Add(new XMemReservation(_process, result, size, ViewProtection(protect)));
+            _reservations.Add(new XMemReservation(_process, result, size, ViewProtection(protect), OriginOf(result)));
         }
 
         return result;

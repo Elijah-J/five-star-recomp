@@ -49,8 +49,9 @@ the console-type query (0x1455deb88) returns 6 and 24 GiB otherwise. The same `s
 
 ## Calling convention
 
-- Methods that return a struct take the return buffer in rcx and the object in rdx (slot 25 at 0x14034413f, slot 26
-  at 0x14247870d). The desktop ABI is the other way round.
+- Device methods that return a struct take the return buffer in rcx and the object in rdx (slot 25 at 0x14034413f,
+  slot 26 at 0x14247870d, slot 108 at 0x140abfe07). The desktop ABI is the other way round. Resource GetDesc (slot
+  10) uses the desktop order (object in rcx, call at 0x14501f80b).
 - AddRef and Release are ordinary vtable calls (slots 1 and 2); the game does not touch reference counts directly.
 
 ## Vtable census
@@ -84,15 +85,19 @@ should create. From slot 44 on the order is not desktop's.
 | 48 | 0x180 | 4 | X: create command queue | queue IID, desc, IID, out |
 | 49, 50 | 0x188, 0x190 | 1 each | X | |
 | 55, 57, 62, 67, 86 | | 1 each | X: create pipeline state (five variants, [d3d12x-pipelines.md](d3d12x-pipelines.md)) | pipeline-state IID |
-| 61 | 0x1E8 | 1 | X | |
-| 70, 71 | 0x230, 0x238 | 6, 2 | X: ray-tracing related (*inferred*) | desc carries 0x20004 at +0x30 |
+| 61 | 0x1E8 | 1 | X: create sampler (*inferred*) | (0x6c-byte desc, CPU handle); the game then copies a sampler descriptor (0x1412b9800) |
+| 70 | 0x230 | 6 | X: create SRV without a resource object (*inferred*) | (D3D12_RESOURCE_DESC, 64-byte view desc: desktop SRV desc + GPU address at +0x28, CPU handle) (0x144ecc800) |
+| 71 | 0x238 | 2 | X | |
 | 73 | 0x248 | 3 | X: create command list | (16-byte desc, allocator, PSO, IID, out) |
-| 74, 78, 81 | | 1 each | X | |
+| 74 | 0x250 | 1 | X: register a mapped range (*inferred*) | (address, 0x185c0 pages, 8-byte out) after mapping the streaming range (0x141e6c2bb) |
+| 78, 81 | | 1 each | X | |
 | 79 | 0x278 | 3 | X | |
 | 80 | 0x280 | 3 | X: WaitFrameEventX (*inferred*) | (type, timeout, null, flags, UINT64* in/out) |
 | 101 | 0x328 | 1 | X: create state object | state-object IID |
-| 108, 119, 127, 132 | | 1-2 each | X | |
-| 133 | 0x428 | 3 | X: create resource at a GPU address (*inferred*) | (address, desc, state, clear, resource IID, out) |
+| 108 | 0x360 | 1 | X: GetResourceAllocationInfo1 (*inferred*) | struct return, mask, count, descs, per-desc infos |
+| 119, 132 | | 1-2 each | X | |
+| 127 | 0x3F8 | 1 | X: create committed resource (*inferred*) | CreateCommittedResource3 arguments: initial barrier layout, no castable formats (0x14193e1b4) |
+| 133 | 0x428 | 3 | X: create resource at a GPU address (*inferred*) | (address, desc, initial barrier layout, clear, resource IID, out) |
 
 ### Command queue
 
@@ -186,10 +191,10 @@ wrapper.
 | Device | 1 to 43 | desktop order; 25, 26, 43 swap; views (18 to 21), 31, 42 unwrap |
 | Command queue | 13 to 20 | desktop slot + 2; Signal and Wait unwrap the fence; 20 (GetDesc) swaps |
 | Command allocator | 8 | desktop (*inferred*) |
-| Command list | 8 to 25, 33 to 40, 50 to 52, 70 | as in the table above; Reset, ClearState, copies and SetPipelineState unwrap |
-| Resource | 8 to 14 | desktop (*inferred*); 10 (GetDesc) swaps |
+| Command list | 8 to 25, 33 to 40, 50 to 52, 70, 139 | as in the table above; 139 is Reset with a third argument (0x142474cce); Reset, ClearState, copies and SetPipelineState unwrap |
+| Resource | 8 to 14 | desktop |
 | Heap, descriptor heap | 8 | GetDesc, swaps |
-| Fence | 8 to 10 | desktop (*inferred*) |
+| Fence | 8 to 10 | desktop (*inferred*); 12 is a handler |
 | Query heap, command signature | none past the base slots | |
 
 The command-list wrapper is 4 KiB and zeroed: write pointer and limits stay 0, so every inline command calls its
@@ -199,16 +204,22 @@ slot. Slots taking GPU addresses (41 to 48) stay stubs until console addresses a
 
 | Interface | Slot | Handler |
 |---|---|---|
-| Device | 8, 9, 12, 14, 27 to 30, 36, 39, 41 | desktop creation, result wrapped; wrapped heap, allocator and PSO arguments unwrapped |
+| Device | 8, 9, 12, 14, 27 to 30, 36, 39, 41 | desktop creation, result wrapped; wrapped heap, allocator and PSO arguments unwrapped; resource descs made desktop ones (below); in command signatures the X-only argument type 0x69 (12 bytes, built next to a DISPATCH one) becomes DISPATCH |
+| Device | 25, 38, 108 | allocation info (108 through ID3D12Device4::GetResourceAllocationInfo1) and footprints on desktop descs; the game breaks into the debugger when a size does not fit 32 bits (0x140344196) |
 | Device | 17 to 24 | view creation and descriptor copies with CPU handles translated (below) |
 | Device | 34, 35 | MakeResident, Evict: S_OK (desktop objects are resident from creation) |
 | Device | 48, 73 | compute queues (flags reduced to DISABLE_GPU_TIMEOUT) and command lists, wrapped |
+| Device | 61, 70 | a trilinear wrapping sampler, and a null SRV of the view's dimension (no desktop resource at console addresses yet); each logged once |
+| Device | 74 | logged, output zeroed, S_OK |
+| Device | 127 | committed resource (below) |
 | Device | 78, 79 | SetFrameIntervalX, ScheduleFrameEventX (*inferred*): logged, S_OK |
 | Device | 80 | logged stub returning S_OK |
 | Device | 133 | buffer at a game address (below) |
 | Command queue | 12, 35 | unwrap up to 256 lists per call and run desktop ExecuteCommandLists; 35 ignores its frame object and flags |
 | Command queue | 32 | logged stub returning S_OK (no swap chain yet) |
-| Resource | 11 | the console address for a slot-133 buffer, else the desktop GPU address |
+| Resource | 2 | Release that also frees a slot-127 resource's title memory |
+| Resource | 11 | the console address for a slot-133 resource, else the desktop GPU address |
+| Fence | 2, 12 | 12 returns a cell holding the completed value, which the game polls (0x144fb0ad0); a mirror thread keeps every such cell current (SetEventOnCompletion(value + 1) on a shared event) |
 | Descriptor heap | 9, 10 | heap start handles returned in rax; 9 returns the title memory when the heap has some |
 
 ### Game memory on the GPU
@@ -221,24 +232,74 @@ pages contiguous in one section; each run becomes a buffer placed at its section
 ALLOW_CROSS_ADAPTER (required on such heaps) and the game's flags reduced to UNORDERED_ACCESS (it passes 0x20004).
 The game's resource is the first run's buffer; GetGPUVirtualAddress returns the console address; every run's
 console range and desktop GPU address go into `XboxPlacedResources.Addresses`, the translation the command-list
-and descriptor work will use (on the console GPU address == CPU address). A reserved buffer with tile mappings onto
-these heaps removes the device, so one resource cannot span sections. A range with no mapped page gets a committed
-buffer that is not shared.
+and descriptor work will use (on the console GPU address == CPU address). UpdateTileMappings does not take these
+(cross-adapter) heaps, so one resource cannot span sections; the page store therefore gives a multi-page allocation
+consecutive pages of one section, in the address order of the placeholder it is mapped into
+([physical-memory.md](physical-memory.md)). The game's 0xAE00000-byte pool (three pieces of one placeholder, mapped
+later piece first) is one run and one buffer. A range with no mapped page gets a committed buffer that is not shared.
+A texture at a game address becomes a committed desktop texture of its own: right for render targets, while data
+the CPU writes at the address does not reach it.
+
+Memory the game commits itself (XMemVirtualAlloc with MEM_COMMIT, such as the 2.2 GiB heap with PAGE_GRAPHICS_*
+protection) is GPU memory on the console too. The first console GPU address there that the table misses opens the
+whole VirtualAlloc allocation as a heap (OpenExistingHeapFromAddress) with one placed buffer over it
+(`XboxGameMemoryBuffers`). CBVs (slot 17) translate their address this way and grow to 256 bytes; an address
+outside known memory or off the desktop's 256-byte alignment (the console takes 16) gets a null CBV, logged once.
+
+**Resource descs.** Before the desktop sees one: flag bits above 0x1FF dropped (0x20000 on GPU-memory buffers,
+0x300000 on textures), a console layout (0x100 + XG swizzle mode, set at 0x1403440f7) made UNKNOWN, and
+ALLOW_UNORDERED_ACCESS dropped from textures whose format has no typed UAV store, or that the runtime refuses
+anyway (B5G5R5A1_UNORM: the refused allocation-info query runs again without the flag).
+
+**Committed resources (slot 127).** Created in the state of the initial barrier layout (buffers COMMON), heap flags
+0 (the game passes 8). On the console D3D12.X takes their memory from the title's XMemAlloc hook, and the game checks
+it: around its two 4K render targets (0x14247ad10) it pushes a hook for D3D allocations with page-size field 2 that
+hands out a 64 MiB region, and breaks into the debugger unless all but 2 MiB of it was used. The shim allocates the
+desktop size with attributes 0x11808000 (allocator 128, page size 2, 64 KiB alignment) and frees it with the resource.
+
+**Root signatures.** `D3D12SerializeVersionedRootSignature` drops the flag bits above 0xFFF (`XboxBvhBuilder.dll`
+passes 0x3000000) and logs the serializer's message when it still fails.
+
+**XboxBvhBuilder.dll.** Its constructor builds compute pipelines from console shader code (device slot 62) and
+throws when that fails. Its seven exports bind to shims: prebuild sizes from the desktop's
+GetRaytracingAccelerationStructurePrebuildInfo, builds, copies and rehydration logged once and skipped.
 
 Descriptor heaps (`XboxDescriptorHeaps`): a shader-visible heap takes title memory from the game's hook (allocator
 id 128, object type 4); slot 9 returns it and `Handles` maps it onto the desktop heap's CPU handles, which slots 17
 to 24 translate. The GPU start stays the desktop one, so the GPU handles the game derives are desktop handles. A
 heap above 1,000,000 descriptors (the tier-2 limit) is created at the limit, with a warning.
 
+### Debug layer
+
+`--d3d12-debug` turns on the D3D12 debug layer before the device is created (`--d3d12-gpu-validation` adds
+GPU-based validation) and DRED auto-breadcrumbs and page-fault reporting. The debug layer needs the Graphics Tools
+optional feature (`d3d12SDKLayers.dll`); without it a warning says so and only DRED is on. Info-queue messages go to
+the log through ID3D12InfoQueue1::RegisterMessageCallback on the thread that caused them: errors and corruption
+with the mapped frames that made the call, warnings as warnings, the rest as details. Without the callback the
+stored messages are drained after a failed creation. A private fence waiting for UINT64_MAX notices device
+removal when it happens; the removal reason, the stored messages and the DRED breadcrumbs and page-fault
+allocations are then logged once.
+
 ### Boot
 
-With these, boot passes device set-up, slot 133 (four page runs of 0xAE00000 bytes) and the descriptor heaps, then
-calls device slot 70 (stub) at 0x144ecc81b; the next CreateCommandAllocator fails because the desktop device was
-removed with DXGI_ERROR_INVALID_CALL, and the game stops at the `int3` at 0x1419f4f58.
-
+The device removal after the descriptor heaps was a CreateUnorderedAccessView (call from 0x141647616): a raw
+R32_TYPELESS view over the whole 0xAE00000-byte slot-133 pool, on the first of four placed buffers (0x1B00000
+bytes). With the pool in one buffer, boot passed, in order: GetResourceAllocationInfo with console flags and layouts
+(0x140344196), the render-target budget (slot 127, 0x14247af2d), root-signature flags in XboxBvhBuilder.dll, its
+console compute pipelines, command-signature argument type 0x69, slot 74 (0x141e6c2c5), slot 108 (0x140abfe1b),
+slot-133 textures, list slot 139 (0x142474ce1), resource GetDesc register order, the first ExecuteCommandLists,
+WaitFrameEventX (device 80) and the first present (queue 32, a stub), then texture formats refused as UAVs, fence
+slot 12 (0x144fb0b03) and unaligned CBVs. The frame loop then records graphics work: with the pipeline slots
+stubbed (no `--shader-dir`), descriptor heaps never bound on lists (list slots 26 to 28 unknown) and descriptor
+handles the game derives itself, the driver faults in SetGraphicsRootDescriptorTable (list slot 36, call at
+0x1400321ff).
 ## Unknown
 
-- What removes the desktop device after the descriptor heaps; device slot 70 (ray-tracing related, 6 sites).
+- The fields of the slot-61 sampler desc and the 64-byte slot-70 view desc past the address; device slot 71;
+  what slot 74's output is; whether list slot 139's third argument is flags.
+- Resources at console GPU addresses for slot-70 views and slot-133 textures, and textures the CPU fills, which
+  need desktop textures fed from game memory (console tiling, streaming through the scatter-mapped range).
+- CBVs at addresses the desktop cannot express (16-byte aligned); the allocator's slot 9 (callback, context).
 - List slots 26 to 32, 53 to 60, 62 and above 70; the list slots that take wrapped resources inside structures
   (barriers, texture copies) and GPU addresses.
 - Device slots 44 to 133 apart from those named above; the meaning of the desc dwords of slots 48 and 73.

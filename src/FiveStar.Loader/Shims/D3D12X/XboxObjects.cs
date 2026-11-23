@@ -6,6 +6,7 @@ using FiveStar.Loader.Codegen;
 using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Loading;
 using FiveStar.Loader.Native;
+using FiveStar.Loader.Shims.D3D12X.DebugLayer;
 
 namespace FiveStar.Loader.Shims.D3D12X;
 
@@ -30,6 +31,7 @@ internal sealed unsafe class XboxObjects
     private readonly Dictionary<(XboxInterfaceKind Kind, int Slot), nint> _handlers = [];
     private readonly UnresolvedStubs _stubs;
     private readonly CodeHeap _heap;
+    private readonly D3D12Debugging _debugging;
     private readonly LoaderLog _log;
     private readonly nint* _vtables;
     private readonly int _vtableBytes;
@@ -37,10 +39,11 @@ internal sealed unsafe class XboxObjects
     private nint _device;
     private nint _desktopDevice;
 
-    public XboxObjects(UnresolvedStubs stubs, CodeHeap heap, LoaderLog log)
+    public XboxObjects(UnresolvedStubs stubs, CodeHeap heap, D3D12Debugging debugging, LoaderLog log)
     {
         _stubs = stubs;
         _heap = heap;
+        _debugging = debugging;
         _log = log;
         _vtableBytes = XboxInterfaces.Count * XboxInterfaces.MaxSlotCount * sizeof(nint);
         _vtables = (nint*)NativeMemory.AllocZeroed((nuint)_vtableBytes);
@@ -48,6 +51,9 @@ internal sealed unsafe class XboxObjects
 
     /// <summary>The device wrapper the game holds (GetDevice on any child returns it); 0 before device creation.</summary>
     public nint Device => Volatile.Read(ref _device);
+
+    /// <summary>The desktop device behind <see cref="Device"/>; 0 before device creation.</summary>
+    public nint DesktopDevice => Volatile.Read(ref _desktopDevice);
 
     /// <summary>
     /// Binds <paramref name="slot"/> of <paramref name="kind"/>'s vtable to <paramref name="handler"/>, a native
@@ -115,6 +121,7 @@ internal sealed unsafe class XboxObjects
         if (HResult.Failed(hr))
         {
             _log.Warn($"[d3d12_xs] {XboxInterfaces.For(kind).Name} creation failed: {HResult.Format(hr)} (device removed reason {HResult.Format(RemovedReason())})");
+            _debugging.OnFailure();
 
             return hr;
         }
