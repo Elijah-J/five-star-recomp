@@ -21,6 +21,8 @@ internal static class HostUsage
                                  (default: first mapped exe, else the first --load)
           --patch-peb            also point PEB.ImageBaseAddress at the main image (off by default)
           --save-dir <dir>       XGameSave / local storage root (default: %LOCALAPPDATA%\FiveStar\GdkData\<TitleId>)
+          --shader-dir <dir>     extracted FSSM programs; with --translated-dir, D3D12.X pipeline creation is enabled
+          --translated-dir <dir> translated DXIL programs (fivestar shader translate)
           --gdk-abi <file>       XGameRuntime thunk ABI table: "clsid iid slot FunctionName" per line
           --input <file>         GameInput keyboard-and-mouse gamepad mapping ("setting value" per line)
           --ffx <dll>            PC FidelityFX API DLL (AMD FidelityFX SDK, DX12) the game's FidelityFX calls go to;

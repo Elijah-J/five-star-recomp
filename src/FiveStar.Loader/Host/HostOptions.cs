@@ -52,6 +52,12 @@ internal sealed record HostOptions
 
     public string? InputConfig { get; set; }
 
+    /// <summary>Extracted FSSM programs (`fivestar shader extract`) for pipeline creation.</summary>
+    public string? ShaderDirectory { get; set; }
+
+    /// <summary>Translated DXIL programs (`fivestar shader translate`) for pipeline creation.</summary>
+    public string? TranslatedDirectory { get; set; }
+
     /// <summary>The PC FidelityFX API DLL the console FidelityFX calls are forwarded to; null leaves FidelityFX off.</summary>
     public string? FidelityFxLibrary { get; set; }
 

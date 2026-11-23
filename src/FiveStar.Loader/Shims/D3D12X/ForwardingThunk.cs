@@ -5,18 +5,23 @@ using FiveStar.Loader.Codegen;
 
 namespace FiveStar.Loader.Shims.D3D12X;
 
-/// <summary>Tail-call thunks from a wrapper vtable slot to the same slot of the desktop object the wrapper holds.</summary>
+/// <summary>
+/// Tail-call thunks from a wrapper vtable slot to a slot of the desktop object the wrapper holds. No managed code runs
+/// on these calls, so they meet the [HotPath] rule by construction.
+/// </summary>
 internal static class ForwardingThunk
 {
     /// <summary>
-    /// <c>mov rcx,[rcx+inner]; mov rax,[rcx]; jmp [rax+slot*8]</c>, or for a struct-returning slot (object in rdx)
-    /// <c>mov rdx,[rdx+inner]; mov rax,[rdx]; xchg rcx,rdx; jmp [rax+slot*8]</c>. Stack arguments stay in place.
+    /// Unwraps the listed argument registers (<see cref="EmitUnwrap"/>), then <c>mov rcx,[rcx+inner]; mov rax,[rcx];
+    /// jmp [rax+desktop*8]</c>, or for a struct-returning slot (object in rdx) <c>mov rdx,[rdx+inner]; mov rax,[rdx];
+    /// xchg rcx,rdx; jmp [rax+desktop*8]</c>. Stack arguments stay in place.
     /// </summary>
-    public static nint Emit(CodeHeap heap, int slot, bool structReturn)
+    public static nint Emit(CodeHeap heap, ForwardedSlot slot, nint vtables, int vtableBytes)
     {
         var emitter = new X64Emitter();
+        EmitUnwraps(emitter, slot.Unwrap, vtables, vtableBytes);
 
-        if (structReturn)
+        if (slot.StructReturn)
         {
             emitter.LoadRdxFromRdx(D3D12XLayout.InnerOffset);
             emitter.LoadRaxFromRdx();
@@ -28,8 +33,47 @@ internal static class ForwardingThunk
             emitter.LoadRaxFromRcx();
         }
 
-        emitter.JmpRaxIndirect(slot * IntPtr.Size);
+        emitter.JmpRaxIndirect(slot.DesktopSlot * IntPtr.Size);
 
         return heap.Write(emitter.ToArray());
+    }
+
+    private static void EmitUnwraps(X64Emitter emitter, ArgumentRegisters registers, nint vtables, int vtableBytes)
+    {
+        if (registers.HasFlag(ArgumentRegisters.Rdx))
+        {
+            EmitUnwrap(emitter, X64Emitter.Rdx, vtables, vtableBytes);
+        }
+
+        if (registers.HasFlag(ArgumentRegisters.R8))
+        {
+            EmitUnwrap(emitter, X64Emitter.R8, vtables, vtableBytes);
+        }
+
+        if (registers.HasFlag(ArgumentRegisters.R9))
+        {
+            EmitUnwrap(emitter, X64Emitter.R9, vtables, vtableBytes);
+        }
+    }
+
+    /// <summary>
+    /// <c>test reg,reg; jz done; mov r10,[reg]; mov r11,vtables; sub r10,r11; cmp r10,bytes; jae done;
+    /// mov reg,[reg+inner]; done:</c>: a non-null pointer whose vtable lies in the shim's vtable block is a wrapper
+    /// and becomes its desktop object; anything else passes through.
+    /// </summary>
+    private static void EmitUnwrap(X64Emitter emitter, int register, nint vtables, int vtableBytes)
+    {
+        emitter.TestRegister(register);
+        int isNull = emitter.JzForward();
+        emitter.LoadR10FromRegister(register);
+
+        emitter.MovR11((ulong)vtables);
+        emitter.SubR10R11();
+        emitter.CmpR10((uint)vtableBytes);
+        int notWrapped = emitter.JaeForward();
+
+        emitter.LoadRegisterFromItself(register, D3D12XLayout.InnerOffset);
+        emitter.PatchJumpHere(isNull);
+        emitter.PatchJumpHere(notWrapped);
     }
 }

@@ -96,6 +96,10 @@ internal sealed class CommandLineParser
     {
         switch (option)
         {
+            case "--shader-dir":
+                return SetShaderDirectory();
+            case "--translated-dir":
+                return SetTranslatedDirectory();
             case "--classify":
                 return SetClassifyInput();
             case "--classify-out":
@@ -229,6 +233,20 @@ internal sealed class CommandLineParser
     private bool SetSaveDirectory()
     {
         _options.SaveDirectory = Path.GetFullPath(Next());
+
+        return true;
+    }
+
+    private bool SetShaderDirectory()
+    {
+        _options.ShaderDirectory = Path.GetFullPath(Next());
+
+        return true;
+    }
+
+    private bool SetTranslatedDirectory()
+    {
+        _options.TranslatedDirectory = Path.GetFullPath(Next());
 
         return true;
     }

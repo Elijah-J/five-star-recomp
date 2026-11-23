@@ -1,0 +1,258 @@
+// Copyright (c) 2026 Five Star Recomp contributors.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+using FiveStar.Loader.Diagnostics;
+using FiveStar.Loader.Native;
+
+namespace FiveStar.Loader.Shims.D3D12X;
+
+/// <summary>
+/// Device slot 133: a buffer at a GPU address the game chose, over XMem pages it mapped itself. The store's view of
+/// each page section is opened as a heap (ID3D12Device3::OpenExistingHeapFromAddress), so the GPU reads and writes the
+/// same memory as the game's CPU views. Each run of pages that is contiguous in one section becomes a buffer placed at
+/// the run's offset; the game's resource object is the first run's buffer, and every run's console and desktop
+/// addresses go into <see cref="Addresses"/>. A range with no mapped page gets a committed buffer that is not shared.
+/// </summary>
+internal sealed unsafe class XboxPlacedResources
+{
+    /// <summary>ID3D12Device slots in desktop order and ID3D12Device3::OpenExistingHeapFromAddress (d3d12.h).</summary>
+    private const int DesktopCreateCommittedResourceSlot = 27;
+    private const int DesktopCreatePlacedResourceSlot = 29;
+    private const int OpenHeapFromAddressSlot = 48;
+
+    /// <summary>ID3D12Resource::GetGPUVirtualAddress (d3d12.h).</summary>
+    private const int GetGpuAddressSlot = 11;
+
+    /// <summary>
+    /// D3D12_RESOURCE_STATE_COMMON, D3D12_HEAP_FLAG_NONE, D3D12_HEAP_TYPE_DEFAULT and
+    /// D3D12_RESOURCE_FLAG_ALLOW_CROSS_ADAPTER, which a resource on an opened (shared, cross-adapter) heap needs (d3d12.h).
+    /// </summary>
+    private const int CommonState = 0;
+    private const int NoHeapFlags = 0;
+    private const int DefaultHeapType = 1;
+    private const int AllowCrossAdapter = 0x10;
+
+    /// <summary>D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, the one desktop flag the game's buffers carry (d3d12.h).</summary>
+    private const int AllowUnorderedAccess = 0x4;
+
+    private static readonly Guid Device3Iid = new("81dadc15-2bad-4392-93c5-101345c4aa98");
+    private static readonly Guid HeapIid = new("6b3b2502-6e51-45b3-90ee-9884265e8df3");
+    private static readonly Guid ResourceIid = new("696442be-a72e-4059-bc79-5b5c98040fad");
+
+    private readonly object _gate = new();
+    private readonly Dictionary<nint, nint> _heaps = [];
+    private readonly List<nint> _runBuffers = [];
+    private readonly XMemPhysicalMemory _memory;
+    private readonly XboxObjects _objects;
+    private readonly LoaderLog _log;
+
+    public XboxPlacedResources(XMemPhysicalMemory memory, XboxObjects objects, LoaderLog log)
+    {
+        _memory = memory;
+        _objects = objects;
+        _log = log;
+    }
+
+    /// <summary>Console GPU address to desktop GPU address, for every buffer made here.</summary>
+    public AddressTable Addresses { get; } = new();
+
+    /// <summary>Creates the buffers over the game's pages at <paramref name="address"/> and returns the first wrapped.</summary>
+    public int Create(nint device, ulong address, ResourceDescription* description, void* clear, nint* resource)
+    {
+        *resource = 0;
+
+        if (description->Dimension != ResourceDescription.BufferDimension)
+        {
+            _log.Warn($"[d3d12_xs] ID3D12Device.X::Slot133 at 0x{address:x}: dimension {description->Dimension} is not a buffer (not implemented)");
+
+            return HResult.NotImplemented;
+        }
+
+        lock (_gate)
+        {
+            var runs = Runs(address, description->Width);
+            nint inner = PlaceRuns(device, address, description, runs);
+
+            if (inner == 0)
+            {
+                inner = CreateCommitted(device, address, description);
+            }
+
+            if (inner == 0)
+            {
+                _log.Error($"  [d3d12_xs] ID3D12Device.X::Slot133 at 0x{address:x}: no desktop buffer of 0x{description->Width:x} bytes");
+
+                return HResult.Fail;
+            }
+
+            *resource = _objects.WrapResource(inner, address);
+            _log.Detail($"  [d3d12_xs] ID3D12Device.X::Slot133 CreatePlacedResource(0x{address:x}, 0x{description->Width:x} bytes) -> {runs.Count} page runs");
+
+            return HResult.Ok;
+        }
+    }
+
+    /// <summary>One placed buffer per mapped run; returns the first, keeps the others alive.</summary>
+    private nint PlaceRuns(nint device, ulong address, ResourceDescription* description, List<PageRun> runs)
+    {
+        nint first = 0;
+
+        foreach (var run in runs)
+        {
+            if (run.Chunk is null)
+            {
+                continue;
+            }
+
+            var desktop = DesktopBuffer(description);
+            desktop.Width = run.Length;
+            desktop.Flags |= AllowCrossAdapter;
+            nint buffer = CreatePlaced(device, run, &desktop);
+
+            if (buffer == 0)
+            {
+                continue;
+            }
+
+            Addresses.Add(new AddressRange(address + run.Start, run.Length, GpuAddress(buffer)));
+
+            if (first == 0)
+            {
+                first = buffer;
+            }
+            else
+            {
+                _runBuffers.Add(buffer);
+            }
+        }
+
+        return first;
+    }
+
+    /// <summary>Splits the range into runs of pages that are consecutive in one section (or unmapped).</summary>
+    private List<PageRun> Runs(ulong address, ulong size)
+    {
+        var runs = new List<PageRun>();
+        ulong pageSize = XMemPhysicalMemory.PageSize;
+
+        for (ulong start = 0; start < size; start += pageSize)
+        {
+            _memory.TryLocate((nint)(address + start), out var chunk, out ulong offset);
+            ulong length = Math.Min(pageSize, size - start);
+
+            if (runs.Count > 0 && Continues(runs[^1], chunk, offset))
+            {
+                runs[^1] = runs[^1] with { Length = runs[^1].Length + length };
+            }
+            else
+            {
+                runs.Add(new PageRun(chunk, offset, start, length));
+            }
+        }
+
+        return runs;
+    }
+
+    private static bool Continues(PageRun run, XMemPageChunk? chunk, ulong offset)
+    {
+        if (run.Chunk is null || chunk is null)
+        {
+            return run.Chunk is null && chunk is null;
+        }
+
+        return ReferenceEquals(run.Chunk, chunk) && run.Offset + run.Length == offset;
+    }
+
+    /// <summary>
+    /// The game's buffer desc with what the desktop rejects removed: its flags are 0x20004, UNORDERED_ACCESS plus an
+    /// X-only bit 0x20000 (desc built at 0x141e867e7), and the alignment is left to the desktop.
+    /// </summary>
+    private static ResourceDescription DesktopBuffer(ResourceDescription* description)
+    {
+        var desktop = *description;
+        desktop.Alignment = 0;
+        desktop.Flags &= AllowUnorderedAccess;
+
+        return desktop;
+    }
+
+    private static ulong GpuAddress(nint resource)
+    {
+        return ((delegate* unmanaged<nint, ulong>)ComObject.Slot(resource, GetGpuAddressSlot))(resource);
+    }
+
+    private nint CreatePlaced(nint device, PageRun run, ResourceDescription* description)
+    {
+        nint heap = Heap(device, run.Chunk!);
+
+        if (heap == 0)
+        {
+            return 0;
+        }
+
+        Guid iid = ResourceIid;
+        nint resource = 0;
+        var create = (delegate* unmanaged<nint, nint, ulong, ResourceDescription*, int, void*, Guid*, nint*, int>)ComObject.Slot(device, DesktopCreatePlacedResourceSlot);
+        int hr = create(device, heap, run.Offset, description, CommonState, null, &iid, &resource);
+        LogFailure("CreatePlacedResource", hr);
+
+        return resource;
+    }
+
+    private nint CreateCommitted(nint device, ulong address, ResourceDescription* description)
+    {
+        var desktop = DesktopBuffer(description);
+
+        int* properties = stackalloc int[] { DefaultHeapType, 0, 0, 0, 0 };
+        Guid iid = ResourceIid;
+        nint resource = 0;
+        var create = (delegate* unmanaged<nint, int*, int, ResourceDescription*, int, void*, Guid*, nint*, int>)ComObject.Slot(device, DesktopCreateCommittedResourceSlot);
+        int hr = create(device, properties, NoHeapFlags, &desktop, CommonState, null, &iid, &resource);
+        LogFailure("CreateCommittedResource", hr);
+
+        if (resource != 0)
+        {
+            _log.Warn($"[d3d12_xs] ID3D12Device.X::Slot133 at 0x{address:x}: no mapped page, committed buffer of 0x{description->Width:x} bytes (not shared with the game)");
+            Addresses.Add(new AddressRange(address, description->Width, GpuAddress(resource)));
+        }
+
+        return resource;
+    }
+
+    /// <summary>The heap over a page section (through the store's whole-section view), opened once.</summary>
+    private nint Heap(nint device, XMemPageChunk chunk)
+    {
+        if (_heaps.TryGetValue(chunk.Section, out nint existing))
+        {
+            return existing;
+        }
+
+        Guid device3Iid = Device3Iid;
+        nint device3 = 0;
+        int hr = ((delegate* unmanaged<nint, Guid*, nint*, int>)ComObject.Slot(device, ComObject.QueryInterfaceSlot))(device, &device3Iid, &device3);
+
+        if (HResult.Failed(hr))
+        {
+            LogFailure("QueryInterface(ID3D12Device3)", hr);
+
+            return 0;
+        }
+
+        Guid heapIid = HeapIid;
+        nint heap = 0;
+        hr = ((delegate* unmanaged<nint, nint, Guid*, nint*, int>)ComObject.Slot(device3, OpenHeapFromAddressSlot))(device3, chunk.Window, &heapIid, &heap);
+        ComObject.Release(device3);
+        LogFailure("OpenExistingHeapFromAddress", hr);
+        _heaps[chunk.Section] = heap;
+
+        return heap;
+    }
+
+    private void LogFailure(string call, int hr)
+    {
+        if (HResult.Failed(hr))
+        {
+            _log.Warn($"[d3d12_xs] {call} failed: {HResult.Format(hr)}");
+        }
+    }
+}

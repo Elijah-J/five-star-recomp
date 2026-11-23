@@ -7,22 +7,14 @@ using FiveStar.Loader.Native;
 namespace FiveStar.Loader.Shims.D3D12X.Pipelines;
 
 /// <summary>
-/// The native entry points of the five pipeline slots, for the device vtable. Each finds the device's
-/// <see cref="PipelineSlots"/> through a GCHandle the device object keeps at <see cref="OwnerOffset"/>.
+/// The native entry points of the five pipeline slots. <see cref="Register"/> binds them in the device vtable through
+/// <see cref="XboxObjects.SetHandler"/> once the device's <see cref="PipelineSlots"/> exist
+/// (<see cref="XboxDeviceFactory.Pipelines"/>); without them the slots stay logged E_NOTIMPL stubs.
 /// </summary>
-/// <remarks>
-/// TODO(integration): <see cref="XboxDeviceObject"/> ends at 0x10 and has no owner slot yet. Once the device wrapper
-/// keeps a GCHandle of its <see cref="PipelineSlots"/> (or the registration API for replacing stub slots lands), call
-/// <see cref="Fill"/> on the device vtable after it is built, or register these five methods through that API. Until
-/// then a device without the handle answers E_NOTIMPL, as the stubs do.
-/// </remarks>
 internal static unsafe class PipelineSlotHandlers
 {
-    /// <summary>Offset of the GCHandle of <see cref="PipelineSlots"/> in the device object (after Vtable and Inner).</summary>
-    public const int OwnerOffset = 0x10;
-
-    /// <summary>Points the five pipeline slots of a device vtable at these handlers.</summary>
-    public static void Fill(nint* vtable)
+    /// <summary>Binds the five pipeline slots of the device vtable to these handlers.</summary>
+    public static void Register(XboxObjects objects)
     {
         delegate* unmanaged<nint, nint, uint, byte*, Guid*, nint*, int> derive = &Derive;
         delegate* unmanaged<nint, byte*, Guid*, nint*, int> cachedGraphics = &CachedGraphics;
@@ -30,11 +22,11 @@ internal static unsafe class PipelineSlotHandlers
         delegate* unmanaged<nint, byte*, Guid*, nint*, int> cachedCompute = &CachedCompute;
         delegate* unmanaged<nint, byte*, Guid*, nint*, int> stream = &Stream;
 
-        vtable[PipelineLayout.DeriveSlot] = (nint)derive;
-        vtable[PipelineLayout.PrecompiledGraphicsSlot] = (nint)cachedGraphics;
-        vtable[PipelineLayout.ComputeSlot] = (nint)compute;
-        vtable[PipelineLayout.PrecompiledComputeSlot] = (nint)cachedCompute;
-        vtable[PipelineLayout.StreamSlot] = (nint)stream;
+        objects.SetHandler(XboxInterfaceKind.Device, PipelineLayout.DeriveSlot, (nint)derive);
+        objects.SetHandler(XboxInterfaceKind.Device, PipelineLayout.PrecompiledGraphicsSlot, (nint)cachedGraphics);
+        objects.SetHandler(XboxInterfaceKind.Device, PipelineLayout.ComputeSlot, (nint)compute);
+        objects.SetHandler(XboxInterfaceKind.Device, PipelineLayout.PrecompiledComputeSlot, (nint)cachedCompute);
+        objects.SetHandler(XboxInterfaceKind.Device, PipelineLayout.StreamSlot, (nint)stream);
     }
 
     [UnmanagedCallersOnly]
@@ -104,13 +96,6 @@ internal static unsafe class PipelineSlotHandlers
 
     private static PipelineSlots? Owner(nint self)
     {
-        var handle = *(nint*)(self + OwnerOffset);
-
-        if (handle == 0)
-        {
-            return null;
-        }
-
-        return GCHandle.FromIntPtr(handle).Target as PipelineSlots;
+        return ShimContext.Runtime.D3D12X.Pipelines;
     }
 }

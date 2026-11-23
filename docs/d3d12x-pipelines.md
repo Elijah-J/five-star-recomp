@@ -157,10 +157,11 @@ E_NOTIMPL; a shader without a translation with HRESULT_FROM_WIN32(ERROR_NOT_FOUN
 
 ## Device hookup
 
-`PipelineSlotHandlers.Fill(vtable)` points slots 55, 57, 62, 67 and 86 at `[UnmanagedCallersOnly]` handlers. Each
-finds its `PipelineSlots` through a GCHandle at `PipelineSlotHandlers.OwnerOffset` (0x10) of the device object;
-`PipelineSlots` needs a `PipelineFactory` over the desktop `ID3D12Device2`, `BindlessRoot.Create` and a
-`TranslatedProgramLibrary`.
+When the device is created and the loader has `--shader-dir` and `--translated-dir`, `XboxDeviceFactory` builds the
+`PipelineSlots` (a `PipelineFactory` over the desktop `ID3D12Device2`, `BindlessRoot.Create` and a
+`TranslatedProgramLibrary`) and `PipelineSlotHandlers.Register` binds slots 55, 57, 62, 67 and 86 through
+`XboxObjects.SetHandler`. Without the folders the slots stay logged E_NOTIMPL stubs. Pipeline states are returned
+unwrapped, so slot 55 receives the desktop pointer it registered.
 
 ## Unknown
 

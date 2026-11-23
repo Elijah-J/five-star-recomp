@@ -74,7 +74,7 @@ public static class Program
     {
         using var file = OpenLogFile(options.LogFile);
         var log = new LoaderLog(Console.Out, file, options.Verbose);
-        using var runtime = new LoaderRuntime(HostComposition.CreateLoaderOptions(options), HostComposition.CreateGdkOptions(options), HostComposition.CreateEnvironment(), log);
+        using var runtime = new LoaderRuntime(HostComposition.CreateLoaderOptions(options), HostComposition.CreateGdkOptions(options), HostComposition.CreatePipelineFolders(options), HostComposition.CreateEnvironment(), log);
 
         return new LoaderHost(options, runtime, log, Environment.ProcessId).Run();
     }

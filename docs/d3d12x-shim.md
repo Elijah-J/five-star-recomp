@@ -4,7 +4,8 @@ The game imports three functions from `d3d12_xs.dll`: `D3D12XboxCreateDevice`, `
 `D3D12SerializeVersionedRootSignature`. All other rendering goes through COM vtables on the device and the objects
 it creates. This page lists what the game passes and calls, read from `game_scarlett_master.exe` (addresses at image
 base 0x140000000), and how the loader shims it. Field and method names marked *inferred* come from argument shapes,
-not from the GDK header.
+not from the GDK header: the PC GDK (`Microsoft GDK\261000`) ships only `windows\include` headers, none for
+D3D12.X.
 
 ## Startup order
 
@@ -88,15 +89,16 @@ should create. From slot 44 on the order is not desktop's.
 | 73 | 0x248 | 3 | X: create command list | (16-byte desc, allocator, PSO, IID, out) |
 | 74, 78, 81 | | 1 each | X | |
 | 79 | 0x278 | 3 | X | |
-| 80 | 0x280 | 3 | X: creates an object without an IID | handed to queue slot 35 |
+| 80 | 0x280 | 3 | X: WaitFrameEventX (*inferred*) | (type, timeout, null, flags, UINT64* in/out) |
 | 101 | 0x328 | 1 | X: create state object | state-object IID |
 | 108, 119, 127, 132 | | 1-2 each | X | |
 | 133 | 0x428 | 3 | X: create resource at a GPU address (*inferred*) | (address, desc, state, clear, resource IID, out) |
 
 ### Command queue
 
-The base methods sit two slots later than on the desktop (ID3D12Pageable appears to carry two extra methods;
-*inferred*): GetTimestampFrequency is slot 18 (one `UINT64*`), Signal slot 16 (fence, value).
+The queue's own methods sit two slots later than on the desktop: GetTimestampFrequency is slot 18 (one
+`UINT64*`), Signal slot 16 (fence, value). The shift is the queue's, not ID3D12Pageable's: the descriptor heap,
+also pageable, has GetCPUDescriptorHandleForHeapStart at desktop slot 9 (call at 0x141c74559).
 
 | Slot | Offset | Sites | Method |
 |---|---|---|---|
@@ -106,58 +108,142 @@ The base methods sit two slots later than on the desktop (ID3D12Pageable appears
 | 24 | 0x0C0 | 1 | X: resume (*inferred*) |
 | 31 | 0x0F8 | 1 | X |
 | 32 | 0x100 | 2 | X: present (*inferred*): (plane count, plane array, parameters); called with 0, 0, 0 at shutdown |
-| 35 | 0x118 | 2 | X: execute command lists (*inferred*): (count, lists, slot-80 object, flags 0 or 3) |
+| 35 | 0x118 | 2 | X: execute command lists (*inferred*): (count, lists, object from a global, flags 0 or 3) |
 
-The per-frame submit is 0x142481e90: slot 35, then slot 32, with device slot 80 called between frames.
+The per-frame submit is 0x142481e90: slot 35 (up to 256 lists), then slot 32, with device slot 80 called between
+frames. Device slot 80 creates no object: it takes (type 0 or 2, timeout 0xFFFFFFFF, null, flags 0 or 2, UINT64*
+in/out), read as WaitFrameEventX (*inferred*); the game breaks into the debugger when it fails (0x142482452).
 
 ### Command list
 
 The game asks slot 73 for desktop ID3D12GraphicsCommandList (`5b160d0f-...`) in one place and for
 `c3827890-4024-474c-98cf-645b51dc4874`, not a desktop IID, in the others. Close is slot 9 as on the desktop.
-Slots 131 and 132 (X-only) take (register offset, value, 0, mask 0xFFFFFFFFFF00): register writes. The game's
-graphics context keeps its list at +0x127C8; the scan reaches 26 sites in 18 slots, too few to map the recording
-methods.
+Slots 131 and 132 (X-only) take (register offset, value, 0, mask 0xFFFFFFFFFF00): register writes.
+
+Most commands are recorded inline: the game compares the list's write pointer (+0x18) with a limit (+0x28 before
+draws, +0x30 otherwise), writes PM4 packets itself when there is room, and calls the vtable slot only when there is
+not. It also writes state into the list object (+0x140, +0x544 to +0x563) and reads +0x548 and a register table
+at +0x144 / +0x344. The 34 functions that load the list from the graphics context (+0x127C8) call these slots; the
+method follows from the arguments and from the inline packet written instead:
+
+| Slot | Desktop | Method | Evidence |
+|---|---|---|---|
+| 9 | 9 | Close | creation code |
+| 12, 13 | 12, 13 | DrawInstanced, DrawIndexedInstanced | 4 and 5 counts; limit +0x28 |
+| 20 to 24 | 20 to 24 | IASetPrimitiveTopology, RSSetViewports, RSSetScissorRects, OMSetBlendFactor, OMSetStencilRef | (1, rects), float*, one dword |
+| 25 | 25 | SetPipelineState | PSO; caches PSO state at +0x544 |
+| 29, 30 | | X | (pointer, dword, dword); 30 has 7 arguments |
+| 33, 34 | 29, 30 | SetCompute/GraphicsRootSignature | root signature from the PSO (+0x80) |
+| 35, 36 | 31, 32 | SetCompute/GraphicsRootDescriptorTable | (index, GPU handle); inline dword + low dword |
+| 37, 38 | 33, 34 | SetCompute/GraphicsRoot32BitConstant (*inferred*: between 36 and 39) | |
+| 39, 40 | 35, 36 | SetCompute/GraphicsRoot32BitConstants | (index, count, data, 0) |
+| 43 to 46 | 39 to 42 | SetCompute/Graphics root SRV and UAV | (index, GPU address); inline dword + qword |
+| 47, 48 | 43, 44 | IASetIndexBuffer, IASetVertexBuffers | view* or null; (0, count, views) |
+| 50 | 46 | OMSetRenderTargets | (count, handles, FALSE, DSV*) |
+| 51, 52 | 47, 48 | ClearDepthStencilView (*inferred*), ClearRenderTargetView | (handle, color*, 0, null) |
+| 61 | 59 | ExecuteIndirect | (signature, 1, argument buffer, offset, null, 0); 8 sites |
+| 62 | | X | (pointer, pointer, dword, 0) |
+| 70 | 62 | OMSetDepthBounds | floats in xmm1, xmm2 |
+| 72, 75, 126 to 128, 142 | | X | one site each |
+
+Slots 26 to 28 are presumably ResourceBarrier, ExecuteBundle and SetDescriptorHeaps, and 31, 32 two X slots
+(*inferred*); between 52 and 61 two desktop methods are missing.
+
+### Descriptor heaps
+
+The game allocates CPU descriptor memory the console way: D3D12.X takes it from the title's `XMemAlloc` hook (the
+exe exports `__XMemAllocationHooks__`). Around the creation of the main shader-visible heap (0x141cf3280, 1245184
+descriptors) the game pushes a hook that answers allocator id 128, object type 4 with memory it reserved, and breaks
+into the debugger unless slot 9 then returns that memory.
 
 ## Shim
 
-`XboxDeviceFactory` (`src/FiveStar.Loader/Shims/D3D12X`) implements `D3D12XboxCreateDevice`:
+`XboxDeviceFactory` (`src/FiveStar.Loader/Shims/D3D12X`) implements `D3D12XboxCreateDevice` on a desktop
+ID3D12Device (default adapter, feature level 12_1). `D3D12ConfigureVirtualMemoryX` logs its argument and returns
+S_OK.
 
-- Creates a desktop ID3D12Device (default adapter, feature level 12_1) and hands the game a two-pointer object:
-  the D3D12.X vtable, then the desktop device.
-- Slots 0 to 43 are generated tail-call thunks: `mov rcx,[rcx+8]; mov rax,[rcx]; jmp [rax+slot*8]`. Slots 25, 26
-  and 43 load the object from rdx and swap rcx and rdx first. No managed code runs on these calls, so they meet the
-  `[HotPath]` rule by construction.
-- Slots 44 to 159 are logged stubs: the first call of each slot is logged as `d3d12_xs.dll!ID3D12Device.X::SlotN`,
-  every call returns E_NOTIMPL.
-- X slots with a desktop translation (`XboxDeviceMethods`):
-  - 48 (compute queues): desc `{2, 0, flags, node}` with flags 0 to 3 and node 0 or 1, forwarded to desktop
-    CreateCommandQueue with only the DISABLE_GPU_TIMEOUT bit kept. Flag bit 2 is unknown.
-  - 73 (command lists): desc `{type, 6, 1, 0}` (type 2 for the compute lists; the meaning of the other dwords is
-    unknown). A desktop ID3D12GraphicsCommandList is created and wrapped (`XboxCommandLists`): slots 0 to 9 forward
-    (IUnknown, ID3D12Object, GetDevice, GetType, Close), slots 10 to 159 are logged stubs, so X register writes (131,
-    132) are dropped.
-  - 78, read as SetFrameIntervalX (*inferred*): (null output, 33333 us, period 3, flags 0). S_OK, logged.
-  - 79, read as ScheduleFrameEventX (*inferred*): (type 0 or 2, delta 0, null output, flags 0). S_OK, logged.
-- Queues from slots 8 and 48 are unwrapped desktop queues for now; queue slots past the desktop layout (16 and up,
-  35 for execute) still need a wrapper.
-- `D3D12ConfigureVirtualMemoryX` logs its argument and returns S_OK.
+### Wrappers
 
-The other interfaces take the same shape: one thunk vtable per interface (queue, list, allocator, resource), whose
-desktop-compatible slots forward with the slot remapped (+2 for pageable objects) and whose X slots go to
-`[UnmanagedCallersOnly]` handlers that translate. The forwarded creation slots currently return unwrapped desktop
-objects, so a queue or list call past the desktop layout does not yet reach a stub.
+Every object the game gets is a wrapper (`XboxObjects`): a pointer to the D3D12.X vtable, then the desktop object at
++8. One native block holds a vtable per interface (`XboxInterfaceKind`), so a pointer whose vtable lies in it is a
+wrapper.
+
+- Slots listed in `XboxInterfaces` are generated tail-call thunks: `mov rcx,[rcx+8]; mov rax,[rcx]; jmp
+  [rax+desktop*8]`, with the slot remapped; struct-returning slots load the object from rdx and swap rcx and rdx.
+  Arguments in rdx, r8 or r9 that may carry a wrapper are unwrapped first (`test; jz; mov r10,[reg]; range check;
+  mov reg,[reg+8]`), any other pointer passes through. No managed code runs on these calls.
+- Every other slot is a stub that logs its first call as `d3d12_xs.dll!<interface>.X::SlotN` with the caller and
+  returns E_NOTIMPL.
+- QueryInterface returns the wrapper when the desktop answer is the object itself, Release frees the wrapper with
+  the desktop object, GetDevice returns the device wrapper.
+- `XboxObjects.SetHandler(kind, slot, handler)` binds any slot to a native function (an `[UnmanagedCallersOnly]`
+  method taking the wrapper first), before or after the vtables exist. `Wrap`, `Unwrap` and `WrapResult` are the
+  helpers for handlers that create or receive objects.
+- Pipeline states (slots 55, 57, 62, 67, 86, [d3d12x-pipelines.md](d3d12x-pipelines.md)) are returned unwrapped.
+
+| Interface | Forwarded slots | Slot map |
+|---|---|---|
+| Device | 1 to 43 | desktop order; 25, 26, 43 swap; views (18 to 21), 31, 42 unwrap |
+| Command queue | 13 to 20 | desktop slot + 2; Signal and Wait unwrap the fence; 20 (GetDesc) swaps |
+| Command allocator | 8 | desktop (*inferred*) |
+| Command list | 8 to 25, 33 to 40, 50 to 52, 70 | as in the table above; Reset, ClearState, copies and SetPipelineState unwrap |
+| Resource | 8 to 14 | desktop (*inferred*); 10 (GetDesc) swaps |
+| Heap, descriptor heap | 8 | GetDesc, swaps |
+| Fence | 8 to 10 | desktop (*inferred*) |
+| Query heap, command signature | none past the base slots | |
+
+The command-list wrapper is 4 KiB and zeroed: write pointer and limits stay 0, so every inline command calls its
+slot. Slots taking GPU addresses (41 to 48) stay stubs until console addresses are translated.
+
+### Handlers
+
+| Interface | Slot | Handler |
+|---|---|---|
+| Device | 8, 9, 12, 14, 27 to 30, 36, 39, 41 | desktop creation, result wrapped; wrapped heap, allocator and PSO arguments unwrapped |
+| Device | 17 to 24 | view creation and descriptor copies with CPU handles translated (below) |
+| Device | 34, 35 | MakeResident, Evict: S_OK (desktop objects are resident from creation) |
+| Device | 48, 73 | compute queues (flags reduced to DISABLE_GPU_TIMEOUT) and command lists, wrapped |
+| Device | 78, 79 | SetFrameIntervalX, ScheduleFrameEventX (*inferred*): logged, S_OK |
+| Device | 80 | logged stub returning S_OK |
+| Device | 133 | buffer at a game address (below) |
+| Command queue | 12, 35 | unwrap up to 256 lists per call and run desktop ExecuteCommandLists; 35 ignores its frame object and flags |
+| Command queue | 32 | logged stub returning S_OK (no swap chain yet) |
+| Resource | 11 | the console address for a slot-133 buffer, else the desktop GPU address |
+| Descriptor heap | 9, 10 | heap start handles returned in rax; 9 returns the title memory when the heap has some |
+
+### Game memory on the GPU
+
+Slot 133 (GPU address, buffer desc, 0xFFFFFFFF, null clear value, IID, out) asks for a buffer over XMem pages the
+game mapped itself (`XboxPlacedResources`). The store's whole-section view of each page section
+([physical-memory.md](physical-memory.md)) is opened with `ID3D12Device3::OpenExistingHeapFromAddress`
+(`OpenExistingHeapFromFileMapping` rejects the pagefile sections with E_INVALIDARG). The range is split into runs of
+pages contiguous in one section; each run becomes a buffer placed at its section offset, with
+ALLOW_CROSS_ADAPTER (required on such heaps) and the game's flags reduced to UNORDERED_ACCESS (it passes 0x20004).
+The game's resource is the first run's buffer; GetGPUVirtualAddress returns the console address; every run's
+console range and desktop GPU address go into `XboxPlacedResources.Addresses`, the translation the command-list
+and descriptor work will use (on the console GPU address == CPU address). A reserved buffer with tile mappings onto
+these heaps removes the device, so one resource cannot span sections. A range with no mapped page gets a committed
+buffer that is not shared.
+
+Descriptor heaps (`XboxDescriptorHeaps`): a shader-visible heap takes title memory from the game's hook (allocator
+id 128, object type 4); slot 9 returns it and `Handles` maps it onto the desktop heap's CPU handles, which slots 17
+to 24 translate. The GPU start stays the desktop one, so the GPU handles the game derives are desktop handles. A
+heap above 1,000,000 descriptors (the tier-2 limit) is created at the limit, with a warning.
+
+### Boot
+
+With these, boot passes device set-up, slot 133 (four page runs of 0xAE00000 bytes) and the descriptor heaps, then
+calls device slot 70 (stub) at 0x144ecc81b; the next CreateCommandAllocator fails because the desktop device was
+removed with DXGI_ERROR_INVALID_CALL, and the game stops at the `int3` at 0x1419f4f58.
 
 ## Unknown
 
-- The command-list vtable: which slots record draws, dispatches, barriers and root arguments. A run-time trace of
-  the slots the game calls (all stubs logging) is the fastest way to get it.
+- What removes the desktop device after the descriptor heaps; device slot 70 (ray-tracing related, 6 sites).
+- List slots 26 to 32, 53 to 60, 62 and above 70; the list slots that take wrapped resources inside structures
+  (barriers, texture copies) and GPU addresses.
 - Device slots 44 to 133 apart from those named above; the meaning of the desc dwords of slots 48 and 73.
-- Slot 133 (call at 0x141e8684c, first X slot the game needs after device setup): (GPU address, buffer resource
-  desc, 0xFFFFFFFF, null clear value, IID, out), read as CreatePlacedResourceX. A failure hits the `int3` at
-  0x1419f4f58. The desktop has no resource at a caller-chosen address; candidate: a heap from
-  `ID3D12Device3::OpenExistingHeapFromAddress` over the XMem pages and a placed resource on it.
-- Whether the queue's +2 shift holds for every pageable object (resource, heap, fence, PSO, allocator).
-- The object device slot 80 returns and how queue slot 35 uses it (frame pacing is the likely role).
+- The slot maps marked *inferred*: allocator, resource and fence have no X call site in the census.
+- What queue slot 35's third argument is and how frame pacing (device 78 to 80, queue 32) should map to a swap chain.
+- Descriptors the game writes into title memory itself instead of through slots 17 to 24, and descriptors past the
+  first 1,000,000 of the main heap.
 - Parameter-block fields at 0x20, 0x24, 0x28 and 0x3C.
-- Whether the struct-return register swap applies to GetAdapterLuid (slot 43) and to struct-returning methods of
-  other interfaces (descriptor-heap handle getters, resource GetDesc).

@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Five Star Recomp contributors.
+// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Buffers.Binary;
@@ -14,6 +14,31 @@ internal sealed class X64Emitter
     /// <summary>Length of <c>mov eax,[rip+disp32]</c>; its displacement is relative to the end of the instruction.</summary>
     public const int MovEaxRipRelativeLength = 6;
 
+    /// <summary>Register numbers in ModRM order (rdx 2, r8 8, r9 9).</summary>
+    public const int Rdx = 2;
+    public const int R8 = 8;
+    public const int R9 = 9;
+
+    private const int R10 = 10;
+    private const int Rsp = 4;
+    private const int Rbp = 5;
+    private const int FirstExtendedRegister = 8;
+    private const int LowRegisterMask = 7;
+    private const int ModRmRegShift = 3;
+
+    /// <summary>ModRM mod field values: register direct, memory with no displacement, memory with an 8-bit one.</summary>
+    private const byte ModRegister = 0xC0;
+    private const byte ModMemory = 0x00;
+    private const byte ModMemoryDisp8 = 0x40;
+
+    /// <summary>REX.W, and the REX.R and REX.B bits that extend the ModRM reg and r/m fields to r8-r15.</summary>
+    private const byte RexW = 0x48;
+    private const byte RexR = 0x04;
+    private const byte RexB = 0x01;
+
+    private const byte JaeRel8Opcode = 0x73;
+    private const byte TestOpcode = 0x85;
+    private const byte MovLoadOpcode = 0x8B;
     private const byte RetOpcode = 0xC3;
     private const byte Int3Opcode = 0xCC;
     private const byte JzRel8Opcode = 0x74;
@@ -57,6 +82,8 @@ internal sealed class X64Emitter
     private static readonly byte[] AndR11dImm32 = [0x41, 0x81, 0xE3];
     private static readonly byte[] MovDwordR10R11x4Disp8Imm32 = [0x43, 0xC7, 0x44, 0x9A];
     private static readonly byte[] JmpR10Encoding = [0x41, 0xFF, 0xE2];
+    private static readonly byte[] SubR10R11Encoding = [0x4D, 0x29, 0xDA];
+    private static readonly byte[] CmpR10Imm32Encoding = [0x49, 0x81, 0xFA];
 
     private readonly List<byte> _code = [];
 
@@ -226,6 +253,54 @@ internal sealed class X64Emitter
         Emit(DecRcxEncoding);
     }
 
+    /// <summary><c>test reg,reg</c> (64-bit) for <see cref="Rdx"/>, <see cref="R8"/> or <see cref="R9"/>.</summary>
+    public void TestRegister(int register)
+    {
+        _code.Add(Rex(register, register));
+        _code.Add(TestOpcode);
+        _code.Add(ModRm(ModRegister, register, register));
+    }
+
+    /// <summary><c>mov r10,[reg]</c>.</summary>
+    public void LoadR10FromRegister(int register)
+    {
+        CheckPlainBase(register);
+        _code.Add(Rex(R10, register));
+        _code.Add(MovLoadOpcode);
+        _code.Add(ModRm(ModMemory, R10, register));
+    }
+
+    /// <summary><c>mov reg,[reg+disp8]</c>.</summary>
+    public void LoadRegisterFromItself(int register, byte displacement)
+    {
+        CheckPlainBase(register);
+        _code.Add(Rex(register, register));
+        _code.Add(MovLoadOpcode);
+        _code.Add(ModRm(ModMemoryDisp8, register, register));
+        _code.Add(displacement);
+    }
+
+    /// <summary><c>sub r10,r11</c>.</summary>
+    public void SubR10R11()
+    {
+        Emit(SubR10R11Encoding);
+    }
+
+    /// <summary><c>cmp r10,imm32</c> (sign-extended).</summary>
+    public void CmpR10(uint value)
+    {
+        Emit(CmpR10Imm32Encoding);
+        Emit32(value);
+    }
+
+    /// <summary><c>jae rel8</c> with a displacement patched by <see cref="PatchJumpHere"/>; returns the patch position.</summary>
+    public int JaeForward()
+    {
+        Emit([JaeRel8Opcode], 0);
+
+        return _code.Count - 1;
+    }
+
     /// <summary><c>jz rel8</c> with a displacement patched by <see cref="PatchJumpHere"/>; returns the patch position.</summary>
     public int JzForward()
     {
@@ -324,6 +399,40 @@ internal sealed class X64Emitter
     public void Data32(uint value)
     {
         Emit32(value);
+    }
+
+    /// <summary>REX.W with REX.R for an extended ModRM reg operand and REX.B for an extended r/m operand.</summary>
+    private static byte Rex(int reg, int rm)
+    {
+        byte rex = RexW;
+
+        if (reg >= FirstExtendedRegister)
+        {
+            rex |= RexR;
+        }
+
+        if (rm >= FirstExtendedRegister)
+        {
+            rex |= RexB;
+        }
+
+        return rex;
+    }
+
+    private static byte ModRm(byte mod, int reg, int rm)
+    {
+        return (byte)(mod | ((reg & LowRegisterMask) << ModRmRegShift) | (rm & LowRegisterMask));
+    }
+
+    /// <summary>A base of rsp/r12 needs a SIB byte and rbp/r13 a displacement; neither is emitted here.</summary>
+    private static void CheckPlainBase(int register)
+    {
+        int low = register & LowRegisterMask;
+
+        if (low == Rsp || low == Rbp)
+        {
+            throw new ArgumentOutOfRangeException(nameof(register), register, "rsp, rbp, r12 and r13 need another encoding");
+        }
     }
 
     private void Emit(byte[] encoding)

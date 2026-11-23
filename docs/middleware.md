@@ -79,9 +79,8 @@ flowchart TD
   (`int(8 * (display / render)^2)`, at least 1), the jitter offset (Halton bases 2 and 3 at `index % count + 1`, minus
   0.5) and zero GPU memory; ffxDispatch returns 6 and logs once. The game therefore keeps running, but the upscaled
   output texture is not written.
-- The device and command list are unwrapped through `IDesktopObjectResolver`. `WrapperObjectResolver` reads the
-  desktop pointer the D3D12.X shim keeps at +8 of its device and command-list wrappers and passes resources through
-  (the shim hands out desktop resources today). It is replaced when the D3D12.X shim wraps resources.
+- The device, command list and resources are unwrapped through `IDesktopObjectResolver`, implemented by the D3D12.X
+  shim's `XboxObjectResolver` over `XboxObjects.Unwrap` ([d3d12x-shim.md](d3d12x-shim.md)).
 
 **What the user supplies.** Nothing to run the game: the PC path does not use FidelityFX. To force FSR, the DX12 API
 DLL of the AMD FidelityFX SDK (GitHub, GPUOpen-LibrariesAndSDKs/FidelityFX-SDK, the signed prebuilt DLLs of a
