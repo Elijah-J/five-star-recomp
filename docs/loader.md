@@ -307,6 +307,7 @@ fivestar-loader --load $dump\XboxBvhBuilder.dll --load $dump\Bink2Scarlett.dll -
 | `--patches <file or folder>` | code patches (repeatable) |
 | `--mods <dir>` | mod folder over the package root (repeatable, first has priority) |
 | `--input <file>` | the keyboard-and-mouse gamepad mapping |
+| `--shader-dir <dir>`, `--translated-dir <dir>` | extracted FSSM programs and their translated DXIL; with both, the D3D12.X pipeline slots create pipelines |
 | `--manual <a.dll,b.dll>`, `--system-crt`, `--search <dir>` | which modules the loader maps itself |
 | `--unresolved stub\|trap\|error`, `--no-shim <module!symbol>` | unresolved-import handling; disable one shim |
 | `--no-entry`, `--no-exports`, `--unload`, `--work-dir <dir>` | skip DllMain; skip the export listing; unload at the end; folder of the TLS host DLLs |
