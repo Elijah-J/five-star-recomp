@@ -419,11 +419,20 @@ pipelines: the hang stayed with present, clears, draws and binding skipped and w
 game's inline form of the call (0x140032570) maps topologies 6 and 0x13 to 4 itself and writes the rest through a
 table to the hardware primitive type (0x1461ecf30: 17 -> 0x11, the rectangle list). The handler
 (`PrimitiveTopologies`) sets 17 as a triangle list (the three vertices then cover half the rectangle) and drops any
-other value the desktop does not define, warned once. The game now presents every frame.
+other value the desktop does not define, warned once. With the GDK ABI table loaded, a 120 s boot with pipelines
+presents about 25,000 frames (4.2 ms apart, the display's refresh with sync interval 1, not the 33 ms the game
+asks device 78 for); the window stays black.
 
 Barriers stay no-ops: the fix needs none. The debug layer still reports ClearRenderTargetView on the slot-127
 render targets, which are created in UNORDERED_ACCESS (the initial layout the game passes); no list slot 26 to 31
 is called in boot, so the game's barriers are not found yet.
+
+The debug layer also reports error #553 about once per 500 presents: the list the present path submits from the
+table at 0x1475e7300 (0x142482660; recorded once at device creation) runs again while its previous submission is still
+executing, which the console allows and the desktop does not (the debug layer drops that submission). Waiting on the
+CPU for the previous run before the resubmission removed the error but made the process fail in coreclr (access
+violation at coreclr+0x165f05) within 3,000 presents, the same failure as a boot with queue slot 35 skipped, so it is
+not done yet.
 
 ## Unknown
 
