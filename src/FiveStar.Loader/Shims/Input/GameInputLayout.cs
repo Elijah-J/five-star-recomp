@@ -22,6 +22,12 @@ internal static class GameInputLayout
 
     public const string CreateFunction = "GameInputCreate";
 
+    /// <summary>
+    /// The console GameInput.dll export GameInputCreate is imported by ordinal 1. Read from the executable's only call:
+    /// one zeroed IGameInput** argument, an HRESULT tested with <c>js</c>, then the result used as a COM object.
+    /// </summary>
+    public const string CreateOrdinal = "#1";
+
     // GameInputKind.
     public const uint KindUnknown = 0x0;
     public const uint KindControllerAxis = 0x2;

@@ -8,14 +8,15 @@ using FiveStar.Loader.Shims.Gdk;
 namespace FiveStar.Loader.Shims.Input;
 
 /// <summary>
-/// The GameInput module: <c>HRESULT GameInputCreate(IGameInput** gameInput)</c>. Declared Xbox-only, so the PC
-/// GameInput.dll is never loaded. The same entry is registered under xgameruntime.dll, so a thunk ABI table can map
+/// The GameInput module: <c>HRESULT GameInputCreate(IGameInput** gameInput)</c>, by name and by ordinal 1 (how the
+/// console executable imports it). Declared Xbox-only, so the PC GameInput.dll is never loaded. The same entry is registered under xgameruntime.dll, so a thunk ABI table can map
 /// a QueryApiImpl slot to it.
 /// </summary>
 [ShimModule(GameInputLayout.Module, UnresolvedReturn = HResult.NotImplemented, AliasPattern = GameInputLayout.AliasPattern, AliasSymbolPrefix = GameInputLayout.AliasSymbolPrefix)]
 internal static unsafe class GameInputShim
 {
     [Shim(GameInputLayout.Module, GameInputLayout.CreateFunction)]
+    [Shim(GameInputLayout.Module, GameInputLayout.CreateOrdinal)]
     [Shim(GdkModule.Name, GameInputLayout.CreateFunction)]
     [UnmanagedCallersOnly]
     private static int GameInputCreate(nint* gameInput)
