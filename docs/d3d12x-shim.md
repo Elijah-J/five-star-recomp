@@ -82,7 +82,7 @@ should create. From slot 44 on the order is not desktop's.
 | 41 | 0x148 | 5 | CreateCommandSignature | command-signature IID |
 | 48 | 0x180 | 4 | X: create command queue | queue IID, desc, IID, out |
 | 49, 50 | 0x188, 0x190 | 1 each | X | |
-| 55, 57, 62, 67, 86 | | 1 each | X: create pipeline state (five variants) | pipeline-state IID |
+| 55, 57, 62, 67, 86 | | 1 each | X: create pipeline state (five variants, [d3d12x-pipelines.md](d3d12x-pipelines.md)) | pipeline-state IID |
 | 61 | 0x1E8 | 1 | X | |
 | 70, 71 | 0x230, 0x238 | 6, 2 | X: ray-tracing related (*inferred*) | desc carries 0x20004 at +0x30 |
 | 73 | 0x248 | 3 | X: create command list | (16-byte desc, allocator, PSO, IID, out) |

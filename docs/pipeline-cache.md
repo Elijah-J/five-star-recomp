@@ -1,9 +1,11 @@
 # Pipeline cache
 
-Besides its SGD5 tables ([shader-containers.md](shader-containers.md)), `shaders.rpf` holds one entry written by the
-console's graphics driver: a cache of compiled pipelines. It names the shaders of every graphics and compute pipeline
+Besides its SGD5 tables ([shader-containers.md](shader-containers.md)), `shaders.rpf` holds one more entry: the game's
+cache of compiled pipelines. It names the shaders of every graphics and compute pipeline
 the game builds, the output formats and vertex input layout of each graphics pipeline and the root-signature bindings
-of each shader, and holds the driver's final machine code. Code: `src/FiveStar.Shaders/Cache`.
+of each shader, and holds the driver's final machine code. The game loads it as its `.d3d12PipelineCache` and creates
+pipelines from it through device slots 57 and 67 ([d3d12x-pipelines.md](d3d12x-pipelines.md)). Code:
+`src/FiveStar.Shaders/Cache`.
 
 The entry is an ordinary RPF9 chunk run ([archives.md](archives.md)): the first aligned zlib stream whose output starts
 with `PS 00 09`, read until the size the header gives. In the reference dump it starts at archive offset 0x10579000
@@ -63,9 +65,10 @@ flowchart LR
 | 0x00 | 8 | hash, unique per record |
 | 0x08 | 4 | metadata entry: fixed-function state |
 | 0x0C | 4 | metadata entry: render-target formats and vertex input layout |
-| 0x10 | 16 | unique per record |
-| 0x20 | 16 | 110 distinct values |
-| 0x30 | 8 | 93 distinct values |
+| 0x10 | 8 | the shader hash the game keys root signatures by (0x10..0x1F together are unique per record) |
+| 0x18 | 8 | hash of the fixed-function state (*inferred*, d3d12x-pipelines.md) |
+| 0x20 | 16 | 110 distinct values; hashes of the depth-stencil (0x20) and rasterizer (0x28) state (*inferred*) |
+| 0x30 | 8 | 93 distinct values; hash of the blend state (*inferred*) |
 | 0x38 | 7 × 8 | shader slots `{i32 shader index, i32 metadata entry}`, `-1, -1` when empty |
 
 | Slot | Stage of its programs |

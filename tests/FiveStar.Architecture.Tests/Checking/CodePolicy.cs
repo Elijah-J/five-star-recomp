@@ -64,7 +64,7 @@ public static class CodePolicy
     {
         ["FiveStar.Formats"] = [],
         ["FiveStar.Shaders"] = [],
-        ["FiveStar.Loader"] = ["FiveStar.Formats"],
+        ["FiveStar.Loader"] = ["FiveStar.Formats", "FiveStar.Shaders", "FiveStar.Graphics"],
         ["FiveStar.Graphics"] = [],
         ["FiveStar.Cli"] = ["FiveStar.Formats", "FiveStar.Graphics", "FiveStar.Shaders"],
         ["FiveStar.Benchmarks"] = ["FiveStar.Formats", "FiveStar.Loader"],

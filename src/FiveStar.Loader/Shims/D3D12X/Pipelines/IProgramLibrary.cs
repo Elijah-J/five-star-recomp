@@ -1,0 +1,11 @@
+// Copyright (c) 2026 Five Star Recomp contributors.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+namespace FiveStar.Loader.Shims.D3D12X.Pipelines;
+
+/// <summary>The translated programs, found by the 24-byte hash prefix of their code block.</summary>
+internal interface IProgramLibrary
+{
+    /// <summary>The program whose code starts with <paramref name="prefix"/>, or null when none was translated.</summary>
+    TranslatedProgram? Find(ReadOnlySpan<byte> prefix);
+}
