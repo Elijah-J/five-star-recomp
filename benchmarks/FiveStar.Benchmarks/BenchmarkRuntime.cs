@@ -4,6 +4,7 @@
 using FiveStar.Loader;
 using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Loading;
+using FiveStar.Loader.Shims.D3D12X.Pipelines;
 using FiveStar.Loader.Shims.Gdk;
 
 namespace FiveStar.Benchmarks;
@@ -21,7 +22,7 @@ internal static class BenchmarkRuntime
         var gdk = new GdkOptions(null, Path.GetTempPath(), Path.GetTempPath(), Path.GetTempPath(), DeviceType, new Version());
         var environment = new LoaderEnvironment(string.Empty, TimeProvider.System, IgnoreFailure);
 
-        return new LoaderRuntime(options, gdk, environment, log);
+        return new LoaderRuntime(options, gdk, new PipelineFolders(null, null), environment, log);
     }
 
     /// <summary>The native entry point of a GDK shim.</summary>

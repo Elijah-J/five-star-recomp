@@ -52,6 +52,12 @@ internal sealed record HostOptions
 
     public string? InputConfig { get; set; }
 
+    /// <summary>Extracted FSSM programs (`fivestar shader extract`) for pipeline creation.</summary>
+    public string? ShaderDirectory { get; set; }
+
+    /// <summary>Translated DXIL programs (`fivestar shader translate`) for pipeline creation.</summary>
+    public string? TranslatedDirectory { get; set; }
+
     /// <summary>Run the main executable's entry point after loading, with the call trace and fault reporter on.</summary>
     public bool RunMain { get; set; }
 

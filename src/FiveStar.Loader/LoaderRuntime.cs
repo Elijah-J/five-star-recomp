@@ -9,6 +9,7 @@ using FiveStar.Loader.Mods;
 using FiveStar.Loader.Shims;
 using FiveStar.Loader.Shims.Apu;
 using FiveStar.Loader.Shims.D3D12X;
+using FiveStar.Loader.Shims.D3D12X.Pipelines;
 using FiveStar.Loader.Shims.Gdk;
 using FiveStar.Loader.Shims.Input;
 using FiveStar.Loader.Shims.Storage;
@@ -22,7 +23,7 @@ namespace FiveStar.Loader;
 /// </summary>
 internal sealed class LoaderRuntime : IDisposable
 {
-    public LoaderRuntime(LoaderOptions options, GdkOptions gdk, LoaderEnvironment environment, LoaderLog log)
+    public LoaderRuntime(LoaderOptions options, GdkOptions gdk, PipelineFolders pipelines, LoaderEnvironment environment, LoaderLog log)
     {
         Log = log;
         Counters = new LoaderCounters();
@@ -49,7 +50,7 @@ internal sealed class LoaderRuntime : IDisposable
         Xg = new XgComputers(Stubs, CodeHeap);
 
         D3D12 = new D3D12Forwarder(log);
-        D3D12X = new XboxDeviceFactory(D3D12, Stubs, CodeHeap, XMemPhysical, Images, log);
+        D3D12X = new XboxDeviceFactory(D3D12, Stubs, CodeHeap, XMemPhysical, Images, pipelines, log);
 
         Gdk = CreateGdk(gdk, environment.Time);
         Overlay = new FileOverlay(Gdk.Config, log);

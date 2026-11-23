@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using FiveStar.Loader.Loading;
+using FiveStar.Loader.Shims.D3D12X.Pipelines;
 using FiveStar.Loader.Shims.Gdk;
 
 namespace FiveStar.Loader.Host;
@@ -40,6 +41,11 @@ internal static class HostComposition
         uint deviceType = options.DeviceType ?? SystemService.XboxScarlettAnaconda;
 
         return new GdkOptions(options.PackageRoot, options.SaveDirectory, dataRoot, Environment.CurrentDirectory, deviceType, Environment.OSVersion.Version);
+    }
+
+    public static PipelineFolders CreatePipelineFolders(HostOptions options)
+    {
+        return new PipelineFolders(options.ShaderDirectory, options.TranslatedDirectory);
     }
 
     public static LoaderEnvironment CreateEnvironment()

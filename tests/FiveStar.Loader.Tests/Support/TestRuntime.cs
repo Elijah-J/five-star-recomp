@@ -3,6 +3,7 @@
 
 using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Loading;
+using FiveStar.Loader.Shims.D3D12X.Pipelines;
 using FiveStar.Loader.Shims.Gdk;
 
 namespace FiveStar.Loader.Tests.Support;
@@ -39,7 +40,7 @@ internal sealed class TestRuntime : IDisposable
         var options = new LoaderOptions([], manual, UnresolvedMode.Stub, true, Path.Combine(folder, "work"), null, Environment.ProcessId);
         var gdk = new GdkOptions(packageRoot, Path.Combine(folder, "saves"), Path.Combine(folder, "data"), folder, SystemService.XboxScarlettAnaconda, Environment.OSVersion.Version);
         var environment = new LoaderEnvironment(Environment.SystemDirectory, TimeProvider.System, Environment.FailFast);
-        var runtime = new LoaderRuntime(options, gdk, environment, new LoaderLog(log ?? TextWriter.Null, null, false));
+        var runtime = new LoaderRuntime(options, gdk, new PipelineFolders(null, null), environment, new LoaderLog(log ?? TextWriter.Null, null, false));
 
         return new TestRuntime(runtime, folder);
     }

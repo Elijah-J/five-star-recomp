@@ -6,6 +6,8 @@ using FiveStar.Loader.Codegen;
 using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Loading;
 using FiveStar.Loader.Native;
+using FiveStar.Loader.Shims.D3D12X.Pipelines;
+using FiveStar.Shaders.Cache;
 
 namespace FiveStar.Loader.Shims.D3D12X;
 
@@ -29,12 +31,14 @@ internal sealed unsafe class XboxDeviceFactory
 
     private readonly D3D12Forwarder _d3d12;
     private readonly UnresolvedStubs _stubs;
+    private readonly PipelineFolders _pipelineFolders;
     private readonly LoaderLog _log;
 
-    public XboxDeviceFactory(D3D12Forwarder d3d12, UnresolvedStubs stubs, CodeHeap heap, XMemPhysicalMemory memory, ImageTable images, LoaderLog log)
+    public XboxDeviceFactory(D3D12Forwarder d3d12, UnresolvedStubs stubs, CodeHeap heap, XMemPhysicalMemory memory, ImageTable images, PipelineFolders pipelines, LoaderLog log)
     {
         _d3d12 = d3d12;
         _stubs = stubs;
+        _pipelineFolders = pipelines;
         _log = log;
 
         Objects = new XboxObjects(stubs, heap, log);
@@ -51,6 +55,9 @@ internal sealed unsafe class XboxDeviceFactory
 
     /// <summary>The command-list wrappers device slots 12 and 73 hand out.</summary>
     public XboxCommandLists CommandLists { get; }
+
+    /// <summary>The pipeline slots (55, 57, 62, 67, 86) once a device exists and the shader folders are known.</summary>
+    public PipelineSlots? Pipelines { get; private set; }
 
     /// <summary>Device slot 14 and the title-memory descriptor handles.</summary>
     public XboxDescriptorHeaps DescriptorHeaps { get; }
@@ -80,6 +87,7 @@ internal sealed unsafe class XboxDeviceFactory
         }
 
         *device = Objects.WrapDevice(inner);
+        CreatePipelines(inner);
 
         return HResult.Ok;
     }
@@ -100,6 +108,40 @@ internal sealed unsafe class XboxDeviceFactory
         _log.Detail($"  [d3d12_xs] D3D12ConfigureVirtualMemoryX(dword@4={count}) -> S_OK (no-op)");
 
         return HResult.Ok;
+    }
+
+    /// <summary>
+    /// The pipeline slots on the new device: ID3D12Device2 for pipeline streams, the bindless root signature every
+    /// translated program uses, and the translated programs. Without the shader folders the slots stay stubs.
+    /// </summary>
+    private void CreatePipelines(nint inner)
+    {
+        string? programs = _pipelineFolders.Programs;
+        string? translated = _pipelineFolders.Translated;
+
+        if (programs is null || translated is null)
+        {
+            _log.Detail("  [d3d12_xs] pipeline slots stay stubs: no --shader-dir and --translated-dir");
+
+            return;
+        }
+
+        Guid device2Iid = DesktopDevice.Device2Iid;
+        nint device2 = 0;
+        nint root = 0;
+
+        if (HResult.Failed(DesktopDevice.QueryInterface(inner, &device2Iid, &device2)) || HResult.Failed(BindlessRoot.Create(inner, &root)))
+        {
+            _log.Warn("[d3d12_xs] pipeline slots stay stubs: no ID3D12Device2 or bindless root signature");
+
+            return;
+        }
+
+        var warnings = new OnceLog(_log);
+        var library = new TranslatedProgramLibrary(ProgramIndex.Load(programs), translated);
+        Pipelines = new PipelineSlots(new PipelineFactory(device2, root, library, warnings), warnings);
+        PipelineSlotHandlers.Register(Objects);
+        _log.Detail($"  [d3d12_xs] pipeline slots on: programs {programs}, translated {translated}");
     }
 
     private void BindDeviceSlots()
