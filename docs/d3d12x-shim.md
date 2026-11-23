@@ -129,6 +129,17 @@ methods.
   `[HotPath]` rule by construction.
 - Slots 44 to 159 are logged stubs: the first call of each slot is logged as `d3d12_xs.dll!ID3D12Device.X::SlotN`,
   every call returns E_NOTIMPL.
+- X slots with a desktop translation (`XboxDeviceMethods`):
+  - 48 (compute queues): desc `{2, 0, flags, node}` with flags 0 to 3 and node 0 or 1, forwarded to desktop
+    CreateCommandQueue with only the DISABLE_GPU_TIMEOUT bit kept. Flag bit 2 is unknown.
+  - 73 (command lists): desc `{type, 6, 1, 0}` (type 2 for the compute lists; the meaning of the other dwords is
+    unknown). A desktop ID3D12GraphicsCommandList is created and wrapped (`XboxCommandLists`): slots 0 to 9 forward
+    (IUnknown, ID3D12Object, GetDevice, GetType, Close), slots 10 to 159 are logged stubs, so X register writes (131,
+    132) are dropped.
+  - 78, read as SetFrameIntervalX (*inferred*): (null output, 33333 us, period 3, flags 0). S_OK, logged.
+  - 79, read as ScheduleFrameEventX (*inferred*): (type 0 or 2, delta 0, null output, flags 0). S_OK, logged.
+- Queues from slots 8 and 48 are unwrapped desktop queues for now; queue slots past the desktop layout (16 and up,
+  35 for execute) still need a wrapper.
 - `D3D12ConfigureVirtualMemoryX` logs its argument and returns S_OK.
 
 The other interfaces take the same shape: one thunk vtable per interface (queue, list, allocator, resource), whose
@@ -140,7 +151,11 @@ objects, so a queue or list call past the desktop layout does not yet reach a st
 
 - The command-list vtable: which slots record draws, dispatches, barriers and root arguments. A run-time trace of
   the slots the game calls (all stubs logging) is the fastest way to get it.
-- Device slots 44 to 133 apart from those named above; the desc layout of slots 48 and 73.
+- Device slots 44 to 133 apart from those named above; the meaning of the desc dwords of slots 48 and 73.
+- Slot 133 (call at 0x141e8684c, first X slot the game needs after device setup): (GPU address, buffer resource
+  desc, 0xFFFFFFFF, null clear value, IID, out), read as CreatePlacedResourceX. A failure hits the `int3` at
+  0x1419f4f58. The desktop has no resource at a caller-chosen address; candidate: a heap from
+  `ID3D12Device3::OpenExistingHeapFromAddress` over the XMem pages and a placed resource on it.
 - Whether the queue's +2 shift holds for every pageable object (resource, heap, fence, PSO, allocator).
 - The object device slot 80 returns and how queue slot 35 uses it (frame pacing is the likely role).
 - Parameter-block fields at 0x20, 0x24, 0x28 and 0x3C.

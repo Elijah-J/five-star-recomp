@@ -9,7 +9,7 @@ using FiveStar.Loader.Shims;
 namespace FiveStar.Loader.Loading;
 
 /// <summary>
-/// Generates a native stub per unresolved or not-implemented import: <c>mov rcx,id; mov rax,handler; jmp rax</c>.
+/// Generates a native stub per unresolved or not-implemented import: <c>mov rdx,[rsp]; mov rcx,id; mov rax,handler; jmp rax</c>.
 /// The handler logs the first call and returns the stub's value (or terminates in trap mode). The caller's arguments
 /// are discarded, which is all a "not implemented" stub needs.
 /// </summary>
@@ -19,15 +19,17 @@ internal sealed unsafe class UnresolvedStubs
     private readonly List<UnresolvedStub> _stubs = [];
     private readonly Dictionary<(string Name, long ReturnValue, bool NotImplemented), nint> _cache = [];
     private readonly CodeHeap _heap;
+    private readonly ImageTable _images;
     private readonly UnresolvedMode _mode;
     private readonly LoaderLog _log;
     private readonly Action<string> _failFast;
     private int _callCount;
     private int _notImplementedCallCount;
 
-    public UnresolvedStubs(CodeHeap heap, UnresolvedMode mode, LoaderLog log, Action<string> failFast)
+    public UnresolvedStubs(CodeHeap heap, ImageTable images, UnresolvedMode mode, LoaderLog log, Action<string> failFast)
     {
         _heap = heap;
+        _images = images;
         _mode = mode;
         _log = log;
         _failFast = failFast;
@@ -85,8 +87,8 @@ internal sealed unsafe class UnresolvedStubs
         return address;
     }
 
-    /// <summary>Runs when a stub is called: counts it, logs the first call, and returns its value or traps.</summary>
-    public nint OnCalled(int id)
+    /// <summary>Runs when a stub is called: counts it, logs the first call (with its caller), and returns its value or traps.</summary>
+    public nint OnCalled(int id, nint returnAddress)
     {
         UnresolvedStub stub;
 
@@ -99,14 +101,14 @@ internal sealed unsafe class UnresolvedStubs
 
         if (stub.NotImplemented)
         {
-            return OnNotImplemented(stub, calls);
+            return OnNotImplemented(stub, calls, returnAddress);
         }
 
         Interlocked.Increment(ref _callCount);
 
         if (calls == 1)
         {
-            _log.Warn($"UNRESOLVED IMPORT CALLED: {stub.Name} (returning 0x{stub.ReturnValue:x}; further calls not logged)");
+            _log.Warn($"UNRESOLVED IMPORT CALLED: {stub.Name} from {_images.Describe(returnAddress)} (returning 0x{stub.ReturnValue:x}; further calls not logged)");
         }
 
         if (_mode == UnresolvedMode.Trap)
@@ -120,18 +122,18 @@ internal sealed unsafe class UnresolvedStubs
 
     [HotPath]
     [UnmanagedCallersOnly]
-    private static nint StubCalled(nint id)
+    private static nint StubCalled(nint id, nint returnAddress)
     {
-        return ShimContext.Runtime.Stubs.OnCalled((int)id);
+        return ShimContext.Runtime.Stubs.OnCalled((int)id, returnAddress);
     }
 
-    private nint OnNotImplemented(UnresolvedStub stub, int calls)
+    private nint OnNotImplemented(UnresolvedStub stub, int calls, nint returnAddress)
     {
         Interlocked.Increment(ref _notImplementedCallCount);
 
         if (calls == 1)
         {
-            _log.Warn($"NOT IMPLEMENTED: {stub.Name} -> 0x{stub.ReturnValue:x} (logged once)");
+            _log.Warn($"NOT IMPLEMENTED: {stub.Name} -> 0x{stub.ReturnValue:x} from {_images.Describe(returnAddress)} (logged once)");
         }
 
         return (nint)stub.ReturnValue;
@@ -139,8 +141,9 @@ internal sealed unsafe class UnresolvedStubs
 
     private nint WriteStub(int id)
     {
-        delegate* unmanaged<nint, nint> handler = &StubCalled;
+        delegate* unmanaged<nint, nint, nint> handler = &StubCalled;
         var code = new X64Emitter();
+        code.LoadRdxFromStackTop();
         code.MovRcx((ulong)id);
         code.MovRax((ulong)handler);
         code.JmpRax();

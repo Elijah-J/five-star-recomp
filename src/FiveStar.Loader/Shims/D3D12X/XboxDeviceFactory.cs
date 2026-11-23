@@ -30,7 +30,11 @@ internal sealed unsafe class XboxDeviceFactory
         _stubs = stubs;
         _heap = heap;
         _log = log;
+        CommandLists = new XboxCommandLists(stubs, heap, log);
     }
+
+    /// <summary>The command-list wrappers device slot 73 hands out.</summary>
+    public XboxCommandLists CommandLists { get; }
 
     /// <summary>HRESULT D3D12XboxCreateDevice(IGraphicsUnknown* adapter, const PARAMETERS*, REFIID, void** device).</summary>
     public int CreateDevice(nint adapter, byte* parameters, Guid* iid, nint* device)
@@ -125,13 +129,15 @@ internal sealed unsafe class XboxDeviceFactory
 
         for (int slot = 0; slot < D3D12XLayout.DesktopDeviceSlotCount; slot++)
         {
-            vtable[slot] = EmitForwarder(slot);
+            vtable[slot] = ForwardingThunk.Emit(_heap, slot, Array.IndexOf(D3D12XLayout.StructReturnSlots, slot) >= 0);
         }
 
         for (int slot = D3D12XLayout.DesktopDeviceSlotCount; slot < D3D12XLayout.DeviceSlotCount; slot++)
         {
             vtable[slot] = _stubs.Create(D3D12XLayout.Module, $"ID3D12Device.X::Slot{slot}", HResult.NotImplemented, true, false);
         }
+
+        BindXboxSlots(vtable);
 
         // One read-write to read-execute flip for the thunks and the stubs.
         _heap.Seal();
@@ -140,28 +146,17 @@ internal sealed unsafe class XboxDeviceFactory
         return (nint)vtable;
     }
 
-    /// <summary>
-    /// <c>mov rcx,[rcx+inner]; mov rax,[rcx]; jmp [rax+slot*8]</c>, or for a struct-returning slot (object in rdx)
-    /// <c>mov rdx,[rdx+inner]; mov rax,[rdx]; xchg rcx,rdx; jmp [rax+slot*8]</c>. Stack arguments stay in place.
-    /// </summary>
-    private nint EmitForwarder(int slot)
+    /// <summary>The X-only slots with a desktop translation (<see cref="XboxDeviceMethods"/>) replace their stubs.</summary>
+    private static void BindXboxSlots(nint* vtable)
     {
-        var emitter = new X64Emitter();
+        delegate* unmanaged<XboxDeviceObject*, CommandQueueDescription*, Guid*, nint*, int> createQueue = &XboxDeviceMethods.CreateCommandQueue;
+        delegate* unmanaged<XboxDeviceObject*, CommandListDescription*, nint, nint, Guid*, nint*, int> createList = &XboxDeviceMethods.CreateCommandList;
+        delegate* unmanaged<XboxDeviceObject*, nint, uint, uint, uint, int> frameInterval = &XboxDeviceMethods.SetFrameInterval;
+        delegate* unmanaged<XboxDeviceObject*, uint, uint, nint, uint, int> frameEvent = &XboxDeviceMethods.ScheduleFrameEvent;
 
-        if (Array.IndexOf(D3D12XLayout.StructReturnSlots, slot) >= 0)
-        {
-            emitter.LoadRdxFromRdx(D3D12XLayout.InnerOffset);
-            emitter.LoadRaxFromRdx();
-            emitter.SwapRcxRdx();
-        }
-        else
-        {
-            emitter.LoadRcxFromRcx(D3D12XLayout.InnerOffset);
-            emitter.LoadRaxFromRcx();
-        }
-
-        emitter.JmpRaxIndirect(slot * sizeof(nint));
-
-        return _heap.Write(emitter.ToArray());
+        vtable[D3D12XLayout.CreateCommandQueueSlot] = (nint)createQueue;
+        vtable[D3D12XLayout.CreateCommandListSlot] = (nint)createList;
+        vtable[D3D12XLayout.SetFrameIntervalSlot] = (nint)frameInterval;
+        vtable[D3D12XLayout.ScheduleFrameEventSlot] = (nint)frameEvent;
     }
 }
