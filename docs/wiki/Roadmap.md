@@ -8,12 +8,14 @@ The executable is in hand; `fivestar exe analyze` reports its imports and GDK ca
 
 | Item | State |
 |---|---|
-| Device removal | next blocker: after the descriptor heaps an invalid call removes the desktop device (device slot 70 is the first unknown call); the D3D12 debug layer should name it |
-| GPU memory | buffers at game-chosen addresses are placed in heaps opened over the game's own pages, and a table maps game GPU addresses to desktop ones. Open: translating those addresses where they reach commands and descriptors, ranges that span several page sections, and the main descriptor heap's 1,245,184 descriptors (the desktop limit is 1,000,000) ([d3d12x-shim.md](https://github.com/ThatRecompDev/five-star-recomp/blob/main/docs/d3d12x-shim.md)) |
+| Descriptor binding | next blocker: the game's first graphics work crashes in the GPU driver because descriptor heaps are never bound on command lists (list slots 26–28 are not identified) and the game builds its own GPU descriptor handles |
+| Resources at game addresses | the large open design: textures and views the game places at its own GPU addresses (device slots 70 and 133) need desktop resources fed from game memory, in the console tiling, including the 6 GB streaming range the game maps page by page; barriers are not translated yet |
+| GPU memory | buffers at game-chosen addresses live in heaps opened over the game's own pages, as one buffer per pool, and a table maps game GPU addresses to desktop ones, including memory the game committed itself. Open: the main descriptor heap's 1,245,184 descriptors (the desktop limit is 1,000,000) ([d3d12x-shim.md](https://github.com/ThatRecompDev/five-star-recomp/blob/main/docs/d3d12x-shim.md)) |
 | Command lists | the game writes most commands itself into the list's own buffer and calls a method only when it is full; about 50 of the list's methods are mapped to desktop ones; barriers, texture copies and the console-only methods are open |
 | Pipeline creation | the game's five pipeline-creation methods (from its pipeline cache, from a state stream, compute, and derived variants) build desktop pipelines from the translated shaders; picking per-GPU program variants and slot 101 (ray-tracing state objects) are open ([d3d12x-pipelines.md](https://github.com/ThatRecompDev/five-star-recomp/blob/main/docs/d3d12x-pipelines.md)) |
 | Pipeline state | whole root signatures (the cache lists only the bindings each shader uses, with their user SGPRs) and the shader constants layout; blend, depth, raster state, render-target and depth formats and vertex formats already come from the driver's pipeline cache |
-| Present | the queue's present and frame-event methods, on a swap chain for the game's own window |
+| Present | the game reaches its present (queue slot 32); it returns success but shows nothing until it is backed by a swap chain on the game's own window |
+| Ray tracing | `XboxBvhBuilder.dll` needs console compute shaders, so its builds are skipped for now |
 | Audio | the game mixes on the CPU and plays through WASAPI but leaves decoding to the console hardware: Opus (99.9% of sounds) now decodes through a CPU copy of the console's queue; an XMA2 decoder exists (below) but is not yet behind the console's SHAPE XMA contexts, whose protocol is still being traced ([audio-runtime.md](https://github.com/ThatRecompDev/five-star-recomp/blob/main/docs/audio-runtime.md)) |
 | Archive file table | names and exact entry boundaries stay encrypted; the game opens and reads its archives itself at run time |
 

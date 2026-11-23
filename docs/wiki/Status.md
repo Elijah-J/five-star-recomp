@@ -2,9 +2,10 @@
 
 GTA VI does not run yet. Its main executable (`game_scarlett_master.exe`, built 13 November 2026) became available on
 23 November 2026. Under the loader it now starts: it runs from its entry point through the C runtime start-up, its
-memory set-up, opening its archives through DirectStorage, the whole D3D12.X device set-up, its first buffers in its
-own GPU memory and its descriptor heaps. It then stops because the desktop D3D12 device is removed by an invalid call
-that is still being tracked down (see [Roadmap](Roadmap.md)).
+memory set-up, opening its archives through DirectStorage, the whole D3D12.X device set-up, its GPU memory pools,
+descriptor heaps, render targets and pipelines, up to its first present and into the frame loop. Nothing is drawn yet:
+it stops in the GPU driver while recording its first graphics work, because descriptor heaps are not yet bound on
+command lists and resources at the game's GPU addresses are not real yet (see [Roadmap](Roadmap.md)).
 
 ![Progress](progress.svg)
 
@@ -26,7 +27,7 @@ that is still being tracked down (see [Roadmap](Roadmap.md)).
 | Videos | 515 Bink 2 videos extract from `movies.rpf` |
 | Audio | all 1,603,231 sounds in `audio.rpf` export as Ogg Opus or WAV (Opus, XMA2, PCM); our XMA2 decoder matches FFmpeg on all 1,818 XMA2 streams (exact sample counts, at least 136 dB SNR) and can export them as PCM |
 | Executable | 587 imports, all resolved: 34 by shims, 209 from the package's own libraries, 325 from Windows, 19 by Xbox-only stubs; the six Xbox libraries in the package load with all 825 of their imports resolved |
-| Boot | from the entry point through C runtime start-up, memory set-up, DirectStorage archive opening, D3D12.X device set-up (queues, command lists, frame pacing), buffers at game-chosen GPU addresses and the descriptor heaps; a fault report gives the address, function, registers and last shim calls of any stop |
+| Boot | from the entry point through C runtime start-up, memory set-up, DirectStorage archive opening, D3D12.X device set-up (queues, command lists, frame pacing), buffers at game-chosen GPU addresses, the descriptor heaps, render targets, the first present and into the frame loop; `--d3d12-debug` adds the D3D12 debug layer and DRED; a fault report gives the address, function, registers and last shim calls of any stop |
 | Console runtime | task queues and async run for real; user, saves, package and store work offline; the game calls 161 GDK functions, all named from the PC GDK and all shimmed |
 | Console system libraries | xmem physical pages alias like the console's (shared sections mapped into placeholders); XG texture layouts match 309,631 of 351,925 shipped textures; DirectStorage reads and inflates on CPU worker queues; the console's Opus decoder queue runs on the CPU, sample-identical to the audio exporter on a real sound bank |
 | Graphics API (D3D12.X) | every D3D12.X object the game gets (device, queues, command lists, allocators, resources, heaps) wraps a desktop object: desktop-compatible methods forward through generated thunks, console-only ones are logged; command lists execute through the console's queue method; buffers can live in the game's own memory at the addresses it chose; the game's five pipeline-creation methods build pipelines from the translated shaders when the loader is given the shader folders; game textures and models draw through the game's own shaders on our renderer; command translation and present are not done |
