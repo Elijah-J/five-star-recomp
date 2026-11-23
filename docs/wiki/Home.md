@@ -18,7 +18,7 @@ flowchart LR
   code -->|"runs unchanged, mapped by the loader"| pc["Windows PC"]
   shaders -->|"translated to HLSL, compiled by dxc"| pc
   runtime -->|"loader shims"| pc
-  gfx -->|"D3D12, needs the executable"| pc
+  gfx -->|"D3D12, device shim in progress"| pc
   data -->|"format readers"| pc
 ```
 

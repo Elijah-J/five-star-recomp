@@ -17,8 +17,9 @@ No game files, keys or extracted data are part of this repository. Every tool ru
 
 ## Status
 
-GTA VI does not run yet: its main executable is not available to the project, so the work so far is everything
-that can be built and verified without it.
+GTA VI does not run yet. Its main executable is now available: under the loader it starts and runs through its memory
+set-up, archive opening and graphics device set-up, and stops before its first frame. Details and numbers are in the
+[wiki](https://github.com/ThatRecompDev/five-star-recomp/wiki/Status).
 
 | Area | State |
 |---|---|
@@ -26,8 +27,8 @@ that can be built and verified without it.
 | Archives | Contents can be extracted without the encrypted file table (no names yet). Metadata files parse completely. |
 | Textures | 99.3% of textures export, including pages in the console's BCPack BC1 format; the other BCPack formats (mostly BC7) cannot be decoded yet. |
 | Models | Drawable geometry (meshlets, packed vertices) decodes and exports as OBJ ([docs/models.md](docs/models.md)). |
-| Loader | The game's support libraries load with all imports resolved; the console runtime is implemented for offline use. |
-| Graphics API | Needs the executable to see how the game drives the GPU. A first frame works: game textures and models drawn with the game's translated unlit pass and its cached pipeline state on our own D3D12 code ([docs/rendering.md](docs/rendering.md)). |
+| Loader | The game executable and its support libraries load with all imports resolved and the game boots through its start-up; the console runtime and system libraries are implemented for offline use. |
+| Graphics API | The game's D3D12.X device runs on desktop D3D12; command lists, pipeline creation and present are being translated. Separately, our own renderer draws a first frame: game textures and models drawn with the game's translated unlit pass and its cached pipeline state on our own D3D12 code ([docs/rendering.md](docs/rendering.md)). |
 
 The [wiki](../../wiki) has the details, research notes and the current progress report.
 

@@ -8,9 +8,13 @@ the Windows system DLL.
 
 | Library | Replacement |
 |---|---|
-| `xmem.dll` | memory allocation on `VirtualAlloc` |
-| `d3d12_xs.dll` | root-signature helpers forwarded to `d3d12.dll`; the rest of D3D12.X is not started |
-| `xgameruntime.dll` | offline GDK runtime (below) |
+| `xmem.dll` | allocation on `VirtualAlloc`; physical pages are pieces of shared memory sections mapped into placeholder ranges, so one page seen at two addresses holds the same data, as on the console |
+| `d3d12_xs.dll` | the device on a desktop D3D12 device: desktop-compatible methods forward through generated thunks, console-only ones are logged; compute queues, command lists and frame pacing; root-signature helpers forwarded to `d3d12.dll` |
+| `xg_xs.dll` | texture layout computers over the console's tiling (sizes, mip offsets, tiling, copies in and out) |
+| `xcrdapi.dll` | DirectStorage: files read on worker threads and zlib chunks inflated into memory, exactly as stored |
+| `acphal.dll`, `chad.dll`, `xapu.dll` | the APU heap on ordinary memory; the audio hardware reports itself unavailable |
+| `GameInput.dll` | keyboard, mouse and gamepads |
+| `xgameruntime.dll` | offline GDK runtime (below); the game loads it at run time and gets the loader's implementation |
 
 ## The offline GDK
 
@@ -37,8 +41,8 @@ stats are Xbox web services, not part of the runtime, so they fail like any offl
 The game does not import GDK functions by name. A static library inside each module loads `xgameruntime.dll`, calls
 `QueryApiImpl(clsid, iid, &object)` and then calls methods on the returned COM-style object by vtable slot. The
 loader answers `QueryApiImpl` with objects whose slots call its shims. The table that maps each (clsid, iid, slot) to
-a function is built from the user's own copy of the PC GDK (`fivestar platform gdk-abi`); it names 365 of the 408
-thunks in the shipped `libHttpClient.GDK.dll`. A call through this path costs about 60 ns.
+a function is built from the user's own copy of the PC GDK (`fivestar platform gdk-abi`). With the October 2026 GDK it
+names all 161 GDK functions the game calls and 335 of the 404 thunks in the shipped `libHttpClient.GDK.dll`. A call through this path costs about 60 ns.
 
 ## Process identity
 
