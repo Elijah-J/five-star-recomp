@@ -11,7 +11,7 @@ namespace FiveStar.Formats.Ttpf;
 /// <summary>
 /// A streamed texture page file (<c>.ttpf</c>): an <c>RDS5</c> header and page table mapping file pages to a virtual
 /// address space, then an <c>ETPF</c> section of texture descriptors and name hashes. Pages decode on demand
-/// (stored, zlib or BCPack BC1); pages of the other BCPack codecs read as missing.
+/// (stored, zlib, or BCPack BC1, BC4 and BC5); pages of the other BCPack codecs read as missing.
 /// </summary>
 public sealed class TexturePageFile
 {
@@ -103,7 +103,7 @@ public sealed class TexturePageFile
         return low - 1;
     }
 
-    /// <summary>A page's decoded bytes: stored, inflated or BCPack BC1 blocks; null for a page that cannot be decoded.</summary>
+    /// <summary>A page's decoded bytes: stored, inflated or BCPack blocks; null for a page that cannot be decoded.</summary>
     public byte[]? PageData(int index)
     {
         if (_cache.TryGetValue(index, out var cached))
@@ -132,7 +132,7 @@ public sealed class TexturePageFile
         }
         else if (page.IsDecodable)
         {
-            data = DecodeBc1(page, raw);
+            data = DecodeBcPack(page, raw);
         }
 
         if (_cache.Count > MaxCachedPages)
@@ -239,14 +239,14 @@ public sealed class TexturePageFile
         return pages;
     }
 
-    private static byte[] DecodeBc1(TexturePage page, ReadOnlySpan<byte> stored)
+    private static byte[] DecodeBcPack(TexturePage page, ReadOnlySpan<byte> stored)
     {
-        var blocks = new byte[(long)page.Bc1Blocks * Bc1Decoder.BlockSize];
-        var result = Bc1Decoder.Decode(stored, page.Bc1Blocks, blocks);
+        var blocks = new byte[page.VirtualSize];
+        var result = BcPackPageDecoder.Decode(page.Codec, stored, page.VirtualSize, blocks);
 
         if (!result.Success)
         {
-            throw new InvalidDataException($"BCPack BC1 page at {page.FileOffset:x}: {result.Describe()}");
+            throw new InvalidDataException($"BCPack codec {page.Codec} page at {page.FileOffset:x}: {result.Describe()}");
         }
 
         return blocks;

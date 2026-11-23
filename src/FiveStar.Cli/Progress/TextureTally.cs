@@ -20,6 +20,9 @@ internal static class TextureTally
     private const double Height = 120;
     private const string OkStatus = "ok";
     private const string BcPackStatus = "bcpack_";
+    private const string ApproximateStatus = "approx_";
+    private const string ApproximateName = "BCPack approximate";
+    private const string ApproximateNote = "mip 0 decodes through BCPack tables fitted to neighbouring mips; not byte-exact";
     private const string CubeStatus = "skip_cube";
     private const string BcPackPrefix = "BCPack ";
     private const string BcPackNote = "mip 0 touches a BCPack page; no decoder yet";
@@ -53,7 +56,12 @@ internal static class TextureTally
             log.WriteLine($"textures: {Path.GetFileName(path)} {report.Textures.Total}");
         }
 
-        var groups = new List<ProgressGroup> { new("zlib / stored pages", textures[OkStatus], 0, 0, "mip 0 deswizzled from zlib or stored pages") };
+        var approximate = textures.MostCommon().Where(entry => entry.Key.StartsWith(ApproximateStatus, StringComparison.Ordinal)).Sum(entry => entry.Value);
+        var groups = new List<ProgressGroup>
+        {
+            new("zlib / stored pages", textures[OkStatus], 0, 0, "mip 0 deswizzled from zlib or stored pages"),
+            new(ApproximateName, 0, approximate, 0, ApproximateNote),
+        };
         groups.AddRange(BcPackGroups(blockers));
         groups.AddRange(LayoutGroups(textures));
 
@@ -116,7 +124,7 @@ internal static class TextureTally
 
         foreach (var entry in textures.MostCommon())
         {
-            if (entry.Key == OkStatus || entry.Key.StartsWith(BcPackStatus, StringComparison.Ordinal))
+            if (entry.Key == OkStatus || entry.Key.StartsWith(BcPackStatus, StringComparison.Ordinal) || entry.Key.StartsWith(ApproximateStatus, StringComparison.Ordinal))
             {
                 continue;
             }

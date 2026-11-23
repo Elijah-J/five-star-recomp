@@ -170,7 +170,7 @@ internal sealed class TextureReports
         var allGib = DecimalText.Fixed(bytes / BytesPerGibibyte, TwoDecimals);
         var bytesShare = DecimalText.Fixed(spanBytes["ok"] / (double)bytes * Percent, TwoDecimals);
 
-        _output.WriteLine($"TOTAL textures {count}: ok {textures["ok"]} ({okShare}%), span bytes ok {okGib} / {allGib} GiB ({bytesShare}%)");
+        _output.WriteLine($"TOTAL textures {count}: ok {textures["ok"]} ({okShare}%), span bytes ok {okGib} / {allGib} GiB ({bytesShare}%); approx_ statuses decode through fitted BCPack tables");
 
         foreach (var entry in textures.MostCommon())
         {

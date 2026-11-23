@@ -29,4 +29,7 @@ public enum TextureStatusKind
 
     /// <summary>Coverage only: mip 0 touches a BCPack page that cannot be decoded (detail = codec).</summary>
     BcPack,
+
+    /// <summary>Coverage only: mip 0 reads, but through a BCPack codec whose decode is approximate (detail = codec).</summary>
+    Approximate,
 }

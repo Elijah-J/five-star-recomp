@@ -5,7 +5,7 @@ using System.Globalization;
 
 namespace FiveStar.Formats.Ttpf;
 
-/// <summary>A texture status with its detail value, named for reports (<c>ok</c>, <c>skip_fmt_N</c>, <c>bcpack_codecN</c>...).</summary>
+/// <summary>A texture status with its detail value, named for reports (<c>ok</c>, <c>skip_fmt_N</c>, <c>bcpack_codecN</c>, <c>approx_codecN</c>...).</summary>
 public readonly record struct TextureStatus(TextureStatusKind Kind, int Detail)
 {
     public static TextureStatus Ok => new(TextureStatusKind.Ok, 0);
@@ -34,6 +34,8 @@ public readonly record struct TextureStatus(TextureStatusKind Kind, int Detail)
                     return "skip_cube_copies";
                 case TextureStatusKind.UnsupportedCodec:
                     return "skip_unsupported_codec";
+                case TextureStatusKind.Approximate:
+                    return "approx_codec" + detail;
                 default:
                     return "bcpack_codec" + detail;
             }

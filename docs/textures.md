@@ -93,7 +93,21 @@ smoother than `y0y1` on all 24 textures that are not flat, and the volume bricks
 ## Page codecs
 
 zlib pages decode with any zlib inflater. Codecs 1 and 3 to 7 are the console's BCPack format, one per BC format (the
-codec equals `DSTORAGE_BCPACK_MODE`). BC1 (codec 1) decodes; pages of the other codecs read as missing.
+codec equals `DSTORAGE_BCPACK_MODE`). BC1 (codec 1) decodes; BC4 and BC5 (codecs 4 and 5) decode approximately; pages
+of the other codecs read as missing.
+
+Every codec uses the same entropy layer (below) with its own lanes. Each lane emits one symbol per 8 bytes of output:
+one per block for BC1 and BC4, two (E, then O) per 16-byte block for the others. A lane's alphabet index is its symbol
+width - 1. Every page of the dump converges with these layouts.
+
+| Codec | Lanes | Symbol width per lane, bits |
+|---|---|---|
+| 1 BC1 | 12 | 8, 8, 5, 6, 5, 5, 6, 5, 8, 8, 8, 8 |
+| 3 BC3 | 12 | 4, 4, 8, 6, 6, 6, 6, 5, 6, 5, 8, 8 |
+| 4 BC4 | 12 | 8, 8, 8, 8, 6, 6, 6, 6, 6, 6, 6, 6 |
+| 5 BC5 | 12 | 4, 4, 8, 8, 6, 6, 6, 6, 6, 6, 6, 6 |
+| 6 BC6H | 16 | 4, 4, 8, 8, 8, 5, 5, 5, 6, 6, 6, 8, 8, 8, 8, 5 |
+| 7 BC7 | 16 | 4, 4, 8, 8, 8, 8, 8, 7, 7, 5, 6, 8, 8, 8, 8, 5 |
 
 ### BCPack BC1
 
@@ -137,6 +151,46 @@ never read. The fits and the checks are on the wiki page Textures and BCPack.
 Three engines give the same bytes: AVX-512 (all lanes in one 16-lane vector), AVX2 (two 8-lane vectors) and a
 portable scalar one. The fastest one the processor supports runs.
 
+### BCPack BC4 and BC5
+
+A BC4 page decodes to `virtual size / 8` BC4 blocks, one symbol vector each. A BC5 page decodes to `virtual size / 16`
+BC5 blocks, two symbol vectors each: E, then O. Endpoints are bytes that add modulo 256. The lane meanings are those of
+the GTA6-Asset-Info notes (`THIRD_PARTY_NOTICES.md`).
+
+| Lane | BC4 | BC5 |
+|---|---|---|
+| 0 | Distance d, zigzag mod 256 | Distance d: E and O interleaved bit by bit (E on the even bits), then zigzag mod 256 |
+| 1 | Unused (always 0) | Unused (always 0) |
+| 2 | e0 residual (zigzag) | Channel 0: e0 residual (E), e1 residual (O) |
+| 3 | e1 residual | Channel 1: e0 residual (E), e1 residual (O) |
+| 4-11 | Lane 4 + k: pixels 2k and 2k + 1 through the pair table | Lanes 4-7 channel 0, 8-11 channel 1; lane of row r: E pixels (r, 0) and (r, 1), O pixels (r, 2) and (r, 3), through the pair table |
+
+The endpoints of block i start from 128 when d is 0, from block i - d, or, when i - d is before block 0, from slot
+(i - d) mod 256 of the codec's preset table. Each codec has a 64-entry pair table: symbol s gives the 3-bit indices of
+the two pixels, first pixel first.
+
+The pair tables and preset slots (`Tables/bc4_tables.json`, `Tables/bc5_tables.json`) are not published anywhere; they
+were fitted to the reference dump against the textures' smaller mips, so BC4 and BC5 output is approximate and
+`texture coverage` counts those textures as `approx_codec4` and `approx_codec5`. Because BCPack is lossless, a pair
+table is a bijection onto the 64 index pairs, and the fit is constrained to one.
+
+### BCPack BC7 (no block decoder yet)
+
+Checked on the dump with the BC7 anchor rule (an anchor index never has its top bit set), on every block whose index
+chain starts inside its page: 0 violations in 12.6 million anchor reads of modes 1 and 3 to 7.
+
+| Part | Layout |
+|---|---|
+| Distances | index distance di = lane 1 E and O interleaved (E on the even bits); endpoint distance (di + zigzag(lane 0 E, O interleaved)) mod 256 |
+| Header | lane 15 (E, O); its rank r among all pairs a < 32, b < 16 sorted by ((a + 1)(b + 1), a); the dump uses ranks 0-284 |
+| Ranks | 0-63 mode 7, partition 63 - r; 64 mode 6; 65-68 mode 5; 69-76 mode 4; 77-140 mode 3, partition 140 - r; 141-162 mode 2; 163-226 mode 1, partition 226 - r; 227-240 mode 0; 241-282 mode 2; 283-284 mode 0 |
+| Indices | lanes 11-14 = rows 0-3, E columns 0-1, O columns 2-3; a symbol's odd bits are the left pixel's residual and its even bits the right's (row 3: the other way round); index = reference block's index + zigzag residual modulo 2^bits, kept MSB-aligned in 4 bits; di = 0 starts from 0 |
+| Mode 4 | lanes 11-14 carry its 3-bit index set |
+
+The anchor rule fixes which mode-0 and mode-2 ranks are which, and narrows each to the partitions that share its
+anchor pixels; the partition within such a group, the endpoint layer and the 256-slot endpoint and index presets are
+not fitted here.
+
 ## Duplicate table
 
 `textures.rpf` holds one entry (archive offset 0xB6CA000 in the reference dump, 327,680 bytes) that starts with
@@ -159,23 +213,28 @@ fivestar texture extract  <file.ttpf> <out dir> [--limit N] [--only i,j] [--no-d
 fivestar texture coverage <dir>                  textures whose pages all decode, per file and in total
 fivestar texture codecs   <dir>                  pages and stored bytes per storage kind
 fivestar texture pages    <file.ttpf>            three sample entries per flag value, then counts per flag and kind
-fivestar texture bcpack-scan  <file|dir>... [--every N] [--jobs N] [--engine avx512|avx2|scalar] [--hashes FILE] [--quiet]
+fivestar texture bcpack-scan  <file|dir>... [--codec 1|3|4|5|6|7] [--every N] [--jobs N] [--engine avx512|avx2|scalar] [--hashes FILE] [--quiet]
 fivestar texture bcpack-bench <file|dir>... [--pages N] [--seconds S] [--engine avx512|avx2|scalar]
 ```
 
 Statuses: `ok`, `skip_fmt_N` (format not supported), `skip_modeN` (no swizzle known), `skip_kindN`, `skip_size`
 (layout longer than the span), `skip_cube_copies` (more copies than units), `skip_unsupported_codec` (mip 0 on a
-BCPack page of codec 3 to 7), and in `coverage` `bcpack_codecN`. On the reference dump every texture's layout fits
-its span; 354,998 of 357,115 have a decodable mip 0, the rest sit on BCPack pages of codecs 3 to 7.
+BCPack page without a block decoder), and in `coverage` `bcpack_codecN` (blocked by such a page) and
+`approx_codecN` (extracts, through an approximate BCPack codec). On the reference dump every texture's layout fits
+its span; 354,998 of 357,115 have a mip 0 that decodes exactly, 132 more decode approximately (BC4 40, BC5 92), and
+the rest (1,985) sit on BCPack pages of codecs 3, 6 and 7.
 
-`bcpack-scan` decodes every BC1 page on all cores and prints, per file and in total, the pages that converge, fail
-or reach an unfitted window slot, with the decode speed. `--hashes` writes one line per page (path, virtual address,
-status, SHA-256 of the blocks, unfitted blocks) to compare engines or builds. `bcpack-bench` measures one core on
+`bcpack-scan` decodes every page of one codec (BC1 by default) on all cores and prints, per file and in total, the
+pages that converge, fail or reach an unfitted preset slot, with the decode speed. `--hashes` writes one line per page
+(path, virtual address, status, SHA-256 of the output, unfitted blocks) to compare engines or builds; for a codec
+without a block decoder the output is the lane symbols. `bcpack-bench` measures one core on
 sampled pages, by page size.
 
 ## Unknown
 
-- The BCPack lane layouts of codecs 3 to 7.
+- The BCPack block layers of codecs 3, 6 and 7.
+- The exact BC4 and BC5 pair tables and preset slots (ours are fits), and the slots that no fitted texture reads (4
+  BC4 and 58 BC5 pages reach one; they decode as zeros and are reported).
 - Values of the BC1 preset window and codebook that no page of this dump tests.
 - What separates bases 1, 2 and 3.
 - Volumes with mips, and volume bricks of 1-, 4- and 16-byte elements (none ship).

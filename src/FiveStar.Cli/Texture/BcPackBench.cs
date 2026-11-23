@@ -15,7 +15,7 @@ namespace FiveStar.Cli.Texture;
 /// files, by size class (block counts from 2^k to 2^(k+1) - 1). Time is the process's processor time, so other load
 /// on the machine counts only through shared caches and clocks.
 /// </summary>
-internal sealed class Bc1Bench
+internal sealed class BcPackBench
 {
     private const long DefaultPages = 400;
     private const double DefaultSeconds = 2;
@@ -28,14 +28,14 @@ internal sealed class Bc1Bench
 
     private readonly TextWriter _output;
 
-    public Bc1Bench(TextWriter output)
+    public BcPackBench(TextWriter output)
     {
         _output = output;
     }
 
     public void Run(IReadOnlyList<string> paths, CommandArguments arguments)
     {
-        var engine = Bc1PageSet.Engine(arguments.Option("--engine"));
+        var engine = BcPackPageSet.Engine(arguments.Option("--engine"));
         var seconds = DefaultSeconds;
         var secondsOption = arguments.Option("--seconds");
 
@@ -44,9 +44,9 @@ internal sealed class Bc1Bench
             seconds = double.Parse(secondsOption, CultureInfo.InvariantCulture);
         }
 
-        var sample = Sample(Bc1PageSet.Files(paths), Math.Max(1, arguments.LongOption("--pages", DefaultPages)));
+        var sample = Sample(BcPackPageSet.Files(paths), Math.Max(1, arguments.LongOption("--pages", DefaultPages)));
         var output = new byte[sample.Max(page => page.Blocks) * Bc1Decoder.BlockSize];
-        _output.WriteLine($"{Bc1PageSet.EngineName(engine)} engine, {sample.Count} sampled BC1 pages, processor time, {DecimalText.Fixed(seconds, 1)} s per size class");
+        _output.WriteLine($"{BcPackPageSet.EngineName(engine)} engine, {sample.Count} sampled BC1 pages, processor time, {DecimalText.Fixed(seconds, 1)} s per size class");
 
         // A first pass lets the runtime finish optimising the decoder.
         Measure(sample, output, engine, WarmUpSeconds);
@@ -71,7 +71,7 @@ internal sealed class Bc1Bench
     }
 
     /// <summary>Decodes the pages over and over for at least <paramref name="seconds"/> of processor time.</summary>
-    private static (long Blocks, long Cycles, double Seconds) Measure(List<(int Blocks, byte[] Data)> pages, byte[] output, Bc1Engine engine, double seconds)
+    private static (long Blocks, long Cycles, double Seconds) Measure(List<(int Blocks, byte[] Data)> pages, byte[] output, BcPackEngine engine, double seconds)
     {
         using var process = Process.GetCurrentProcess();
         var start = process.TotalProcessorTime;
@@ -104,7 +104,7 @@ internal sealed class Bc1Bench
     /// <summary>About <paramref name="count"/> decodable BC1 pages spread evenly over all of them, read into memory.</summary>
     private static List<(int Blocks, byte[] Data)> Sample(List<string> files, long count)
     {
-        var pages = Bc1PageSet.Pages(files, 1).Where(entry => entry.Page.Bc1Blocks > 0).ToList();
+        var pages = BcPackPageSet.Pages(files, 1, BcPackCodec.Bc1).Where(entry => entry.Page.Bc1Blocks > 0).ToList();
         var step = Math.Max(1, pages.Count / count);
         var sample = new List<(int Blocks, byte[] Data)>();
         FileByteSource? source = null;

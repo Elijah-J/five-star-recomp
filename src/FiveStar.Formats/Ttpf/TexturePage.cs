@@ -8,7 +8,7 @@ namespace FiveStar.Formats.Ttpf;
 /// <summary>
 /// One page of a texture page file. Page-table entry (two u32): <c>lo = flag &lt;&lt; 24 | file offset / 0x100</c>,
 /// <c>hi = tag &lt;&lt; 20 | virtual address / 0x4000</c>; flag bits 6-7 add 0x1000 steps to the virtual address,
-/// bit 5 marks zlib, bits 2-4 name the codec (0 stored, 1/3/4/5/6/7 BCPack for BC1/BC3/BC4/BC5/BC6H/BC7).
+/// bit 5 marks zlib, bits 2-4 name the codec (0 stored, 1/3/4/5/6/7 BCPack for BC1/BC3/BC4/BC5/BC6H/BC7, <see cref="BcPackCodec"/>).
 /// </summary>
 /// <param name="VirtualAddress">Where the page's bytes sit in the texture address space.</param>
 /// <param name="Flag">The flag byte.</param>
@@ -38,10 +38,13 @@ public sealed record TexturePage(long VirtualAddress, byte Flag, long FileOffset
     public bool IsBcPack => !IsZlib && Codec != 0;
 
     /// <summary>
-    /// Gets a value indicating whether the page's bytes can be read: stored, zlib, or BCPack BC1 with a known virtual
-    /// size of whole blocks (<see cref="Bc1Decoder"/>). BCPack pages of the other codecs cannot be decoded yet.
+    /// Gets a value indicating whether the page's bytes can be read: stored, zlib, or BCPack of a codec with a block
+    /// decoder (<see cref="BcPackPageDecoder"/>) and a known virtual size of whole blocks.
     /// </summary>
-    public bool IsDecodable => !IsBcPack || (Codec == Bc1Codec && Bc1Blocks > 0);
+    public bool IsDecodable => !IsBcPack || (BcPackPageDecoder.CanDecode(Codec) && BcPackDecoder.SymbolsPerLane((BcPackCodec)Codec, VirtualSize) > 0);
+
+    /// <summary>Gets a value indicating whether the page decodes only approximately (<see cref="BcPackPageDecoder.IsApproximate"/>).</summary>
+    public bool IsApproximate => IsBcPack && BcPackPageDecoder.IsApproximate(Codec);
 
     /// <summary>Gets the BC1 blocks a BCPack BC1 page decodes to, or 0 when its virtual size is unknown or not whole blocks.</summary>
     public int Bc1Blocks

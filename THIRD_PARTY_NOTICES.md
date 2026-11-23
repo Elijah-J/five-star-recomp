@@ -9,7 +9,8 @@ https://github.com/ItsNotRexed/Leonida, GPL-3.0. Its notes on the console D3D12.
 device byte at +0x18), the create-device and present parameter names it collected from public sources, the
 WaitFrameEventX return codes and the BVH header and instance-node fields were leads; each was checked against the
 game's executable or shaders before use (docs/d3d12x-shim.md, docs/raytracing.md), and the instance node's 0x00 and
-0x70 fields are taken from it unverified. No code was copied.
+0x70 fields are taken from it unverified. Its BCPack notes (`docs/textures.md`) corroborated the lane widths of codecs
+3 to 7 and the BC4 and BC5 distance and prediction rules, which were checked on the dump. No code was copied.
 
 ## GTA6-Asset-Info
 
@@ -21,6 +22,9 @@ Its notes were leads, each checked on the dump before use; no text or code was c
   bit order of the 1-byte 64 KB block. The stored mip count we use (mip field plus `d1` bits 0-2) is our own finding.
 - Models (docs/models.md): the meshlet start wrap, the skin, tangent and extra texture-coordinate streams, the inverse
   bind matrices and the ped bone palette. Its order of the packed position low bytes was checked and not adopted.
+- BCPack (docs/textures.md, `formats/06-bcpack.md`): the lane counts and symbol widths of codecs 3 to 7 and the lane
+  meanings of the BC4, BC5 and BC7 block layers, checked by the convergence of every page, the anchor rule and the mip
+  checks. None of its fitted tables were used.
 
 ## bcpack-rs
 

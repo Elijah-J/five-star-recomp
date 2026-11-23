@@ -111,7 +111,7 @@ public sealed class DumpTests
     }
 
     [DumpFact]
-    public void The_graphics_page_file_extracts_903_textures()
+    public void The_graphics_page_file_extracts_906_textures()
     {
         using var source = new MappedFileSource(GraphicsPageFile());
         var file = new TexturePageFile(source, new ZlibInflater());
@@ -120,8 +120,8 @@ public sealed class DumpTests
         var statuses = file.Descriptors.Select(descriptor => extractor.ReadMip0(descriptor).Status.Name).ToList();
 
         Assert.Equal(912, statuses.Count);
-        Assert.Equal(903, statuses.Count(status => status == "ok"));
-        Assert.Equal(9, statuses.Count(status => status == "skip_unsupported_codec"));
+        Assert.Equal(906, statuses.Count(status => status == "ok"));
+        Assert.Equal(6, statuses.Count(status => status == "skip_unsupported_codec"));
     }
 
     [DumpFact]

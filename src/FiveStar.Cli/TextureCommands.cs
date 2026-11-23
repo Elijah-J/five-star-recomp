@@ -39,9 +39,9 @@ internal static class TextureCommands
             case "pages":
                 return RunPages(new PageReports(output), arguments);
             case "bcpack-scan":
-                return RunBcPackScan(new Bc1Scan(output), arguments);
+                return RunBcPackScan(new BcPackScan(output), arguments);
             case "bcpack-bench":
-                return RunBcPackBench(new Bc1Bench(output), arguments);
+                return RunBcPackBench(new BcPackBench(output), arguments);
             case "help":
                 return RunHelp(output);
             default:
@@ -97,11 +97,11 @@ internal static class TextureCommands
         return Success;
     }
 
-    private static int RunBcPackScan(Bc1Scan scan, CommandArguments arguments)
+    private static int RunBcPackScan(BcPackScan scan, CommandArguments arguments)
     {
         if (arguments.Positionals.Count < 1)
         {
-            return Usage("texture bcpack-scan <file.ttpf | dir>... [--every N] [--jobs N] [--engine avx512|avx2|scalar] [--hashes FILE] [--quiet]");
+            return Usage("texture bcpack-scan <file.ttpf | dir>... [--codec 1|3|4|5|6|7] [--every N] [--jobs N] [--engine avx512|avx2|scalar] [--hashes FILE] [--quiet]");
         }
 
         if (!scan.Run(arguments.Positionals, arguments))
@@ -112,7 +112,7 @@ internal static class TextureCommands
         return Success;
     }
 
-    private static int RunBcPackBench(Bc1Bench bench, CommandArguments arguments)
+    private static int RunBcPackBench(BcPackBench bench, CommandArguments arguments)
     {
         if (arguments.Positionals.Count < 1)
         {
@@ -153,7 +153,7 @@ internal static class TextureCommands
         output.WriteLine("  codecs   <dir>                     pages and stored bytes per storage kind (zlib, stored, codecN)");
         output.WriteLine("  pages    <file.ttpf>               sample page-table entries per flag value with their storage kind");
 
-        output.WriteLine("  bcpack-scan  <file|dir>... [--every N] [--jobs N] [--engine E] [--hashes FILE] [--quiet]");
+        output.WriteLine("  bcpack-scan  <file|dir>... [--codec N] [--every N] [--jobs N] [--engine E] [--hashes FILE] [--quiet]");
         output.WriteLine("                                     decode every BCPack BC1 page on all cores: convergence and speed");
         output.WriteLine("  bcpack-bench <file|dir>... [--pages N] [--seconds S] [--engine E]");
         output.WriteLine("                                     single-core BC1 decode speed on sampled pages, by page size");

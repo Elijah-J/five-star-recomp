@@ -12,7 +12,7 @@ using System.Runtime.Intrinsics.X86;
 namespace FiveStar.Formats.Ttpf.BcPack;
 
 /// <summary>
-/// The AVX-512 lane engine: one clock of all 12 lanes is one 16-lane vector step on registers kept in
+/// The AVX-512 lane engine: one clock of all 12 or 16 lanes is one 16-lane vector step on registers kept in
 /// <see cref="Avx512Lanes"/>. The feeder grant is one PDEP (<see cref="ClockMasks"/>) and the granted lanes take their
 /// bytes with one VPEXPANDB. There are no gathers: masked selects over each lane's model rows give the inverse's
 /// constants and the decoded symbol's forward constants for the next clock.
@@ -28,11 +28,11 @@ internal static unsafe class Avx512LaneEngine
 
     [HotPath]
     [SkipLocalsInit]
-    public static Bc1DecodeResult DecodeLanes<TSink>(ReadOnlySpan<byte> data, int target, ref TSink sink)
+    public static BcPackDecodeResult DecodeLanes<TSink>(ReadOnlySpan<byte> data, int target, ReadOnlySpan<byte> widths, ref TSink sink)
         where TSink : struct, ISymbolVectorSink
     {
         Unsafe.SkipInit(out LaneRegisters registers);
-        registers.Reset();
+        registers.Reset(widths);
 
         if (data.IsEmpty)
         {
@@ -48,10 +48,10 @@ internal static unsafe class Avx512LaneEngine
     // Optimised on the first call: a decode is one long loop, and tier-0 code would run the first pages slowly.
     [HotPath]
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-    private static Bc1DecodeResult Clock<TSink>(byte* stream, int length, uint target, LaneRegisters* r, ref TSink sink)
+    private static BcPackDecodeResult Clock<TSink>(byte* stream, int length, uint target, LaneRegisters* r, ref TSink sink)
         where TSink : struct, ISymbolVectorSink
     {
-        var maxCycles = LaneClock.MaxCycles(target, length);
+        var maxCycles = LaneClock.MaxCycles(target, length, r->Lanes);
         var watch = ProgressWatch.Start();
         var lanes = Avx512Lanes.Load(r);
 
@@ -83,7 +83,7 @@ internal static unsafe class Avx512LaneEngine
             }
 
             // When every slot is full the vector goes out (see ScalarLaneEngine for why this is the reference rule).
-            if (slots == LaneRegisters.AllLanes)
+            if (slots == r->AllLanes)
             {
                 lanes.Release(r);
                 sink.Emit(released, r->Released);
@@ -93,7 +93,7 @@ internal static unsafe class Avx512LaneEngine
 
             cycle++;
 
-            if (r->FinishedLanes == LaneRegisters.Lanes && lanes.SymbolFullLanes == 0)
+            if (r->FinishedLanes == r->Lanes && lanes.SymbolFullLanes == 0)
             {
                 return LaneClock.Finish(r, position, length, cycle);
             }

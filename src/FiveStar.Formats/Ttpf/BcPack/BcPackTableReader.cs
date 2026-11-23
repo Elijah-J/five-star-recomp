@@ -7,8 +7,8 @@ namespace FiveStar.Formats.Ttpf.BcPack;
 
 /// <summary>
 /// Reads the decoder's tables from the JSON files embedded from <c>Ttpf/BcPack/Tables</c>: the rANS models
-/// (<c>mdu_models.json</c>), the BC1 preset window (<c>bc1_window.json</c>) and the BC1 index codebook
-/// (<c>bc1_quad_table.json</c>).
+/// (<c>mdu_models.json</c>), the BC1 preset window (<c>bc1_window.json</c>), the BC1 index codebook
+/// (<c>bc1_quad_table.json</c>) and the BC4 and BC5 tables (<c>bc4_tables.json</c>, <c>bc5_tables.json</c>).
 /// </summary>
 internal static class BcPackTableReader
 {
@@ -16,6 +16,9 @@ internal static class BcPackTableReader
     private const string ModelsFile = "mdu_models.json";
     private const string WindowFile = "bc1_window.json";
     private const string CodebookFile = "bc1_quad_table.json";
+    private const string Bc4File = "bc4_tables.json";
+    private const string Bc5File = "bc5_tables.json";
+    private const int PairValues = 2;
 
     public static MduModelTable ReadModels()
     {
@@ -38,7 +41,7 @@ internal static class BcPackTableReader
 
         using (var window = Open(WindowFile))
         {
-            ReadWindow(window.RootElement.GetProperty("slots"), fields, fitted);
+            ReadSlots(window.RootElement.GetProperty("slots"), fields, fitted, Bc1Fields.Count);
         }
 
         using (var codebook = Open(CodebookFile))
@@ -48,6 +51,48 @@ internal static class BcPackTableReader
 
         return Bc1Codebook.FromTables(fields, fitted, codes);
     }
+
+    /// <summary>The pair table and preset slots of BC4 or BC5, or null when the build does not embed them.</summary>
+    public static RgtcTables? ReadRgtc(BcPackCodec codec)
+    {
+        var pairs = new byte[RgtcTables.PairSymbols * PairValues];
+        var presets = new byte[RgtcTables.Slots * RgtcTables.SlotFields];
+        var fitted = new byte[RgtcTables.Slots];
+        var name = Bc5File;
+
+        if (codec == BcPackCodec.Bc4)
+        {
+            name = Bc4File;
+        }
+
+        if (!IsEmbedded(name))
+        {
+            return null;
+        }
+
+        using var document = Open(name);
+        var root = document.RootElement;
+        var symbol = 0;
+
+        foreach (var pair in root.GetProperty("pairs").EnumerateArray())
+        {
+            pairs[symbol * PairValues] = pair[0].GetByte();
+            pairs[(symbol * PairValues) + 1] = pair[1].GetByte();
+            symbol++;
+        }
+
+        if (symbol != RgtcTables.PairSymbols)
+        {
+            throw new InvalidDataException($"the {codec} pair table has {symbol} entries, not {RgtcTables.PairSymbols}");
+        }
+
+        ReadSlots(root.GetProperty("slots"), presets, fitted, RgtcTables.SlotFields);
+
+        return RgtcTables.Create(pairs, presets, fitted);
+    }
+
+    private static bool IsEmbedded(string name) =>
+        typeof(BcPackTableReader).Assembly.GetManifestResourceInfo(ResourcePrefix + name) is not null;
 
     private static JsonDocument Open(string name)
     {
@@ -81,12 +126,12 @@ internal static class BcPackTableReader
         return values.ToArray();
     }
 
-    /// <summary>Each slot's six endpoint fields; a null slot is not fitted and stays zero.</summary>
-    private static void ReadWindow(JsonElement slots, byte[] fields, byte[] fitted)
+    /// <summary>Each preset slot's endpoint fields (a missing field stays zero); a null slot is not fitted and stays zero.</summary>
+    private static void ReadSlots(JsonElement slots, byte[] fields, byte[] fitted, int fieldsPerSlot)
     {
         if (slots.GetArrayLength() != Bc1Codebook.Slots)
         {
-            throw new InvalidDataException("the preset window does not have 256 slots");
+            throw new InvalidDataException("a preset table does not have 256 slots");
         }
 
         var slot = 0;
@@ -95,7 +140,7 @@ internal static class BcPackTableReader
         {
             if (entry.ValueKind != JsonValueKind.Null)
             {
-                var field = slot * Bc1Fields.Count;
+                var field = slot * fieldsPerSlot;
 
                 foreach (var value in entry.GetProperty("value").EnumerateArray())
                 {

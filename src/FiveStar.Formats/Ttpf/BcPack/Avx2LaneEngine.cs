@@ -13,7 +13,7 @@ using System.Runtime.Intrinsics.X86;
 namespace FiveStar.Formats.Ttpf.BcPack;
 
 /// <summary>
-/// The AVX2 lane engine: one clock of all 12 lanes is two 8-lane vector steps. The feeder grant is one PDEP
+/// The AVX2 lane engine: one clock of all 12 or 16 lanes is two 8-lane vector steps. The feeder grant is one PDEP
 /// (<see cref="ClockMasks"/>), and a PSHUFB with a table per grant mask moves stream byte k to the k-th granted lane.
 /// Lanes in PROCESSING or DRAINING, almost every lane on almost every clock, run as vectors whose result is written only
 /// for lanes that do not stall; lanes in IDLE, a header state or at the end of a fragment take the shared control steps.
@@ -42,11 +42,11 @@ internal static unsafe class Avx2LaneEngine
 
     [HotPath]
     [SkipLocalsInit]
-    public static Bc1DecodeResult DecodeLanes<TSink>(ReadOnlySpan<byte> data, int target, ref TSink sink)
+    public static BcPackDecodeResult DecodeLanes<TSink>(ReadOnlySpan<byte> data, int target, ReadOnlySpan<byte> widths, ref TSink sink)
         where TSink : struct, ISymbolVectorSink
     {
         Unsafe.SkipInit(out LaneRegisters registers);
-        registers.Reset();
+        registers.Reset(widths);
 
         if (data.IsEmpty)
         {
@@ -62,10 +62,10 @@ internal static unsafe class Avx2LaneEngine
     // Optimised on the first call: a decode is one long loop, and tier-0 code would run the first pages slowly.
     [HotPath]
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-    private static Bc1DecodeResult Clock<TSink>(byte* stream, int length, uint target, LaneRegisters* r, ref TSink sink)
+    private static BcPackDecodeResult Clock<TSink>(byte* stream, int length, uint target, LaneRegisters* r, ref TSink sink)
         where TSink : struct, ISymbolVectorSink
     {
-        var maxCycles = LaneClock.MaxCycles(target, length);
+        var maxCycles = LaneClock.MaxCycles(target, length, r->Lanes);
         var watch = ProgressWatch.Start();
         var position = 0;
         var released = 0;
@@ -91,7 +91,7 @@ internal static unsafe class Avx2LaneEngine
             }
 
             // When every slot is full the vector goes out (see ScalarLaneEngine for why this is the reference rule).
-            if (slots == LaneRegisters.AllLanes)
+            if (slots == r->AllLanes)
             {
                 sink.Emit(released, r->Released);
                 released++;
@@ -124,7 +124,7 @@ internal static unsafe class Avx2LaneEngine
         var noInputLeft = Bits(r->InputLeft, Vector256<uint>.Zero);
         var need = ~inputFull & ((r->ProcessingLanes & ~noInputLeft) | r->HeaderLanes);
 
-        return ClockMasks.Compute(need, symbolFull, slots, available, r->ProcessingLanes | r->DrainingLanes);
+        return ClockMasks.Compute(need, symbolFull, slots, available, r->ProcessingLanes | r->DrainingLanes, r->AllLanes);
     }
 
     /// <summary>
@@ -235,7 +235,7 @@ internal static unsafe class Avx2LaneEngine
         return Vector256.Equals(Vector256.Create(bits) & LaneBits, LaneBits);
     }
 
-    /// <summary>The top bit of each of the 12 lane values.</summary>
+    /// <summary>The top bit of each of the 16 lane values (zero in inert lanes).</summary>
     [HotPath]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static uint Bits(uint* field)
@@ -243,10 +243,10 @@ internal static unsafe class Avx2LaneEngine
         var low = Vector256.ExtractMostSignificantBits(Vector256.Load(field));
         var high = Vector256.ExtractMostSignificantBits(Vector256.Load(field + Half));
 
-        return (low | (high << Half)) & LaneRegisters.AllLanes;
+        return low | (high << Half);
     }
 
-    /// <summary>The lanes whose value equals <paramref name="value"/>.</summary>
+    /// <summary>The lanes whose value equals <paramref name="value"/>; the caller masks out inert lanes.</summary>
     [HotPath]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static uint Bits(uint* field, Vector256<uint> value)
@@ -254,7 +254,7 @@ internal static unsafe class Avx2LaneEngine
         var low = Vector256.ExtractMostSignificantBits(Vector256.Equals(Vector256.Load(field), value));
         var high = Vector256.ExtractMostSignificantBits(Vector256.Equals(Vector256.Load(field + Half), value));
 
-        return (low | (high << Half)) & LaneRegisters.AllLanes;
+        return low | (high << Half);
     }
 
     private static Vector128<byte>* BuildExpand()
