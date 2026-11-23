@@ -142,6 +142,25 @@ internal sealed unsafe class DStorageFactory : IDisposable
         return HResult.Ok;
     }
 
+    /// <summary>One line of totals over every queue, for the thread sampler.</summary>
+    public string Summary()
+    {
+        StorageQueue[] queues;
+
+        lock (_gate)
+        {
+            queues = [.. _queues];
+        }
+
+        long enqueued = queues.Sum(q => q.Enqueued);
+        long submitted = queues.Sum(q => q.Submitted);
+        long run = queues.Sum(q => q.RequestsRun);
+        long failed = queues.Sum(q => q.RequestsFailed);
+        long bytes = queues.Sum(q => q.BytesDelivered);
+
+        return $"{queues.Length} queues: {enqueued} entries enqueued, {submitted} submitted, {run} requests run ({failed} failed), 0x{bytes:x} bytes delivered";
+    }
+
     /// <summary>Stops every queue; the native objects the game still holds are left to the process exit.</summary>
     public void Dispose()
     {

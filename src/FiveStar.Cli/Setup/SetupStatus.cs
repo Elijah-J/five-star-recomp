@@ -41,7 +41,7 @@ internal static class SetupStatus
         output.WriteLine($"work folder {context.Work}");
         var total = 0L;
 
-        foreach (var folder in new[] { context.ShaderFolder, context.CacheFolder, context.PipelineFolder, context.TextureFolder, context.LoaderFolder })
+        foreach (var folder in new[] { context.ShaderFolder, context.CacheFolder, context.PipelineFolder, context.TextureFolder, context.LoaderFolder, context.LogFolder })
         {
             var size = StepText.FolderSize(folder);
             total += size;

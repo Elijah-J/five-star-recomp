@@ -44,7 +44,7 @@ internal static class SetupCommand
     /// <summary>The steps in dependency order.</summary>
     public static IReadOnlyList<ISetupStep> Steps()
     {
-        return [new VerifyStep(), new ShaderExtractStep(), new ShaderTranslateStep(), new PipelineCacheStep(), new TextureStep(), new GdkAbiStep()];
+        return [new VerifyStep(), new ShaderExtractStep(), new ShaderTranslateStep(), new RectangleShaderStep(), new PipelineCacheStep(), new TextureStep(), new GdkAbiStep()];
     }
 
     private static int Start(CommandArguments arguments)
@@ -131,7 +131,8 @@ internal static class SetupCommand
         return names;
     }
 
-    private static long FreeBytes(string work)
+    /// <summary>The free space of the drive that holds <paramref name="work"/>.</summary>
+    public static long FreeBytes(string work)
     {
         var root = Path.GetPathRoot(Path.GetFullPath(work));
 

@@ -15,7 +15,7 @@ internal sealed class GameInputService : IDisposable
 {
     private readonly object _gate = new();
     private readonly IGamepadSource _gamepads;
-    private readonly IDesktopSource _desktop;
+    private IDesktopSource _desktop;
     private readonly TimeProvider _time;
     private readonly UnresolvedStubs _stubs;
     private readonly CodeHeap _heap;
@@ -42,6 +42,32 @@ internal sealed class GameInputService : IDisposable
         {
             _config = config;
             _session?.Configure(config);
+        }
+    }
+
+    /// <summary>Adds the presses of an input script (<c>--input-script</c>) to the desktop keys; before GameInputCreate.</summary>
+    public void UseScript(InputScript script, System.Diagnostics.Stopwatch clock)
+    {
+        lock (_gate)
+        {
+            _desktop = new ScriptedDesktopInput(_desktop, script, clock, _log);
+        }
+    }
+
+    /// <summary>GameInput use so far, for the thread sampler.</summary>
+    public string Summary
+    {
+        get
+        {
+            lock (_gate)
+            {
+                if (_session is null)
+                {
+                    return "GameInput not created";
+                }
+
+                return $"GameInput {_session.Summary}";
+            }
         }
     }
 

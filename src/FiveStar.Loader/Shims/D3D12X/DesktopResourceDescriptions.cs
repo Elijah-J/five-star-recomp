@@ -8,25 +8,21 @@ namespace FiveStar.Loader.Shims.D3D12X;
 
 /// <summary>
 /// Resource descs as the desktop takes them: <see cref="ResourceDescription.ToDesktop"/>, console depth formats in their
-/// desktop family (<see cref="DepthFormats.Resource"/>), and ALLOW_UNORDERED_ACCESS
-/// dropped from a texture whose format has no typed UAV on this GPU (the console sets it on formats such as
-/// B5G5R5A1_UNORM, which the desktop then rejects). Format support is asked once per format; a format the runtime
-/// refuses anyway is recorded through <see cref="RefuseUav"/>.
+/// desktop family (<see cref="DepthFormats.Resource"/>), and ALLOW_UNORDERED_ACCESS dropped from a texture whose
+/// format family (<see cref="FormatFamilies"/>) has no typed UAV on this GPU (the console sets it on formats such as
+/// B5G5R5A1_UNORM and its D16_UNORM_S8_UINT depth, which the desktop then rejects). Format support is asked once per
+/// format; a format the runtime refuses anyway is recorded through <see cref="RefuseUav"/>.
 /// </summary>
 internal sealed unsafe class DesktopResourceDescriptions
 {
     /// <summary>ID3D12Device::CheckFeatureSupport and D3D12_FEATURE_FORMAT_SUPPORT (d3d12.h).</summary>
     private const int CheckFeatureSupportSlot = 13;
-    private const int FormatSupportFeature = 2;
+    private const int FormatSupportFeature = 3;
     private const uint FormatSupportSize = 12;
     private const int Support1Dword = 1;
-    private const int Support2Dword = 2;
 
-    /// <summary>D3D12_FORMAT_SUPPORT1_TYPED_UNORDERED_ACCESS_VIEW and D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS.</summary>
-    private const uint TypedUnorderedAccess = 0x40000000;
-
-    /// <summary>D3D12_FORMAT_SUPPORT2_UAV_TYPED_STORE: the runtime also wants stores (B5G5R5A1_UNORM reports the view only).</summary>
-    private const uint TypedStore = 0x80;
+    /// <summary>D3D12_FORMAT_SUPPORT1_TYPED_UNORDERED_ACCESS_VIEW and D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS (d3d12.h).</summary>
+    private const uint TypedUnorderedAccess = 0x2000000;
     private const int AllowUnorderedAccess = 0x4;
 
     /// <summary>DXGI formats the cache covers; the desktop's end below 256.</summary>
@@ -53,12 +49,12 @@ internal sealed unsafe class DesktopResourceDescriptions
     }
 
     /// <summary>
-    /// Records that the runtime refused a UAV texture of <paramref name="description"/>'s format although the driver
-    /// reports typed UAV support (B5G5R5A1_UNORM); true when that changes the desktop desc.
+    /// Records that the runtime refused a UAV texture of <paramref name="description"/>'s format although its family
+    /// reports typed UAV support; true when that changes the desktop desc.
     /// </summary>
     public bool RefuseUav(ResourceDescription* description)
     {
-        int format = description->Format;
+        int format = DepthFormats.Resource(description->Format);
         bool texture = description->Dimension != ResourceDescription.BufferDimension && (description->Flags & AllowUnorderedAccess) != 0;
 
         if (!texture || (uint)format >= FormatCount || Volatile.Read(ref _uavSupport[format]) == Unsupported)
@@ -85,20 +81,26 @@ internal sealed unsafe class DesktopResourceDescriptions
             return known == Supported;
         }
 
-        // D3D12_FEATURE_DATA_FORMAT_SUPPORT: Format, Support1, Support2. A typeless format fails the query and keeps the flag.
-        uint* data = stackalloc uint[] { (uint)format, 0, 0 };
-        var check = (delegate* unmanaged<nint, int, void*, uint, int>)ComObject.Slot(device, CheckFeatureSupportSlot);
-        int hr = check(device, FormatSupportFeature, data, FormatSupportSize);
-        bool supported = HResult.Failed(hr) || ((data[Support1Dword] & TypedUnorderedAccess) != 0 && (data[Support2Dword] & TypedStore) != 0);
-        byte state = Unsupported;
+        bool supported = false;
 
-        if (supported)
+        foreach (int member in FormatFamilies.Members(format))
         {
-            state = Supported;
+            supported |= TypedUav(device, member);
         }
 
+        byte state = supported ? Supported : Unsupported;
         Volatile.Write(ref _uavSupport[format], state);
 
         return supported;
+    }
+
+    /// <summary>D3D12_FEATURE_DATA_FORMAT_SUPPORT (Format, Support1, Support2); a format the device does not know has no UAV.</summary>
+    private static bool TypedUav(nint device, int format)
+    {
+        uint* data = stackalloc uint[] { (uint)format, 0, 0 };
+        var check = (delegate* unmanaged<nint, int, void*, uint, int>)ComObject.Slot(device, CheckFeatureSupportSlot);
+        int hr = check(device, FormatSupportFeature, data, FormatSupportSize);
+
+        return !HResult.Failed(hr) && (data[Support1Dword] & TypedUnorderedAccess) != 0;
     }
 }

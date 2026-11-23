@@ -79,6 +79,7 @@ internal sealed class X64Emitter
     private static readonly byte[] MovR10Imm64 = [0x49, 0xBA];
     private static readonly byte[] MovR11dImm32 = [0x41, 0xBB];
     private static readonly byte[] LockXaddR10MemR11 = [0xF0, 0x4D, 0x0F, 0xC1, 0x1A];
+    private static readonly byte[] LockIncQwordR10Mem = [0xF0, 0x49, 0xFF, 0x02];
     private static readonly byte[] AndR11dImm32 = [0x41, 0x81, 0xE3];
     private static readonly byte[] MovDwordR10R11x4Disp8Imm32 = [0x43, 0xC7, 0x44, 0x9A];
     private static readonly byte[] JmpR10Encoding = [0x41, 0xFF, 0xE2];
@@ -140,6 +141,12 @@ internal sealed class X64Emitter
     public void LockXaddR10R11()
     {
         Emit(LockXaddR10MemR11);
+    }
+
+    /// <summary><c>lock inc qword [r10]</c>.</summary>
+    public void LockIncR10()
+    {
+        Emit(LockIncQwordR10Mem);
     }
 
     /// <summary><c>and r11d,imm32</c>.</summary>

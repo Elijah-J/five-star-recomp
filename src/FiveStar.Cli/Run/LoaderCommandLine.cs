@@ -1,0 +1,49 @@
+// Copyright (c) 2026 Five Star Recomp contributors.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+using System.Globalization;
+
+namespace FiveStar.Cli.Run;
+
+/// <summary>The <c>fivestar-loader</c> arguments that boot the game of a <see cref="RunPlan"/>.</summary>
+internal static class LoaderCommandLine
+{
+    private const string AbiOption = "--gdk-abi";
+
+    /// <summary>
+    /// Maps and runs the game executable with the work folder's shaders, TLS folder and GDK table, the full log in
+    /// <paramref name="logFile"/>, then the extra loader arguments. An extra <c>--gdk-abi</c> replaces the work folder's table.
+    /// </summary>
+    public static IReadOnlyList<string> Build(RunPlan plan, string logFile)
+    {
+        var arguments = new List<string>
+        {
+            "--load", plan.Executable,
+            "--no-exports",
+            "--work-dir", plan.Context.TlsFolder,
+            "--log", logFile,
+            "--run",
+        };
+
+        if (plan.Options.Timeout is not null)
+        {
+            arguments.AddRange(["--run-timeout", plan.Options.Timeout.Value.ToString(CultureInfo.InvariantCulture)]);
+        }
+
+        arguments.AddRange(["--shader-dir", plan.ProgramFolder, "--translated-dir", plan.TranslatedFolder]);
+
+        if (File.Exists(plan.Context.AbiTable) && !plan.Options.LoaderArguments.Contains(AbiOption))
+        {
+            arguments.AddRange([AbiOption, plan.Context.AbiTable]);
+        }
+
+        if (plan.Options.Debug)
+        {
+            arguments.Add("--d3d12-debug");
+        }
+
+        arguments.AddRange(plan.Options.LoaderArguments);
+
+        return arguments;
+    }
+}

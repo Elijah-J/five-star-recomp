@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Five Star Recomp contributors.
+// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Collections.Concurrent;
@@ -47,15 +47,17 @@ internal sealed unsafe class GameRuntimeService
     private readonly ShimTable _shims;
     private readonly UnresolvedStubs _stubs;
     private readonly CodeHeap _heap;
+    private readonly CallTrace _trace;
     private readonly LoaderLog _log;
     private volatile bool _initialized;
 
-    public GameRuntimeService(GdkConfig config, ShimTable shims, UnresolvedStubs stubs, CodeHeap heap, LoaderLog log)
+    public GameRuntimeService(GdkConfig config, ShimTable shims, UnresolvedStubs stubs, CodeHeap heap, CallTrace trace, LoaderLog log)
     {
         _config = config;
         _shims = shims;
         _stubs = stubs;
         _heap = heap;
+        _trace = trace;
         _log = log;
     }
 
@@ -248,7 +250,7 @@ internal sealed unsafe class GameRuntimeService
 
         for (int i = FirstMethodSlot; i < count; i++)
         {
-            vtable[i] = DropThisThunk.Create(_heap, _log, SlotTarget(key, slots, i));
+            vtable[i] = DropThisThunk.Create(_heap, _log, Traced(SlotTarget(key, slots, i), key, slots, i));
         }
 
         // One read-write to read-execute flip for every stub and thunk of this object.
@@ -266,6 +268,19 @@ internal sealed unsafe class GameRuntimeService
         vtable[QueryInterfaceSlot] = (nint)queryInterface;
         vtable[AddRefSlot] = (nint)addRef;
         vtable[ReleaseSlot] = (nint)addRef;
+    }
+
+    /// <summary>While the call trace is on (<c>--run</c>), GDK calls are recorded and counted like imports.</summary>
+    private nint Traced(nint target, (Guid Clsid, Guid Iid) key, SortedDictionary<int, string> slots, int slot)
+    {
+        if (!_trace.Enabled)
+        {
+            return target;
+        }
+
+        string name = slots.GetValueOrDefault(slot) ?? $"{key.Clsid}/{key.Iid}#slot{slot}";
+
+        return _trace.Wrap(target, $"{GdkModule.Name}!{name}");
     }
 
     /// <summary>The named shim of a slot, else a not-implemented stub (E_NOTIMPL unless the catalog says otherwise).</summary>

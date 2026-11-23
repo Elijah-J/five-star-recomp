@@ -73,7 +73,7 @@ should create. From slot 44 on the order is not desktop's.
 | 8 | 0x040 | 2 | CreateCommandQueue | queue IID |
 | 9 | 0x048 | 5 | CreateCommandAllocator | allocator IID |
 | 14 | 0x070 | 3 | CreateDescriptorHeap | descriptor-heap IID |
-| 15 | 0x078 | 10 | GetDescriptorHandleIncrementSize | |
+| 15 | 0x078 | 10 | GetDescriptorHandleIncrementSize | types 0 to 4 at start-up (0x142478e3d), only type 0 kept; 4 is console-only and answered 0 |
 | 16 to 21 | 0x080-0x0A8 | 1 each | CreateRootSignature, CreateConstantBufferView ... CreateDepthStencilView | |
 | 24 | 0x0C0 | 1 | CopyDescriptorsSimple | (1, dest, src, type) |
 | 25 | 0x0C8 | 3 | GetResourceAllocationInfo | struct return, swapped registers |
@@ -277,8 +277,10 @@ outside known memory or off the desktop's 256-byte alignment (the console takes 
 
 **Resource descs.** Before the desktop sees one: flag bits above 0x1FF dropped (0x20000 on GPU-memory buffers,
 0x300000 on textures), a console layout (0x100 + XG swizzle mode, set at 0x1403440f7) made UNKNOWN, and
-ALLOW_UNORDERED_ACCESS dropped from textures whose format has no typed UAV store, or that the runtime refuses
-anyway (B5G5R5A1_UNORM: the refused allocation-info query runs again without the flag).
+ALLOW_UNORDERED_ACCESS dropped from textures when no format of their DXGI cast family (the typeless format and its
+members, `FormatFamilies`) reports D3D12_FORMAT_SUPPORT1_TYPED_UNORDERED_ACCESS_VIEW, the rule the runtime applies
+(B5G5R5A1_UNORM; R32G8X24_TYPELESS, the desktop form of the console's D16_UNORM_S8_UINT). Should the runtime refuse a
+desc anyway, the allocation-info query runs again without the flag.
 
 **Committed resources (slot 127).** Created in the state of the initial barrier layout (buffers COMMON), heap flags
 0 (the game passes 8). On the console D3D12.X takes their memory from the title's XMemAlloc hook, and the game checks
@@ -451,7 +453,10 @@ stay triangles (warned once). The log counts expanded draws every 4,096.
 GPU-based validation) and DRED auto-breadcrumbs and page-fault reporting. The debug layer needs the Graphics Tools
 optional feature (`d3d12SDKLayers.dll`); without it a warning says so and only DRED is on. Info-queue messages go to
 the log through ID3D12InfoQueue1::RegisterMessageCallback on the thread that caused them: errors and corruption
-with the mapped frames that made the call, warnings as warnings, the rest as details. Without the callback the
+with the mapped frames that made the call, warnings as warnings, the rest as details. Message #245
+(CREATEINPUTLAYOUT_TYPE_MISMATCH) is denied in the storage filter: translated vertex shaders declare every fetched
+attribute float4 and read its bits with `asuint`, so an integer element (R8G8B8A8_UINT) arriving unconverted is
+intended. Without the callback the
 stored messages are drained after a failed creation. A private fence waiting for UINT64_MAX notices device
 removal when it happens; the removal reason, the stored messages and the DRED breadcrumbs and page-fault
 allocations are then logged once.

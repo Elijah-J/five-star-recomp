@@ -16,6 +16,8 @@ internal sealed unsafe class PipelineSlots
 
     private readonly PipelineFactory _factory;
     private readonly OnceLog _warnings;
+    private int _requests;
+    private int _created;
 
     public PipelineSlots(PipelineFactory factory, OnceLog warnings)
     {
@@ -63,6 +65,9 @@ internal sealed unsafe class PipelineSlots
         });
     }
 
+    /// <summary>Pipeline creations the game asked for so far, and how many returned a pipeline.</summary>
+    public string Summary => $"{Volatile.Read(ref _requests)} pipelines requested, {Volatile.Read(ref _created)} created";
+
     private int Guarded(int slot, nint* result, Func<int> create)
     {
         if (result == null)
@@ -71,10 +76,18 @@ internal sealed unsafe class PipelineSlots
         }
 
         *result = 0;
+        Interlocked.Increment(ref _requests);
 
         try
         {
-            return create();
+            int hr = create();
+
+            if (*result != 0)
+            {
+                Interlocked.Increment(ref _created);
+            }
+
+            return hr;
         }
         catch (Exception exception) when (exception is InvalidDataException or NotSupportedException)
         {

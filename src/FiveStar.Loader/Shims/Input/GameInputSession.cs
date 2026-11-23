@@ -28,6 +28,8 @@ internal sealed unsafe class GameInputSession : IDisposable
     private readonly InputDevices _devices;
     private readonly InputPoller _poller;
     private readonly ObjectHeader* _input;
+    private long _readingCalls;
+    private long _callbackRegistrations;
 
     public GameInputSession(IGamepadSource gamepads, IDesktopSource desktop, InputConfig config, TimeProvider time, UnresolvedStubs stubs, CodeHeap heap, LoaderLog log)
     {
@@ -47,6 +49,9 @@ internal sealed unsafe class GameInputSession : IDisposable
 
         _poller.Start(Timestamp());
     }
+
+    /// <summary>Reading queries and device-callback registrations so far, for the thread sampler.</summary>
+    public string Summary => $"{Volatile.Read(ref _readingCalls)} reading queries, {Volatile.Read(ref _callbackRegistrations)} device-callback registrations";
 
     /// <summary>The IGameInput object with one more reference.</summary>
     public nint AddInputReference()
@@ -81,6 +86,7 @@ internal sealed unsafe class GameInputSession : IDisposable
             return HResult.Pointer;
         }
 
+        Interlocked.Increment(ref _readingCalls);
         _poller.Poll(Timestamp());
         ReadingObject* found = _ring.Acquire(kind, device, after, before, newest);
         *result = (nint)found;
@@ -105,6 +111,7 @@ internal sealed unsafe class GameInputSession : IDisposable
             return HResult.InvalidArgument;
         }
 
+        Interlocked.Increment(ref _callbackRegistrations);
         ulong now = Timestamp();
         _poller.Poll(now);
         var registration = _callbacks.Add(device, kind, statusFilter, context, function);

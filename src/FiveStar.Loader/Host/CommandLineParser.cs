@@ -108,6 +108,14 @@ internal sealed class CommandLineParser
                 return SetRunMain();
             case "--run-timeout":
                 return SetRunTimeout();
+            case "--input-script":
+                return SetInputScript();
+            case "--sample-threads":
+                return SetSampleThreads();
+            case "--profile-threads":
+                return SetProfileThreads();
+            case "--trace-module":
+                return Add(_options.TracedModules);
             case "--trace-system":
                 return SetTraceSystem();
             case "--ffx":
@@ -286,6 +294,13 @@ internal sealed class CommandLineParser
         return true;
     }
 
+    private bool SetInputScript()
+    {
+        _options.InputScript = Path.GetFullPath(Next());
+
+        return true;
+    }
+
     private bool SetRunMain()
     {
         _options.RunMain = true;
@@ -296,6 +311,20 @@ internal sealed class CommandLineParser
     private bool SetRunTimeout()
     {
         _options.RunTimeout = TimeSpan.FromSeconds(double.Parse(Next(), CultureInfo.InvariantCulture));
+
+        return true;
+    }
+
+    private bool SetSampleThreads()
+    {
+        _options.SampleThreads = TimeSpan.FromSeconds(double.Parse(Next(), CultureInfo.InvariantCulture));
+
+        return true;
+    }
+
+    private bool SetProfileThreads()
+    {
+        _options.ProfileThreads = true;
 
         return true;
     }
