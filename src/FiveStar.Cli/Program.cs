@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+using FiveStar.Cli.Run;
 using FiveStar.Cli.Setup;
 
 namespace FiveStar.Cli;
@@ -43,6 +44,10 @@ public static class Program
                 return ProgressCommands.Run(rest);
             case "setup":
                 return SetupCommand.Run(rest);
+            case "run":
+                return RunCommand.Run(rest, checkOnly: false);
+            case "doctor":
+                return RunCommand.Run(rest, checkOnly: true);
             default:
                 PrintUsage();
 
@@ -52,7 +57,9 @@ public static class Program
 
     private static void PrintUsage()
     {
-        Console.Error.WriteLine("usage: fivestar setup <dump folder> [options]     prepare everything the port needs (fivestar setup help)");
+        Console.Error.WriteLine("usage: fivestar run <dump folder> [options]       set up what is missing and boot the game (fivestar run help)");
+        Console.Error.WriteLine("       fivestar doctor <dump folder> [options]    check the prerequisites and the work folder");
+        Console.Error.WriteLine("       fivestar setup <dump folder> [options]     prepare everything the port needs (fivestar setup help)");
         Console.Error.WriteLine("       fivestar <archive|audio|texture|platform|exe|shader|graphics|model|progress> <command> [arguments]");
         Console.Error.WriteLine("       fivestar <group> help    lists the commands of a group");
     }
