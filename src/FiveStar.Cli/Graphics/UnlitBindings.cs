@@ -16,7 +16,8 @@ namespace FiveStar.Cli.Graphics;
 /// <item><term>+0x60</term><description>VS: V# of the view constants; the 4x4 view-projection matrix (row vectors) at byte 0x160.</description></item>
 /// </list>
 /// Descriptor dword 0 is a <c>ResourceDescriptorHeap</c> index. Both stages see the same user data (one root CBV), so
-/// they share one table; their offsets do not overlap.
+/// they share one table; their offsets do not overlap. A draw with several textures gets one table per texture, the
+/// k-th naming heap slot <see cref="TextureSlot"/> + k; the buffers are shared.
 /// </summary>
 public static class UnlitBindings
 {
@@ -25,15 +26,16 @@ public static class UnlitBindings
     public const int ObjectConstantsSlot = 3;
     public const int ViewConstantsSlot = 4;
     public const int TextureSlot = 5;
-    public const int ResourceSlots = 8;
 
     /// <summary>User SGPR holding the table address.</summary>
     public const int TableSgpr = 8;
 
-    /// <summary>The table's byte address in the GPU-memory window (any 16-byte aligned value works).</summary>
+    /// <summary>The first table's byte address in the GPU-memory window (any 16-byte aligned value works).</summary>
     public const int TableAddress = 0x100;
 
-    public const int WindowBytes = 0x200;
+    /// <summary>The distance between consecutive tables.</summary>
+    public const int TableStride = 0x80;
+
     public const int UserDataBytes = 512;
     public const int PixelConstantsBytes = 16;
     public const int ObjectConstantsBytes = 64;
@@ -50,23 +52,40 @@ public static class UnlitBindings
     private const int RowFloats = 4;
     private const float ClipSpan = 2f;
 
-    /// <summary>The GPU-memory window: the descriptor table at <see cref="TableAddress"/>, zeros elsewhere.</summary>
-    public static byte[] Window()
+    /// <summary>The heap slots a draw with this many textures uses.</summary>
+    public static int ResourceSlots(int textures)
     {
-        var window = new byte[WindowBytes];
-        BufferDescriptor(window, PixelBufferEntry, PixelConstantsSlot, PixelConstantsBytes);
-        BufferDescriptor(window, ObjectBufferEntry, ObjectConstantsSlot, ObjectConstantsBytes);
-        BufferDescriptor(window, ViewBufferEntry, ViewConstantsSlot, ViewConstantsBytes);
-        Word(window, TableAddress + TextureEntry, TextureSlot);
+        return TextureSlot + textures;
+    }
+
+    /// <summary>The size of the GPU-memory window holding this many tables.</summary>
+    public static int WindowBytes(int textures)
+    {
+        return TableAddress + (textures * TableStride);
+    }
+
+    /// <summary>The GPU-memory window: one descriptor table per texture from <see cref="TableAddress"/>, zeros elsewhere.</summary>
+    public static byte[] Window(int textures)
+    {
+        var window = new byte[WindowBytes(textures)];
+
+        for (var table = 0; table < textures; table++)
+        {
+            var start = Table(table);
+            BufferDescriptor(window, start + PixelBufferEntry, PixelConstantsSlot, PixelConstantsBytes);
+            BufferDescriptor(window, start + ObjectBufferEntry, ObjectConstantsSlot, ObjectConstantsBytes);
+            BufferDescriptor(window, start + ViewBufferEntry, ViewConstantsSlot, ViewConstantsBytes);
+            Word(window, start + TextureEntry, TextureSlot + table);
+        }
 
         return window;
     }
 
-    /// <summary>The <c>UserData</c> constant buffer (128 dwords): s8 = the table address.</summary>
-    public static byte[] UserData()
+    /// <summary>The <c>UserData</c> constant buffer (128 dwords) of the draws with one texture: s8 = its table's address.</summary>
+    public static byte[] UserData(int table)
     {
         var data = new byte[UserDataBytes];
-        Word(data, TableSgpr * sizeof(uint), TableAddress);
+        Word(data, TableSgpr * sizeof(uint), Table(table));
 
         return data;
     }
@@ -94,7 +113,10 @@ public static class UnlitBindings
         return data;
     }
 
-    /// <summary>The view constants: a view-projection that maps pixel coordinates (y down) to clip space.</summary>
+    /// <summary>
+    /// The view constants: a view-projection that maps pixel coordinates (y down) to clip space and keeps z, so the
+    /// vertex's z is its stored depth.
+    /// </summary>
     public static byte[] ViewConstants(int width, int height)
     {
         var data = new byte[ViewConstantsBytes];
@@ -114,11 +136,16 @@ public static class UnlitBindings
         return data;
     }
 
+    private static int Table(int table)
+    {
+        return TableAddress + (table * TableStride);
+    }
+
     /// <summary>A V#: dword 0 the heap slot, dword 2 the size in bytes (NUM_RECORDS of a raw buffer).</summary>
     private static void BufferDescriptor(byte[] window, int entry, int slot, int bytes)
     {
-        Word(window, TableAddress + entry, slot);
-        Word(window, TableAddress + entry + (RecordsWord * sizeof(uint)), bytes);
+        Word(window, entry, slot);
+        Word(window, entry + (RecordsWord * sizeof(uint)), bytes);
     }
 
     private static void Word(byte[] data, int offset, int value)

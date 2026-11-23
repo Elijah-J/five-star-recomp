@@ -51,6 +51,62 @@ public sealed class DrawSampleTests
         }
     }
 
+    [RenderFact]
+    public void The_depth_test_keeps_the_nearer_of_two_overlapping_quads_whichever_comes_first()
+    {
+        var work = Directory.CreateTempSubdirectory("fivestar-depth-");
+
+        try
+        {
+            var pass = UnlitPass.Load(DumpFactAttribute.Folder!, DumpFactAttribute.ShaderFolder!, work.FullName, new RdnaDecoder(), RenderFactAttribute.Dxc);
+            var depth = UnlitRenderer.Depth(pass.Pipeline);
+            using var device = GpuDevice.CreateWarp(debugLayer: false);
+
+            // Near red quad on the left, then a far blue quad on the right; they overlap in x 24..40.
+            DrawBatch[] batches =
+            [
+                new(ModelTexture.Solid(0xFF0000), Quad(8, 40, depth.Depth(0.25f))),
+                new(ModelTexture.Solid(0x0000FF), Quad(24, 56, depth.Depth(0.75f))),
+            ];
+            var image = UnlitRenderer.Draw(device, pass.Pipeline, pass.Vertex, pass.Pixel, batches, 64, 64);
+
+            Assert.True(depth.Reversed);
+            Assert.Equal([255, 0, 0, 255], Pixel(image, 32, 32));
+            Assert.Equal([0, 0, 255, 255], Pixel(image, 48, 32));
+            Assert.Empty(image.Errors);
+        }
+        finally
+        {
+            work.Delete(recursive: true);
+        }
+    }
+
+    /// <summary>A white quad from x = left to right, y 8..56, at one depth, wound like <see cref="UnlitScene"/>.</summary>
+    private static byte[] Quad(float left, float right, float depth)
+    {
+        (float X, float Y, float U, float V)[] corners = [(left, 8, 0, 0), (left, 56, 0, 1), (right, 56, 1, 1), (left, 8, 0, 0), (right, 56, 1, 1), (right, 8, 1, 0)];
+        var data = new byte[corners.Length * UnlitScene.VertexStride];
+
+        for (var index = 0; index < corners.Length; index++)
+        {
+            var vertex = data.AsSpan(index * UnlitScene.VertexStride);
+            BitConverter.TryWriteBytes(vertex, corners[index].X);
+            BitConverter.TryWriteBytes(vertex[4..], corners[index].Y);
+            BitConverter.TryWriteBytes(vertex[8..], depth);
+
+            BitConverter.TryWriteBytes(vertex[12..], UnlitScene.White);
+            BitConverter.TryWriteBytes(vertex[16..], corners[index].U);
+            BitConverter.TryWriteBytes(vertex[20..], corners[index].V);
+        }
+
+        return data;
+    }
+
+    private static byte[] Pixel(DrawnImage image, int x, int y)
+    {
+        return image.Pixels.AsSpan(((y * image.Width) + x) * 4, 4).ToArray();
+    }
+
     /// <summary>Pixels of the texture quad that differ from texel over clear (SRC_ALPHA, INV_SRC_ALPHA) by more than the tolerance.</summary>
     private static List<string> Mismatches(SampleFrame frame, byte[] texels)
     {

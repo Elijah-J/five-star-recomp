@@ -2,8 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using FiveStar.Graphics.Pipelines;
-using FiveStar.Shaders.Cache;
-using Vortice.Direct3D12;
+using FiveStar.Shaders.Cache;using Vortice.Direct3D12;
 using Vortice.DXGI;
 
 namespace FiveStar.Cli.Graphics;
@@ -22,6 +21,25 @@ public static class CacheStateMapping
     public static FixedFunctionDescription Describe(FixedFunctionState state)
     {
         return new FixedFunctionDescription(Blend(state), Rasterizer(state.Rasterizer), DepthStencil(state.DepthStencil));
+    }
+
+    /// <summary>
+    /// The cache's state with a depth test: the pipeline's own when it tests depth, otherwise (the immediate-mode passes)
+    /// depth test and write in the main passes' reverse-Z convention.
+    /// </summary>
+    public static (FixedFunctionDescription State, DepthConvention Depth) DepthTested(FixedFunctionState state)
+    {
+        var described = Describe(state);
+        var depth = described.DepthStencil;
+
+        if (!state.DepthStencil.DepthEnable)
+        {
+            depth.DepthEnable = true;
+            depth.DepthWriteMask = DepthWriteMask.All;
+            depth.DepthFunc = DepthConvention.Reverse.Test;
+        }
+
+        return (described with { DepthStencil = depth }, DepthConvention.Of(depth.DepthFunc));
     }
 
     public static IReadOnlyList<InputElementDescription> InputLayout(IReadOnlyList<InputElement> elements)

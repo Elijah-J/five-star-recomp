@@ -106,7 +106,32 @@ public static class DrawableReader
             }
         }
 
-        return new Drawable(name, root, SafeShaders(view, root), geometries, problems);
+        return new Drawable(name, root, SafeShaders(view, root), geometries, problems, SafeSkeleton(view, root), SafeWheels(view, root));
+    }
+
+    // The skeleton and wheels place parts; a drawable whose skeleton or bounds do not read keeps its geometry.
+    private static Skeleton SafeSkeleton(ResourceView view, int root)
+    {
+        try
+        {
+            return SkeletonReader.Read(view, root);
+        }
+        catch (ModelFormatException)
+        {
+            return Skeleton.Empty;
+        }
+    }
+
+    private static IReadOnlyList<WheelBound> SafeWheels(ResourceView view, int root)
+    {
+        try
+        {
+            return FragmentReader.Wheels(view, root);
+        }
+        catch (ModelFormatException)
+        {
+            return [];
+        }
     }
 
     // The shaders only name textures; a drawable whose shader group does not read keeps its geometry.

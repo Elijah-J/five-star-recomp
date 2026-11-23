@@ -18,10 +18,15 @@ public static class ModelTexture
     private const byte White = 0xFF;
     private const int RgbaBytes = 4;
 
-    /// <summary>A 1x1 opaque white texture, for models whose texture is not found.</summary>
-    public static TextureData Plain()
+    private const int RedShift = 16;
+    private const int GreenShift = 8;
+
+    /// <summary>A 1x1 opaque texture of one colour given as 0xRRGGBB, for models whose texture is not found.</summary>
+    public static TextureData Solid(int rgb)
     {
-        return new TextureData(Format.R8G8B8A8_UNorm, 1, 1, RgbaBytes, 1, [White, White, White, White]);
+        byte[] texel = [(byte)(rgb >> RedShift), (byte)(rgb >> GreenShift), (byte)rgb, White];
+
+        return new TextureData(Format.R8G8B8A8_UNorm, 1, 1, RgbaBytes, 1, texel);
     }
 
     /// <summary>The page file and index holding the texture, or null.</summary>

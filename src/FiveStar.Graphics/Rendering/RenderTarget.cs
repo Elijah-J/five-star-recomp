@@ -8,7 +8,8 @@ using Vortice.Mathematics;
 namespace FiveStar.Graphics.Rendering;
 
 /// <summary>
-/// An offscreen colour target of a 32-bit format (such as R8G8B8A8_UNORM) with its readback buffer. Record
+/// An offscreen colour target of a 32-bit format (such as R8G8B8A8_UNORM) with its readback buffer, drawn together
+/// with a <see cref="DepthTarget"/>. Record
 /// <see cref="Begin"/> before the draws and <see cref="CopyOut"/> after them; once the list ran, <see cref="ReadPixels"/>
 /// returns the image.
 /// </summary>
@@ -45,12 +46,13 @@ public sealed class RenderTarget : IDisposable
 
     public int Height { get; }
 
-    /// <summary>Clears the target and binds it with a viewport and scissor covering it.</summary>
-    public void Begin(ID3D12GraphicsCommandList list, Color4 clear)
+    /// <summary>Clears the target and a depth target and binds both with a viewport and scissor covering them.</summary>
+    public void Begin(ID3D12GraphicsCommandList list, Color4 clear, DepthTarget depth)
     {
         var view = _views.GetCPUDescriptorHandleForHeapStart();
         list.ClearRenderTargetView(view, clear);
-        list.OMSetRenderTargets(view, null);
+        depth.Clear(list);
+        list.OMSetRenderTargets(view, depth.View);
         list.RSSetViewport(new Viewport(0, 0, Width, Height, 0, 1));
         list.RSSetScissorRect(new RectI(0, 0, Width, Height));
     }

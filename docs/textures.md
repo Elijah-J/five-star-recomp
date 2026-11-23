@@ -94,6 +94,15 @@ After the header, every lane whose budget is not 3 reads one byte, in lane order
 0-2 read too. Lanes read the shared stream in lane order from there on, but a lane's bytes go past its budget and the
 rest of the layout is not known. Research notes: `docs/wiki/Textures-and-BCPack.md`.
 
+## Duplicate table
+
+`textures.rpf` holds one entry (archive offset 0xB6CA000 in the reference dump, 327,680 bytes) that starts with
+`EDUP`, a u32 count (17,431) and then `{u64 duplicate hash, u64 kept hash}` pairs sorted by the first hash. No
+duplicate hash is in a `.ttpf` hash list and every kept hash is (6,845 distinct; 6,315 of the pairs keep a 4x4
+texture, the rest textures of 64x64 to 1024x1024). A drawable that names a
+duplicate (on the vehicles: `c9490fac736ffb5a`, `ad54f974b44dd962`, `2a56e284d28087e1` and others) gets the kept
+texture. The lookup in `graphics draw-model` does not read this table yet.
+
 ## DDS output
 
 One mip, `DDS_HEADER` with `DDSD_CAPS | HEIGHT | WIDTH | PIXELFORMAT | LINEARSIZE`, pitch field = bytes of one face,

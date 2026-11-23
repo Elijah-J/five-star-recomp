@@ -70,6 +70,63 @@ The texture name hash is the key of the ETPF hash list of the texture page files
 parameter hashes are Jenkins one-at-a-time hashes of the lower-cased name: `DiffuseTex` 0xC8E8C282, `BumpTex`
 0x1E77BF4C.
 
+## Skeleton
+
+| Object | Offset | Meaning |
+|---|---|---|
+| Drawable root | +0x18 | Skeleton (null in most props) |
+| Skeleton | +0x28, +0x6C | Pointer to the bones, u16 bone count |
+| Bone (0x50 bytes) | +0x00 | Rotation quaternion x, y, z, w |
+| | +0x10, +0x20 | Translation, scale (3 floats each) |
+| | +0x30 | Name pointer |
+| | +0x44, +0x46 | s16 next sibling, s16 parent (-1 for the root) |
+
+Transforms are relative to the parent. Code: `SkeletonReader`. The models of a vehicle are skinned to the whole
+skeleton (model +0x14 = bone count, +0x34 = 0x1FF), and their vertices are already in model space.
+
+## Fragments
+
+A fragment's resource starts with the fragment type at virtual offset 0. Code: `FragmentReader`.
+
+| Object | Offset | Meaning |
+|---|---|---|
+| Fragment type | +0x10 | Physics |
+| | +0x18 | The drawable |
+| | +0xA8 | Name without extension (`dominator9_hi`) |
+| Physics | +0x20 | Composite bound |
+| Composite bound | +0x70, +0x98 | Pointer array of child bounds, u16 count |
+| Child bound | +0x10 | Type byte (8 = cylinder along x) |
+| | +0x20 | Half extents (3 floats) |
+
+A vehicle has no wheel geometry and no child drawables: `dominator9_hi.#ft` holds one drawable (37 geometries, 386
+bones) and so does the low detail `dominator9.#ft`. Rims and tyres are shared drawables in `levels.rpf`
+(`rim_muscle_001_hi.#dr`, `tyre_car_001_hi.#dr`; 1,863 counting their `_hi` and `_mid` levels). They are modelled at
+a unit size with the axle along x: the rims span 1.0 in y and z, `tyre_muscle_001` 1.75. What a vehicle places them
+by:
+
+- The wheel bones `wheel_lf`, `wheel_rf`, `wheel_lr`, `wheel_rr` (and more on trucks) give the hub position.
+- The composite bound holds two cylinders per wheel, the brake disc and the tyre (on `dominator9_hi` radius 0.155 m,
+  width 0.03 m and radius 0.345 m, width 0.265 m). The tyre cylinders come in the order of the wheel bones:
+  `carbonizzare_hi` lists its bones `wheel_lr`, `wheel_rr`, `wheel_lf`, `wheel_rf` and its tyres 0.368, 0.368, 0.345,
+  0.345 m, the larger tyres at the rear.
+
+Which rim and tyre a vehicle uses was not found: no rim or tyre name or hash appears in its fragments, and the
+vehicle lists of `common.rpf` and `data.rpf` name only spec ids (`DOMINATOR9_BASE_SPEC`).
+
+## Vehicle textures
+
+Every vehicle shader seen (paint, glass, rims, tyres) names the same `DiffuseTex`, `5d7a3a87cc19967d`, which is in no
+`.ttpf` file; on the body shaders `TintPaletteTex` is a null pointer. The other texture parameters resolve, almost all
+in `data/ttdb/vehicles/ttdb_vehicles*.ttpf`: normal and detail maps (BC5, BC7) and masks (BC1). Several of them are
+BCPack pages ([textures.md](textures.md)). The shader constants hold no paint colour (98 parameters on the body
+shader, the only 4-float ones are `0 0 1 1` and `0 0 0 0`). So the paint is supplied at run time, and
+`graphics draw-model --paint` stands in for it.
+
+The shader's parameter table has a second kind of entry after the textures: `u32 name hash, u32 w` with kind
+`w & 0xFF` = 3, byte offset `(w >> 8) & 0xFFF` and size in bytes `w >> 20`, into a block of values the shader's +0x08
+points at. Texture entries hold `slot * 4`, which is also the byte offset at which the vehicle pixel shader reads that
+texture's handle ([rendering.md](rendering.md#vehicle-material-pass)).
+
 ## Vertex buffer
 
 The buffer starts with a stream table of 23 u32, one per slot: 0 when absent, else the format byte in bits 0-7 and
@@ -163,7 +220,8 @@ past their buffer.
 ```
 fivestar model scan   <archive.rpf> [--from 0xOFFSET] [--limit-mb N] [--list]
 fivestar model export <archive.rpf> <out dir> [--from 0xOFFSET] [--limit-mb N] [--name TEXT] [--lod N]
-fivestar graphics draw-model <out.png> --archive <file.rpf> --from 0xOFFSET [--name TEXT] [--lod N] [--plain] ...
+fivestar graphics draw-model <out.png> --archive <file.rpf> --from 0xOFFSET [--name TEXT] [--lod N] [--plain]
+                             [--paint RRGGBB] [--rim 0xOFFSET --tyre 0xOFFSET] ...
 ```
 
 `scan` prints, per level of detail, how many geometries decode and why the rest do not; `--list` adds a line per
@@ -179,6 +237,8 @@ prints it) instead of the start of the archive.
 - Cables (`*_cables_*`): every triangle has zero area, so a vertex shader must widen them; slot 2 is then not a
   normal.
 - The same name in several consecutive resources (body parts, garments): whether they are levels of detail.
-- Bones and skinning, and the shader parameters other than textures.
+- Skinning weights and indices, and the names of most shader parameters.
+- Where a vehicle's rims, tyres and paint are chosen.
+- Fragment children (doors, bonnet) and the rest of the fragment type and physics.
 - The 81 meshlet buffers whose descriptor ranges do not fit.
 - Meshlet header bits 16-30.

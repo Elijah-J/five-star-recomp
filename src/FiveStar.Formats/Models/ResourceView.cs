@@ -87,6 +87,11 @@ public sealed class ResourceView
         return BinaryPrimitives.ReadUInt32LittleEndian(VirtualBytes(at, sizeof(uint)));
     }
 
+    public float F32(int at)
+    {
+        return BinaryPrimitives.ReadSingleLittleEndian(VirtualBytes(at, sizeof(float)));
+    }
+
     public ulong U64(int at)
     {
         return BinaryPrimitives.ReadUInt64LittleEndian(VirtualBytes(at, sizeof(ulong)));
