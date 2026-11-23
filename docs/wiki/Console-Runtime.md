@@ -39,7 +39,7 @@ The game runs as if the console had no network: one local player, saves in folde
 | Saves, local storage | folders under the save directory, with the console's quota |
 | Package, store | one installed package with every chunk present, an active full license for the base game; the store itself is unreachable, so add-on licences, entitlements, purchases and token requests fail as offline and no DLC is ever licensed |
 | System UI | dialogs close at once: the cancel button, nobody picked, text entry canceled |
-| Network | up but with no connectivity, so the game takes its offline paths |
+| Network | up but with no connectivity, so the game takes its offline paths; the loader seals WinHTTP, Winsock (name lookups included) and libHttpClient inside the process, so nothing the game does can reach the internet |
 | Display | HDR on when Windows runs the display in HDR, with its real brightness range; the screen stays awake on request |
 | Accessibility | high contrast from Windows; captions as the game sets them; no speech voices |
 | Invites, activation | never happen |
