@@ -53,7 +53,7 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         Warnings = new OnceLog(log);
         Objects = new XboxObjects(stubs, heap, Debugging, log);
         CommandLists = new XboxCommandLists(Objects);
-        ListStates = new CommandListStates(Objects, log);
+        ListStates = new CommandListStates();
 
         Textures = new GpuTextures(new GameMemorySource(memory), Descriptions, log);
         AddressViews = new AddressShaderViews(Textures, Warnings, log);

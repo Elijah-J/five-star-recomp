@@ -96,7 +96,7 @@ internal static unsafe class ResourceBarrierSlots
         {
             var copy = TransitionBarrier.Of(resource, barrier->StateBefore, barrier->StateAfter);
             copy.Subresource = barrier->Subresource;
-            BarrierWriter.Legacy(list, &copy);
+            BarrierWriter.Write(list, &copy);
 
             return;
         }
@@ -117,7 +117,7 @@ internal static unsafe class ResourceBarrierSlots
             return;
         }
 
-        BarrierWriter.Transition(list, states.Enhanced, resource, current, after);
+        BarrierWriter.Transition(list, resource, current, after);
 
         if (!states.Set(resource, home, after))
         {
@@ -134,14 +134,14 @@ internal static unsafe class ResourceBarrierSlots
             Resource = objects.Unwrap(barrier->Resource),
             AliasingAfter = objects.Unwrap(barrier->AliasingAfter),
         };
-        BarrierWriter.Legacy(list, &copy);
+        BarrierWriter.Write(list, &copy);
     }
 
     [HotPath]
     private static void Uav(nint list, nint resource)
     {
         var copy = new TransitionBarrier { Type = TransitionBarrier.UavType, Resource = resource };
-        BarrierWriter.Legacy(list, &copy);
+        BarrierWriter.Write(list, &copy);
     }
 
     [HotPath]
@@ -153,7 +153,7 @@ internal static unsafe class ResourceBarrierSlots
 
             if (state != home)
             {
-                BarrierWriter.Transition(list, states.Enhanced, resource, state, home);
+                BarrierWriter.Transition(list, resource, state, home);
             }
         }
 

@@ -1,12 +1,11 @@
-﻿// Copyright (c) 2026 Five Star Recomp contributors.
+// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 namespace FiveStar.Loader.Shims.D3D12X.States;
 
 /// <summary>
 /// The textures one command list moved out of their home state since it was last closed, with the state each is in
-/// now. A list is recorded by one thread at a time, so nothing here locks. Also holds the list's
-/// ID3D12GraphicsCommandList7 (0 when enhanced barriers are not used), looked up once per desktop list.
+/// now. A list is recorded by one thread at a time, so nothing here locks.
 /// </summary>
 internal sealed class ListResourceStates
 {
@@ -18,12 +17,6 @@ internal sealed class ListResourceStates
     private readonly nint[] _resources = new nint[Capacity];
     private readonly int[] _states = new int[Capacity];
     private readonly int[] _homes = new int[Capacity];
-
-    /// <summary>The desktop list the enhanced interface below belongs to.</summary>
-    public nint Desktop { get; set; }
-
-    /// <summary>The desktop list's ID3D12GraphicsCommandList7, not referenced (the list holds it), or 0.</summary>
-    public nint Enhanced { get; set; }
 
     public int Count { get; private set; }
 
