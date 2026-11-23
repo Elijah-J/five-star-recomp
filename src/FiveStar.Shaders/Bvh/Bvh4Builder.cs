@@ -14,26 +14,51 @@ public static class Bvh4Builder
     /// <param name="nodeOffset">Byte offset of the first node from the BVH base; a multiple of 64.</param>
     public static Bvh4Image Build(IReadOnlyList<BvhTriangle> triangles, int nodeOffset)
     {
-        if (nodeOffset % AmdBvhLayout.NodeAlignment != 0)
-        {
-            throw new ArgumentException($"node offset {nodeOffset} is not 64-byte aligned", nameof(nodeOffset));
-        }
+        CheckAlignment(nodeOffset);
 
         if (triangles.Count == 0)
         {
             return new Bvh4Image([], AmdBvhLayout.InvalidNode, 0, 0);
         }
 
-        var tree = new Bvh4Tree(triangles);
+        var tree = new Bvh4Tree(triangles.Select(BvhBounds.Of).ToArray());
         tree.Build();
 
-        return Write(tree, nodeOffset);
-    }
-
-    private static Bvh4Image Write(Bvh4Tree tree, int nodeOffset)
-    {
         int boxBytes = tree.Boxes.Count * AmdBvhLayout.BoxNodeSize;
         var nodes = new byte[boxBytes + (tree.Order.Length * AmdBvhLayout.TriangleNodeSize)];
+        var leaves = new Bvh4Leaves(boxBytes, AmdBvhLayout.TriangleNodeSize, AmdBvhLayout.TriangleType);
+        WriteBoxes(tree, nodes, nodeOffset, leaves);
+
+        for (int position = 0; position < tree.Order.Length; position++)
+        {
+            var node = nodes.AsSpan(boxBytes + (position * AmdBvhLayout.TriangleNodeSize), AmdBvhLayout.TriangleNodeSize);
+            AmdBvhLayout.WriteTriangle(node, triangles[tree.Order[position]]);
+        }
+
+        return new Bvh4Image(nodes, Root(nodeOffset), tree.Boxes.Count, tree.Order.Length);
+    }
+
+    /// <summary>The root of a tree written at <paramref name="nodeOffset"/>: its first box.</summary>
+    internal static uint Root(int nodeOffset)
+    {
+        return AmdBvhLayout.NodePointer(nodeOffset, AmdBvhLayout.Box32Type);
+    }
+
+    internal static void CheckAlignment(int nodeOffset)
+    {
+        if (nodeOffset % AmdBvhLayout.NodeAlignment != 0)
+        {
+            throw new ArgumentException($"node offset {nodeOffset} is not 64-byte aligned", nameof(nodeOffset));
+        }
+    }
+
+    /// <summary>
+    /// Writes the box32 nodes of <paramref name="tree"/> at the start of <paramref name="nodes"/>, whose first byte is
+    /// <paramref name="nodeOffset"/> bytes from the BVH base; leaf children point into the leaf nodes described by
+    /// <paramref name="leaves"/>.
+    /// </summary>
+    internal static void WriteBoxes(Bvh4Tree tree, Span<byte> nodes, int nodeOffset, Bvh4Leaves leaves)
+    {
         Span<uint> pointers = stackalloc uint[AmdBvhLayout.Children];
         Span<BvhBounds> bounds = stackalloc BvhBounds[AmdBvhLayout.Children];
 
@@ -43,30 +68,20 @@ public static class Bvh4Builder
 
             for (int child = 0; child < children.Length; child++)
             {
-                pointers[child] = ChildPointer(children[child], nodeOffset, boxBytes);
+                pointers[child] = ChildPointer(children[child], nodeOffset, leaves);
                 bounds[child] = children[child].Bounds;
             }
 
-            var node = nodes.AsSpan(box * AmdBvhLayout.BoxNodeSize, AmdBvhLayout.BoxNodeSize);
+            var node = nodes.Slice(box * AmdBvhLayout.BoxNodeSize, AmdBvhLayout.BoxNodeSize);
             AmdBvhLayout.WriteBox32(node, pointers[..children.Length], bounds[..children.Length]);
         }
-
-        for (int position = 0; position < tree.Order.Length; position++)
-        {
-            var node = nodes.AsSpan(boxBytes + (position * AmdBvhLayout.TriangleNodeSize), AmdBvhLayout.TriangleNodeSize);
-            AmdBvhLayout.WriteTriangle(node, tree.Triangle(position));
-        }
-
-        uint root = AmdBvhLayout.NodePointer(nodeOffset, AmdBvhLayout.Box32Type);
-
-        return new Bvh4Image(nodes, root, tree.Boxes.Count, tree.Order.Length);
     }
 
-    private static uint ChildPointer(Bvh4Child child, int nodeOffset, int boxBytes)
+    private static uint ChildPointer(Bvh4Child child, int nodeOffset, Bvh4Leaves leaves)
     {
-        if (child.IsTriangle)
+        if (child.IsLeaf)
         {
-            return AmdBvhLayout.NodePointer(nodeOffset + boxBytes + (child.Index * AmdBvhLayout.TriangleNodeSize), AmdBvhLayout.TriangleType);
+            return AmdBvhLayout.NodePointer(nodeOffset + leaves.Start + (child.Index * leaves.NodeSize), leaves.Type);
         }
 
         return AmdBvhLayout.NodePointer(nodeOffset + (child.Index * AmdBvhLayout.BoxNodeSize), AmdBvhLayout.Box32Type);

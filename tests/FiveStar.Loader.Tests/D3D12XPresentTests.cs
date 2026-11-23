@@ -15,6 +15,7 @@ public sealed unsafe class D3D12XPresentTests
 {
     private const int PresentSlot = 32;
     private const int SetFrameIntervalSlot = 78;
+    private const int ScheduleFrameEventSlot = 79;
     private const int WaitFrameEventSlot = 80;
     private const int CreateCommittedResourceSlot = 27;
     private const int DefaultHeap = 1;
@@ -92,10 +93,15 @@ public sealed unsafe class D3D12XPresentTests
         using var test = TestRuntime.Create();
         var device = new XboxDevice(test);
         var setInterval = (delegate* unmanaged<nint, nint, uint, uint, uint, int>)XboxDevice.Vtable(device.Device)[SetFrameIntervalSlot];
+
+        var schedule = (delegate* unmanaged<nint, uint, uint, nint, uint, int>)XboxDevice.Vtable(device.Device)[ScheduleFrameEventSlot];
         var wait = (delegate* unmanaged<nint, uint, uint, nint, uint, ulong*, int>)XboxDevice.Vtable(device.Device)[WaitFrameEventSlot];
         const uint IntervalMicroseconds = 20000;
         const int Frames = 6;
 
+        // As at device creation (0x142478de4): event 2 at the origin. Waiting for an unscheduled event is refused.
+        Assert.Equal(unchecked((int)0x80070057), wait(device.Device, 1, 0, 0, 0, null));
+        Assert.Equal(0, schedule(device.Device, 2, 0, 0, 0));
         Assert.Equal(0, setInterval(device.Device, 0, IntervalMicroseconds, 3, 0));
 
         // As at 0x142482448 and 0x142482405: take the current token, wait for event 2 of the previous frame, present.
