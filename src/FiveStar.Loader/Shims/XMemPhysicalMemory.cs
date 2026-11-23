@@ -1,53 +1,248 @@
 // Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+using System.Diagnostics.CodeAnalysis;
 using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Native;
 
 namespace FiveStar.Loader.Shims;
 
 /// <summary>
-/// The xmem.dll virtual and physical page functions on VirtualAlloc. On the console a title reserves address space,
-/// allocates physical pages and maps them into it. Here a physical page is only a number: XMemVirtualAlloc reserves
-/// (and commits when asked), and mapping commits ordinary memory at the target address, so every mapped page is
-/// backed by real memory. Not emulated: one physical page mapped at two addresses (aliasing) and page contents moving
-/// with a remap. The signatures are inferred from the executable's call sites; none is in the public GDK headers.
+/// The xmem.dll virtual and physical page functions. Physical pages live in pagefile-backed sections
+/// (<see cref="XMemPageStore"/>); a MEM_64K_PAGES reservation is a placeholder range (<see cref="XMemReservation"/>) and
+/// mapping a page replaces one 64 KiB placeholder with a view of the page's section. A page mapped at two addresses
+/// therefore aliases, and a remapped page keeps its contents. Signatures and flags are in docs/loader.md.
 /// </summary>
-internal sealed unsafe class XMemPhysicalMemory
+internal sealed unsafe class XMemPhysicalMemory : IDisposable
 {
-    /// <summary>The mapping unit: callers size page arrays as bytes &gt;&gt; 16 and map at 64 KB strides.</summary>
-    public const ulong PageSize = 0x10000;
+    /// <summary>The mapping unit (see <see cref="XMemPageStore.PageSize"/>).</summary>
+    public const ulong PageSize = XMemPageStore.PageSize;
 
-    /// <summary>Page entries count 4 KB frames: the game rebuilds them as <c>(index &lt;&lt; 4) &amp; 0x1FFFFF0</c>.</summary>
-    public const ulong FramesPerPage = PageSize / Win32Constants.PageSize;
-
-    /// <summary>The first page number handed out; 0 is never one, since a scatter entry of 0 unmaps.</summary>
-    private const ulong FirstPage = 1;
-
-    /// <summary>winnt.h MEM_PHYSICAL. Only MEM_RESERVE and MEM_COMMIT reach VirtualAlloc; MEM_LARGE_PAGES and the console bits are dropped.</summary>
-    private const uint MemPhysical = 0x00400000;
-
-    /// <summary>The standard PAGE_* protection; higher bits are console GPU/cache attributes.</summary>
+    /// <summary>The standard PAGE_* protection; the bits above are cache and PAGE_GRAPHICS_* (GPU) attributes.</summary>
     private const uint StandardProtectionMask = 0xFF;
 
-    private readonly object _gate = new();
-    private readonly Stack<ulong> _freedPages = new();
     private readonly LoaderLog _log;
-    private ulong _nextPage = FirstPage;
-    private long _livePages;
+    private readonly nint _process;
+    private readonly XMemPageStore _pages;
+    private readonly XMemReservationTable _reservations = new();
 
     public XMemPhysicalMemory(LoaderLog log)
     {
         _log = log;
+        _process = Kernel32.GetCurrentProcess();
+        _pages = new XMemPageStore(_process);
     }
 
-    public long LivePages => Interlocked.Read(ref _livePages);
+    public long LivePages => _pages.LivePages;
 
     /// <summary>
-    /// <c>void* XMemVirtualAlloc(void* address, SIZE_T size, DWORD allocationType, uint64 attributes, DWORD protect)</c>.
-    /// A physical reservation (MEM_PHYSICAL without MEM_COMMIT) only reserves: its pages are committed when mapped.
+    /// <c>void* XMemVirtualAlloc(void* address, SIZE_T size, DWORD allocationType, uint64 xmemFlags, DWORD protect)</c>.
+    /// MEM_RESERVE_PLACEHOLDER makes a placeholder the game splits itself; MEM_64K_PAGES without MEM_COMMIT makes a
+    /// mappable reservation (in an existing placeholder with MEM_REPLACE_PLACEHOLDER); anything else is VirtualAlloc
+    /// with MEM_RESERVE/MEM_COMMIT and the low protection byte.
     /// </summary>
-    public nint VirtualAlloc(nint address, nuint size, uint allocationType, ulong attributes, uint protect)
+    public nint VirtualAlloc(nint address, nuint size, uint allocationType, ulong xmemFlags, uint protect)
+    {
+        nint result;
+
+        if ((allocationType & MemoryConstants.MemReservePlaceholder) != 0)
+        {
+            result = ReservePlaceholder(address, size);
+        }
+        else if ((allocationType & MemoryConstants.MemPhysical) != 0 && (allocationType & Win32Constants.MemCommit) == 0)
+        {
+            result = ReserveMappable(address, size, allocationType, protect);
+        }
+        else
+        {
+            result = Allocate(address, size, allocationType, protect);
+        }
+
+        if (_log.DetailEnabled)
+        {
+            _log.Detail($"  [xmem] XMemVirtualAlloc(0x{address:x}, 0x{size:x}, type=0x{allocationType:x}, flags=0x{xmemFlags:x}, protect=0x{protect:x}) -> 0x{result:x}");
+        }
+
+        return result;
+    }
+
+    /// <summary><c>BOOL XMemAllocatePhysicalPages(DWORD flags, ULONG_PTR* count, ULONG_PTR* frames)</c>: *count becomes the number allocated.</summary>
+    public int AllocatePages(ulong flags, ulong* count, ulong* frames)
+    {
+        if (count == null || frames == null)
+        {
+            return 0;
+        }
+
+        ulong requested = *count;
+        *count = _pages.Allocate(requested, frames);
+        _log.Detail($"  [xmem] XMemAllocatePhysicalPages(flags=0x{flags:x}, count={requested}) -> {*count}");
+
+        if (*count != requested)
+        {
+            _log.Warn($"[xmem] XMemAllocatePhysicalPages: only {*count} of {requested} pages");
+        }
+
+        return 1;
+    }
+
+    /// <summary><c>BOOL XMemFreePhysicalPages(ULONG_PTR count, ULONG_PTR* frames)</c>.</summary>
+    public int FreePages(ulong count, ulong* frames)
+    {
+        if (frames == null)
+        {
+            return 0;
+        }
+
+        _pages.Free(count, frames);
+
+        return 1;
+    }
+
+    /// <summary>
+    /// <c>void* XMemMapPhysicalPages(void* address, ULONG_PTR count, ULONG_PTR* frames)</c>: returns the address, or 0
+    /// on failure. Pages already mapped are replaced; a null array unmaps and keeps the reservation.
+    /// </summary>
+    public nint MapPages(nint address, ulong count, ulong* frames)
+    {
+        bool mapped = true;
+
+        for (ulong i = 0; i < count; i++)
+        {
+            ulong frame = frames == null ? 0 : frames[i];
+            mapped &= MapOne(address + (nint)(i * PageSize), frame);
+        }
+
+        if (frames == null)
+        {
+            CoalesceIfWhole(address, count * PageSize);
+        }
+
+        if (!mapped)
+        {
+            _log.Warn($"[xmem] XMemMapPhysicalPages(0x{address:x}, {count} pages) failed");
+
+            return 0;
+        }
+
+        return address;
+    }
+
+    /// <summary>
+    /// <c>BOOL XMemMapPhysicalPagesScatter(void** addresses, ULONG_PTR count, ULONG_PTR* frames)</c>: one page per
+    /// address; a 0 entry or a null array unmaps. The game breaks into the debugger when this returns FALSE.
+    /// </summary>
+    public int MapPagesScatter(nint* addresses, ulong count, ulong* frames)
+    {
+        if (addresses == null)
+        {
+            return 0;
+        }
+
+        bool mapped = true;
+
+        for (ulong i = 0; i < count; i++)
+        {
+            ulong frame = frames == null ? 0 : frames[i];
+            mapped &= MapOne(addresses[i], frame);
+        }
+
+        if (!mapped)
+        {
+            _log.Warn($"[xmem] XMemMapPhysicalPagesScatter({count} pages): a mapping failed");
+
+            return 0;
+        }
+
+        return 1;
+    }
+
+    /// <summary>
+    /// The section and byte offset of the page mapped at <paramref name="address"/>: what a GPU heap over the same
+    /// memory needs. False when nothing is mapped there.
+    /// </summary>
+    public bool TryLocate(nint address, [NotNullWhen(true)] out XMemPageChunk? chunk, out ulong offset)
+    {
+        chunk = null;
+        offset = 0;
+        var reservation = _reservations.Find(address);
+
+        if (reservation is null || !_pages.TryLocate(reservation.FrameAt(address), out chunk, out ulong pageOffset))
+        {
+            return false;
+        }
+
+        offset = pageOffset + ((ulong)(address - reservation.Address) % PageSize);
+
+        return true;
+    }
+
+    public void Dispose()
+    {
+        foreach (var reservation in _reservations.TakeAll())
+        {
+            reservation.Release();
+        }
+
+        _pages.Dispose();
+    }
+
+    private bool MapOne(nint address, ulong frame)
+    {
+        var reservation = _reservations.Find(address);
+
+        if (reservation is null)
+        {
+            return false;
+        }
+
+        if (frame == 0)
+        {
+            return reservation.Unmap(address);
+        }
+
+        if (!_pages.TryLocate(frame, out var chunk, out ulong offset))
+        {
+            return false;
+        }
+
+        return reservation.Map(address, frame, chunk, offset);
+    }
+
+    private void CoalesceIfWhole(nint address, ulong size)
+    {
+        var reservation = _reservations.Find(address);
+
+        if (reservation is not null && reservation.Address == address && reservation.Size == size)
+        {
+            reservation.Coalesce();
+        }
+    }
+
+    private nint ReservePlaceholder(nint address, nuint size)
+    {
+        return KernelBase.VirtualAlloc2(_process, address, size, Win32Constants.MemReserve | MemoryConstants.MemReservePlaceholder, Win32Constants.PageNoAccess, null, 0);
+    }
+
+    private nint ReserveMappable(nint address, nuint size, uint allocationType, uint protect)
+    {
+        nint result = address;
+
+        // With MEM_REPLACE_PLACEHOLDER the range is already a placeholder the game split off; it stays one until mapped.
+        if ((allocationType & MemoryConstants.MemReplacePlaceholder) == 0)
+        {
+            result = ReservePlaceholder(address, size);
+        }
+
+        if (result != 0)
+        {
+            _reservations.Add(new XMemReservation(_process, result, size, ViewProtection(protect)));
+        }
+
+        return result;
+    }
+
+    private nint Allocate(nint address, nuint size, uint allocationType, uint protect)
     {
         uint type = allocationType & Win32Constants.MemReserveCommit;
 
@@ -63,120 +258,23 @@ internal sealed unsafe class XMemPhysicalMemory
             protection = Win32Constants.PageReadWrite;
         }
 
-        nint result = Kernel32.VirtualAlloc(address, size, type, protection);
-        string note = (allocationType & MemPhysical) != 0 ? " (physical reservation)" : string.Empty;
-        _log.Detail($"  [xmem] XMemVirtualAlloc(0x{address:x}, 0x{size:x}, type=0x{allocationType:x}, attr=0x{attributes:x}, protect=0x{protect:x}) -> 0x{result:x}{note}");
-
-        return result;
-    }
-
-    /// <summary><c>BOOL XMemAllocatePhysicalPages(uint64 flags, ULONG_PTR* count, ULONG_PTR* pages)</c>: *count page numbers.</summary>
-    public int AllocatePages(ulong flags, ulong* count, ulong* pages)
-    {
-        if (count == null || pages == null)
+        if ((allocationType & MemoryConstants.MemReplacePlaceholder) != 0)
         {
-            return 0;
+            return KernelBase.VirtualAlloc2(_process, address, size, type | MemoryConstants.MemReplacePlaceholder, protection, null, 0);
         }
 
-        lock (_gate)
-        {
-            for (ulong i = 0; i < *count; i++)
-            {
-                pages[i] = NextPage() * FramesPerPage;
-            }
-        }
-
-        Interlocked.Add(ref _livePages, (long)*count);
-        _log.Detail($"  [xmem] XMemAllocatePhysicalPages(flags=0x{flags:x}, count={*count})");
-
-        return 1;
-    }
-
-    /// <summary><c>BOOL XMemFreePhysicalPages(ULONG_PTR count, ULONG_PTR* pages)</c>.</summary>
-    public int FreePages(ulong count, ulong* pages)
-    {
-        if (pages == null)
-        {
-            return 0;
-        }
-
-        lock (_gate)
-        {
-            for (ulong i = 0; i < count; i++)
-            {
-                _freedPages.Push(pages[i] / FramesPerPage);
-            }
-        }
-
-        Interlocked.Add(ref _livePages, -(long)count);
-
-        return 1;
+        return Kernel32.VirtualAlloc(address, size, type, protection);
     }
 
     /// <summary>
-    /// <c>void* XMemMapPhysicalPages(void* address, ULONG_PTR count, ULONG_PTR* pages)</c>: commits the range and
-    /// returns the address (0 on failure); null pages decommit it.
+    /// Views are read-only when the CPU protection is PAGE_READONLY and read-write otherwise, PAGE_NOACCESS included:
+    /// the game reserves GPU-only ranges (PAGE_NOACCESS | PAGE_GRAPHICS_NOACCESS) that the D3D12 shim reaches through
+    /// the CPU. Cache attributes (PAGE_WRITECOMBINE, PAGE_NOCACHE) cannot differ between views of one section and are dropped.
     /// </summary>
-    public nint MapPages(nint address, ulong count, ulong* pages)
+    private static uint ViewProtection(uint protect)
     {
-        nuint size = (nuint)(count * PageSize);
+        uint protection = (protect & StandardProtectionMask) == Win32Constants.PageReadOnly ? Win32Constants.PageReadOnly : Win32Constants.PageReadWrite;
 
-        if (pages == null)
-        {
-            _ = Kernel32.VirtualFree(address, size, Win32Constants.MemDecommit);
-
-            return address;
-        }
-
-        nint mapped = Kernel32.VirtualAlloc(address, size, Win32Constants.MemCommit, Win32Constants.PageReadWrite);
-        _log.Detail($"  [xmem] XMemMapPhysicalPages(0x{address:x}, {count} pages) -> 0x{mapped:x}");
-
-        return mapped;
-    }
-
-    /// <summary>
-    /// <c>BOOL XMemMapPhysicalPagesScatter(void** addresses, ULONG count, ULONG_PTR* pages)</c>: one page per address;
-    /// a 0 entry (or no page array) decommits. The game breaks into the debugger when this returns 0.
-    /// </summary>
-    public int MapPagesScatter(nint* addresses, ulong count, ulong* pages)
-    {
-        if (addresses == null)
-        {
-            return 0;
-        }
-
-        int succeeded = 1;
-
-        for (ulong i = 0; i < count; i++)
-        {
-            if (pages == null || pages[i] == 0)
-            {
-                _ = Kernel32.VirtualFree(addresses[i], (nuint)PageSize, Win32Constants.MemDecommit);
-
-                continue;
-            }
-
-            if (Kernel32.VirtualAlloc(addresses[i], (nuint)PageSize, Win32Constants.MemCommit, Win32Constants.PageReadWrite) == 0)
-            {
-                succeeded = 0;
-            }
-        }
-
-        if (succeeded == 0)
-        {
-            _log.Warn($"[xmem] XMemMapPhysicalPagesScatter({count} pages): a commit failed");
-        }
-
-        return succeeded;
-    }
-
-    private ulong NextPage()
-    {
-        if (_freedPages.Count > 0)
-        {
-            return _freedPages.Pop();
-        }
-
-        return _nextPage++;
+        return protection;
     }
 }
