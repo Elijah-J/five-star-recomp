@@ -14,25 +14,6 @@ namespace FiveStar.Shaders.Compilation;
 /// </summary>
 public static class PassThroughVertexShader
 {
-    // HLSL scalar type per DXIL signature component type (1 uint, 2 int, 3 float, 4..6 their 16-bit forms).
-    private static readonly string[] ScalarTypes = [string.Empty, "uint", "int", "float", "min16uint", "min16int", "min16float"];
-
-    private static readonly Dictionary<PsvSemanticKind, string> Passed = new()
-    {
-        [PsvSemanticKind.Position] = "SV_Position",
-        [PsvSemanticKind.ClipDistance] = "SV_ClipDistance",
-        [PsvSemanticKind.CullDistance] = "SV_CullDistance",
-        [PsvSemanticKind.RenderTargetArrayIndex] = "SV_RenderTargetArrayIndex",
-        [PsvSemanticKind.ViewportArrayIndex] = "SV_ViewportArrayIndex",
-    };
-
-    private static readonly HashSet<PsvSemanticKind> Generated =
-    [
-        PsvSemanticKind.PrimitiveId, PsvSemanticKind.GsInstanceId, PsvSemanticKind.SampleIndex, PsvSemanticKind.IsFrontFace,
-        PsvSemanticKind.Coverage, PsvSemanticKind.InnerCoverage, PsvSemanticKind.ViewId, PsvSemanticKind.Barycentrics,
-        PsvSemanticKind.ShadingRate,
-    ];
-
     /// <summary>The HLSL source (entry point main) for the consumer's inputs.</summary>
     public static string Source(IReadOnlyList<PsvElement> consumerInputs, bool needsPosition)
     {
@@ -42,13 +23,13 @@ public static class PassThroughVertexShader
 
         foreach (var element in consumerInputs)
         {
-            if (Generated.Contains(element.SemanticKind))
+            if (SignatureMembers.IsGenerated(element))
             {
                 continue;
             }
 
             hasPosition |= element.SemanticKind == PsvSemanticKind.Position;
-            members.Append(Member(element, $"e{count}"));
+            members.Append(SignatureMembers.Member(element, $"e{count}"));
             count++;
         }
 
@@ -58,40 +39,5 @@ public static class PassThroughVertexShader
         }
 
         return $"struct PassOut\n{{\n{members}}};\n\nPassOut main()\n{{\n    PassOut o = (PassOut)0;\n    return o;\n}}\n";
-    }
-
-    private static string Member(PsvElement element, string name)
-    {
-        var semantic = element.Name + element.SemanticIndex;
-        var modifier = string.Empty;
-
-        if (element.SemanticKind == PsvSemanticKind.Arbitrary)
-        {
-            modifier = InterpolationModes.Prefix(element.InterpolationMode);
-        }
-        else if (Passed.TryGetValue(element.SemanticKind, out var systemName))
-        {
-            semantic = systemName + element.SemanticIndex;
-        }
-        else
-        {
-            throw new NotSupportedException($"pass-through of semantic kind {element.SemanticKind}");
-        }
-
-        var type = ScalarTypes[element.ComponentType];
-
-        if (element.Columns > 1)
-        {
-            type += element.Columns;
-        }
-
-        var array = string.Empty;
-
-        if (element.Rows > 1)
-        {
-            array = $"[{element.Rows}]";
-        }
-
-        return $"    {modifier}{type} {name}{array} : {semantic};\n";
     }
 }
