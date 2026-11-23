@@ -38,6 +38,43 @@ flowchart TD
 A graphics result is stored at +0x38 of the game's pipeline object (and bit 7 of +0x1D set), a compute result at
 +0x120. Cached pipelines are kept in the cache's hash map as `pointer >> 1` and AddRef'ed on every hit.
 
+## Creation jobs
+
+Compute pipelines are created in deferred jobs. Loading a compute shader (0x140f9f650: bytecode read, root signature
+at +0x118) takes an item from a pool of 32 (0x140f9fbd0), sets its callback 0x14247fd00 and the shader object at
++0x20 and queues it (0x1450f6bb0). The item counts in the pool counter 0x1475e8eb0.
+
+| Function | Does |
+|---|---|
+| 0x14247fd00 | runs 0x14247fd30 for the shader object, then 0x140699390; returns 1 whatever the result |
+| 0x14247fd30 | slot 67 when the cache has the program (0x142480050), else slot 62; on failure releases the root signature and leaves +0x120 at 0 |
+| 0x140699390 | returns the item to the pool and decrements 0x1475e8eb0; at 0x80000001 it sets the event at 0x1475e8eb8 |
+| 0x1458044a0 | waits until the pool is empty: adds 0x80000000 to the counter and waits for the event when jobs are left |
+
+A task of the frame graph calls 0x1458044a0 (from 0x142499630), so the frame does not end while a creation runs. A
+failed creation still completes its job, but the game later reads +0x10 to +0x2F of the pipeline at +0x120 without a
+null check (0x14248c700): the console never fails here. The cached graphics pipelines of a root signature
+(0x1424774c0, slot 57) are created in jobs too.
+
+### Stand-ins
+
+The desktop driver compiles a translated program in seconds and the largest ones (the screen-probe and ray-traced
+shadow compute programs, 5 to 10 MB of DXIL) in minutes; with a cold shader cache the frame waited for all of them.
+`StandInPipelines` runs every creation of slots 55, 57, 62, 67 and 86 on the threads of a `PipelineBuildQueue` (half
+the logical processors):
+
+| Case | The game gets |
+|---|---|
+| done within `PipelineSlots.CreationBudget` (1 s) and no creation queued before it | the desktop pipeline or the failure |
+| still running, or queued behind others | S_OK and a stand-in |
+
+A stand-in is our own `ID3D12PipelineState` (`StandInPipelineObject`): a vtable, the desktop pipeline once built
+(0 before), 0x20 zero bytes the game reads, its own reference count. Its last Release releases the desktop pipeline,
+or the build does when it ends later. Slot 25 of the command list (SetPipelineState) sets the built pipeline; while
+it is not built the list sets nothing and drops its draws, dispatches and ExecuteIndirect calls until the next
+SetPipelineState (counted in the sample summary). A derive (slot 55) from a stand-in uses the description kept
+under the stand-in's address; the rectangle-list variant is made from the built pipeline.
+
 ## Pipeline-state stream (slot 86)
 
 0x14086f090 zeroes 0x2B0 bytes and writes a fixed stream; the desc is `{u64 0x2B0, stream}`. Each subobject is a u32
@@ -157,14 +194,16 @@ flowchart LR
 | Shader stage | from the program's hardware stage: VS, PS, GS, NGG as mesh shader (no input assembler then) |
 | Root signature | `BindlessRootSignature`, created once per device; the game's root signature is kept in the description for binding translation |
 | Input layout | element n of a cache layout becomes `ATTR` n; a stream element becomes `ATTR` p, p its position among the non-system ISG1 inputs of the VS; elements the VS does not read become `UNUSED` k |
-| Blend, rasterizer, depth-stencil | passed through (stream); decoded from the context registers (cache) with 0 values replaced by the D3D12 default |
+| Blend, rasterizer, depth-stencil | passed through (stream); decoded from the context registers (cache) with 0 values replaced by the D3D12 default. Two console combinations the runtime refuses are rewritten (`DesktopStateRules`): a dual-source factor on target 0 turns independent blending off and gives targets 1 to 7 the default blend; a forced sample count with depth or stencil on becomes 0 |
 | Topology type | 1 to 4 pass; 0, the console type 19 and other values become `TRIANGLE` (stream and cache) |
 | Render-target and depth formats, sample mask and count (cache) | the record's 0x0C entry ([pipeline-cache.md](pipeline-cache.md#pipeline-outputs-and-vertex-input-layout)); the console's D16_UNORM_S8_UINT (118) becomes D32_FLOAT_S8X24_UINT (`DepthFormats`). Only without that entry are they guessed from the registers |
 | Derive | the base pipeline's description (kept per created pipeline) with the overrides applied, created anew; the formats are the base's, which the game found by a pipeline hash over them |
 
 `TranslatedProgramLibrary` reads DXIL from the output of `fivestar shader translate`, finding names through a
 `ProgramIndex` of the extracted programs. A description that cannot be read is logged once and answered with
-E_NOTIMPL; a shader without a translation with HRESULT_FROM_WIN32(ERROR_NOT_FOUND).
+E_NOTIMPL; a shader without a translation with HRESULT_FROM_WIN32(ERROR_NOT_FOUND). The `--sample-threads` summary
+counts failed creations by slot and cause (`no extracted program <key>`, `no loadable form of <program>`, `desktop
+creation <HRESULT> (<programs>)`) and lists the creations running with their age.
 
 ### Variant per adapter
 
@@ -185,13 +224,16 @@ Without `variants.json` every program loads `<name>.dxil` and a warning says so.
 ## Device hookup
 
 When the device is created and the loader has `--shader-dir` and `--translated-dir`, `XboxDeviceFactory` builds the
-`PipelineSlots` (a `PipelineFactory` over the desktop `ID3D12Device2`, `BindlessRoot.Create` and a
-`TranslatedProgramLibrary`) and `PipelineSlotHandlers.Register` binds slots 55, 57, 62, 67 and 86 through
+`PipelineSlots` (a `PipelineFactory` over the desktop `ID3D12Device2`, `BindlessRoot.Create`, a
+`TranslatedProgramLibrary` and the `StandInPipelines` with their build threads) and `PipelineSlotHandlers.Register` binds slots 55, 57, 62, 67 and 86 through
 `XboxObjects.SetHandler`. Without the folders the slots stay logged E_NOTIMPL stubs. Pipeline states are returned
 unwrapped, so slot 55 receives the desktop pointer it registered.
 
 ## Unknown
 
+- The other graphics pipelines the desktop runtime refuses with E_INVALIDARG: the debug layer reports stage
+  linkage (errors 660, 662: an output in another register or with fewer components than the pixel shader reads;
+  666: a mesh shader without the pixel shader's `TEXCOORD22`), so the translated signatures differ between stages.
 - Override kind 5, and whether kinds 3 and 4 exist.
 - The meaning of the shader flags beyond the mesh bits, and of the second stored bytecode (+0x10, size +0x2C) that
   0x14086f8e0 reads when its last argument is set (the pipeline paths pass 0).

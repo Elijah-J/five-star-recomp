@@ -68,6 +68,11 @@ internal sealed class TranslatedProgramLibrary : IProgramLibrary
         return null;
     }
 
+    public IReadOnlyList<string> Names(ReadOnlySpan<byte> prefix)
+    {
+        return [.. _index.Find(prefix)];
+    }
+
     private TranslatedProgram? Load(string name)
     {
         lock (_gate)

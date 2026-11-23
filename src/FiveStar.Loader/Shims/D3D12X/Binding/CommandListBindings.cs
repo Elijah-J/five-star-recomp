@@ -27,7 +27,9 @@ internal unsafe struct CommandListBindings
     public int GraphicsDirty;
     public int ComputeDirty;
     public int HeapsBound;
-    public int Unused;
+
+    /// <summary>1 while the pipeline last set is a stand-in the driver has not built: draws and dispatches are skipped.</summary>
+    public int PipelinePending;
     public fixed uint Graphics[UserDataDwords];
     public fixed uint Compute[UserDataDwords];
 
