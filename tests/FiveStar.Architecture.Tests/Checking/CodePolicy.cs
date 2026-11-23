@@ -50,7 +50,7 @@ public static class CodePolicy
     ];
 
     /// <summary>Projects that may read the clock, the environment and randomness directly.</summary>
-    public static readonly IReadOnlyList<string> AmbientStateProjects = ["FiveStar.Cli", "FiveStar.Loader", "*.Tests"];
+    public static readonly IReadOnlyList<string> AmbientStateProjects = ["FiveStar.Cli", "FiveStar.Loader", "FiveStar.Debugger", "*.Tests"];
 
     /// <summary>Projects whose literals are their data.</summary>
     public static readonly IReadOnlyList<string> MagicNumberExemptProjects = ["*.Tests"];
@@ -68,6 +68,7 @@ public static class CodePolicy
         ["FiveStar.Graphics"] = [],
         ["FiveStar.Cli"] = ["FiveStar.Formats", "FiveStar.Graphics", "FiveStar.Shaders"],
         ["FiveStar.Benchmarks"] = ["FiveStar.Formats", "FiveStar.Loader"],
+        ["FiveStar.Debugger"] = [],
     }.ToFrozenDictionary(StringComparer.Ordinal);
 
     /// <summary>
