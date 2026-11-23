@@ -94,7 +94,8 @@ Format chunk (0x76):
 | 0x00 | 16-bit PCM | 19 | 283,686 |
 
 The PCM codecs take exactly 2 and 4 bytes per sample. XMA2 data is a run of 2 KiB packets whose headers have the
-XMA2 layout (frame count, first-frame offset), with 512 samples per frame.
+XMA2 layout (frame count, first-frame offset), with 512 samples per frame ([xma.md](xma.md)); the sample count is
+the frame count times 512.
 
 ### Opus data
 
@@ -129,7 +130,7 @@ start before the previous one ended; the packets before that end are dropped. Al
 
 ```
 fivestar audio scan   <audio.rpf> [--limit N]                       coverage per codec
-fivestar audio export <audio.rpf> <out> [--limit N] [--codec C] [--from X]
+fivestar audio export <audio.rpf> <out> [--limit N] [--codec C] [--from X] [--decode-xma]
 ```
 
 `export` writes `<out>/<container offset>/<stream id>.<ext>` (`<stream id>_1` and so on when a container repeats an
@@ -138,7 +139,7 @@ id). `--from` takes a container offset in hex.
 | Codec | File |
 |---|---|
 | Opus | `.opus`: Ogg Opus, one file per stream or multichannel channel, pre-skip 312, trimmed to the sample count |
-| XMA2 | `.wav` with an XMA2WAVEFORMATEX header (format tag 0x166) |
+| XMA2 | `.wav` with an XMA2WAVEFORMATEX header (format tag 0x166); with `--decode-xma`, decoded 16-bit PCM ([xma.md](xma.md)) |
 | PCM | `.wav` |
 | Other | `.codecXX.raw`: the data chunk as stored (none in this dump) |
 

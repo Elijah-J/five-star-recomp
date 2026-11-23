@@ -22,7 +22,7 @@ internal static class AudioCommands
             return UsageError;
         }
 
-        var arguments = new CommandArguments(args.Skip(1).ToList(), []);
+        var arguments = new CommandArguments(args.Skip(1).ToList(), [AudioReports.DecodeXmaFlag]);
         using var output = ConsoleOutput.Open();
         var reports = new AudioReports(output);
 
@@ -59,7 +59,7 @@ internal static class AudioCommands
     {
         if (arguments.Positionals.Count < TwoArguments)
         {
-            return Usage("audio export <archive.rpf> <out dir> [--limit N] [--codec opus|xma2|pcm16|pcmfloat] [--from hex offset]");
+            return Usage("audio export <archive.rpf> <out dir> [--limit N] [--codec opus|xma2|pcm16|pcmfloat] [--from hex offset] [--decode-xma]");
         }
 
         reports.Export(arguments.Positionals[0], arguments.Positionals[1], arguments);
@@ -78,7 +78,8 @@ internal static class AudioCommands
     {
         output.WriteLine("fivestar audio <command>");
         output.WriteLine("  scan   <archive.rpf> [--limit N]          AWC containers and tracks per codec (first N containers)");
-        output.WriteLine("  export <archive.rpf> <out> [--limit N] [--codec C] [--from X]");
-        output.WriteLine("                                            write tracks (first N, of codec C, from offset X) as .opus, .wav or .raw");
+        output.WriteLine("  export <archive.rpf> <out> [--limit N] [--codec C] [--from X] [--decode-xma]");
+        output.WriteLine("                                            write tracks (first N, of codec C, from offset X) as .opus, .wav or .raw;");
+        output.WriteLine("                                            --decode-xma writes XMA2 as decoded 16-bit PCM instead of XMA2 in WAVE");
     }
 }

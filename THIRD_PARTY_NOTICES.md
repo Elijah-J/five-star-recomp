@@ -118,3 +118,33 @@ Opus open-source contributors. The source code for these libraries is freely ava
 at https://gitlab.xiph.org/xiph/opus/-/tags/v1.5.2, and all binaries are being
 redistributed to you under the same terms of the general Opus license dictated above.
 ```
+
+## FFmpeg
+
+https://github.com/FFmpeg/FFmpeg, file `libavcodec/wmaprodata.h` as of commit
+`232e88928eee71afa55233d021eeda25eb3ed5b4` (its last change), licensed under the GNU Lesser General Public License,
+version 2.1 or later. Section 3 of that license lets the tables be used under the GNU General Public License, which
+this project does (`LICENSE`).
+
+- `src/FiveStar.Formats/Audio/Xma/WmaProTables.cs` holds its WMA Pro tables unchanged as data: `critical_freq`,
+  `scale_table`, `scale_rl_table`, `scale_rl_run`, `scale_rl_level`, `coef0_lens`, `coef0_syms`, `coef0_run`,
+  `coef0_level`, `coef1_table`, `coef1_run`, `coef1_level`, `vec4_lens`, `vec4_syms`, `vec2_table` and `vec1_table`.
+  The XMA2 decoder around them is our own code.
+
+```
+WMA 9/3/PRO compatible decoder
+Copyright (c) 2007 Baptiste Coudurier, Benjamin Larsson, Ulion
+Copyright (c) 2008 - 2009 Sascha Sommer
+
+This file is part of FFmpeg.
+
+FFmpeg is free software; you can redistribute it and/or
+modify it under the terms of the GNU Lesser General Public
+License as published by the Free Software Foundation; either
+version 2.1 of the License, or (at your option) any later version.
+
+FFmpeg is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+Lesser General Public License for more details.
+```

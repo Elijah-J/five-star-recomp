@@ -1,7 +1,9 @@
 // Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+using System.Diagnostics;
 using FiveStar.Formats.Audio;
+using FiveStar.Formats.Audio.Xma;
 using FiveStar.Formats.Common;
 using FiveStar.Formats.Compression;
 using FiveStar.Formats.Pso;
@@ -70,6 +72,45 @@ public sealed class DumpTests
     }
 
     [DumpFact]
+    public void An_xma2_sound_decodes_every_frame_cleanly_with_no_step_at_the_frame_joins()
+    {
+        using var source = new MappedFileSource(Path.Combine(DumpFactAttribute.Folder!, "audio.rpf"));
+        var track = XmaTracks(source, 0x69DBC6000).Single(track => track.Id == 0x026F4E1Cu);
+
+        var sound = XmaTrackDecoder.Decode(source.Read(track.DataOffset, (int)track.DataSize), track.Format.Channels, (int)track.Format.SampleRate);
+        var samples = sound.Samples;
+        var steps = Enumerable.Range(1, samples.Length - 1).Select(index => (Index: index, Step: Math.Abs(samples[index] - samples[index - 1]))).ToList();
+        var atJoins = steps.Where(step => (step.Index + XmaTrackDecoder.StartTrim) % 512 == 0).Average(step => step.Step);
+
+        Assert.Equal(new AwcFormat(58_880, 32_000, track.Format.Headroom, (byte)AwcCodec.Xma2, 1), track.Format);
+        Assert.Equal(58_880 / 512, sound.Frames);
+        Assert.Equal(0, sound.BadFrames);
+        Assert.Equal(58_112, samples.Length);
+
+        Assert.InRange(Math.Sqrt(samples.Average(sample => (double)sample * sample)), 0.01, 1.0);
+        Assert.InRange(atJoins / steps.Average(step => step.Step), 0.8, 1.25);
+    }
+
+    [FfmpegDumpFact]
+    public void The_xma2_sounds_of_a_bank_decode_like_ffmpeg()
+    {
+        using var source = new MappedFileSource(Path.Combine(DumpFactAttribute.Folder!, "audio.rpf"));
+        var tracks = XmaTracks(source, 0x69DBC6000);
+
+        foreach (var track in tracks)
+        {
+            var data = source.Read(track.DataOffset, (int)track.DataSize);
+            var sound = XmaTrackDecoder.Decode(data, track.Format.Channels, (int)track.Format.SampleRate);
+            var reference = DecodeWithFfmpeg(track.Format, data.ToArray());
+
+            Assert.Equal(reference.Length, sound.Samples.Length);
+            Assert.InRange(reference.Zip(sound.Samples, (expected, actual) => Math.Abs(expected - actual)).Max(), 0, 1e-5);
+        }
+
+        Assert.Equal(11, tracks.Count);
+    }
+
+    [DumpFact]
     public void The_graphics_page_file_extracts_902_textures()
     {
         var path = Path.Combine(DumpFactAttribute.Folder!, "data", "ttdb", "graphics", "ttdb_graphics.ttpf");
@@ -82,5 +123,37 @@ public sealed class DumpTests
         Assert.Equal(912, statuses.Count);
         Assert.Equal(902, statuses.Count(status => status == "ok"));
         Assert.Equal(5, statuses.Count(status => status == "skip_unsupported_codec"));
+    }
+
+    private static List<AwcTrack> XmaTracks(MappedFileSource source, long container) =>
+        new AwcTrackReader(source).Read(AwcReader.TryRead(source, container)!).Where(track => track.Codec == AwcCodec.Xma2).ToList();
+
+    /// <summary>The track wrapped in an XMA2 WAVE file and decoded by FFmpeg to interleaved 32-bit floats.</summary>
+    private static float[] DecodeWithFfmpeg(AwcFormat format, byte[] data)
+    {
+        var wave = Path.GetTempFileName();
+
+        try
+        {
+            using (var file = File.Create(wave))
+            {
+                WaveWriter.Write(file, format, data);
+            }
+
+            var start = new ProcessStartInfo(FfmpegDumpFactAttribute.Program!, ["-hide_banner", "-loglevel", "error", "-i", wave, "-f", "f32le", "pipe:1"])
+            {
+                RedirectStandardOutput = true,
+            };
+            using var ffmpeg = Process.Start(start)!;
+            using var pcm = new MemoryStream();
+            ffmpeg.StandardOutput.BaseStream.CopyTo(pcm);
+            ffmpeg.WaitForExit();
+
+            return System.Runtime.InteropServices.MemoryMarshal.Cast<byte, float>(pcm.ToArray()).ToArray();
+        }
+        finally
+        {
+            File.Delete(wave);
+        }
     }
 }
