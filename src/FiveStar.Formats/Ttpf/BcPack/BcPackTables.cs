@@ -50,6 +50,7 @@ public sealed class BcPackTables
         QuadRank3 = Take(file, ref at, QuadRankEntries);
         PairRank4 = Take(file, ref at, PairRankEntries);
         PairRank5 = Take(file, ref at, PairRankEntries);
+
         Controls = GC.AllocateArray<ushort>(ControlWords, pinned: true);
 
         for (var word = 0; word < ControlWords; word++)

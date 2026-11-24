@@ -178,7 +178,13 @@ internal readonly unsafe struct Bc7BlockAssembler : IBlockAssembler
     private static void Endpoints(byte* record, byte* precision, Bc7Entry* reference, Bc7Entry* value)
     {
         var subsets = Subsets(value->Control);
-        var common = Math.Min(subsets, Subsets(reference->Control));
+        var common = Subsets(reference->Control);
+
+        if (common > subsets)
+        {
+            common = subsets;
+        }
+
         var three = subsets == ThreeSubsets;
         var columns = ColourColumns;
 
