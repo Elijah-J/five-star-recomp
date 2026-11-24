@@ -74,7 +74,7 @@
           "done": 0,
           "partial": 1,
           "todo": 0,
-          "note": "GPU hang about six minutes in"
+          "note": "GPU hang in meshlet culling, first frame after loading"
         },
         {
           "name": "In game",
@@ -208,7 +208,7 @@
       "items": [
         {
           "name": "Story load",
-          "note": "the GPU hangs about six minutes into the load"
+          "note": "the GPU hangs in meshlet culling\u0027s indirect dispatch"
         },
         {
           "name": "Brightness symbol",
