@@ -93,7 +93,7 @@ Memory while builds wait (a cold story load queues thousands):
 |---|---|
 | Queued stream | keeps its subobjects and references the programs' DXIL; the native copy the driver reads is made for the cache lookup and again for the build, and freed while the stream waits in the queue (`DesktopStream.Release`) |
 | DXIL | `TranslatedProgramLibrary` keeps the most recently used programs up to 1 GiB and reads older ones again; rectangle-list recipes keep program names, not DXIL |
-| Build start | waits while less than 8 GB of commit is available (`WarmMemoryGuard`, as in the warm-up), since one driver compile can take gigabytes; also the concurrency rule below |
+| Build start | waits for the memory the compile is expected to take (`CompileBudget`, below), since one driver compile can take gigabytes; also the concurrency rule below |
 
 **Memory.** The story load asks for about 29,000 pipelines the warm cache did not hold (15,000 by 210 s, 14,000 more
 at 870 s); 16 build threads compiling them took the loader from 19 to 74 GB private on a 64 GB machine, and at 978 s
@@ -103,7 +103,16 @@ each for every compile running, the new one included (`WarmMemoryGuard.RoomForBu
 load that leaves one to a few compiles instead of 16. Commit counts with the growth Windows can still give the page
 files (PageFileGrowth): to the configured maximum, or three times the physical memory for a system-managed page
 file, within the free space of its drive less 16 GB. On a machine whose system-managed page file had shrunk to a
-82.6 GB limit, the limit alone parked 15 build threads while 16 to 28 GB of physical memory was free. A pipeline with 4 MiB of DXIL or more goes to a thread of its own
+82.6 GB limit, the limit alone parked 15 build threads while 16 to 28 GB of physical memory was free. 
+
+**Compile budget.** That 2 GB per compile was far too little: the NVIDIA compiler grows a doubling arena per
+pipeline (1, 2, 4, 8 GB, [debugging.md](debugging.md#memory-map)), and six mesh-shader pipelines of 1 to 3 MB of DXIL
+admitted together at 100 s took the loader from 26 to 60 GB private by 165 s and the machine to its commit limit. A
+compile now also waits, on its build thread, until free physical memory and commit cover the reserves (4 and 8 GB),
+its estimate (4096 bytes per byte of DXIL, 2 to 32 GB) and what the running compiles are still expected to take: their
+estimates less the process's private growth since compiles began (`CompileBudget`). Compiles of less than 256 KB of
+DXIL never wait, so a small compute pipeline made on the game's thread is not held up. The sample summary names the
+driver compiles running (pipeline, MB of DXIL, age) and counts those waiting. A pipeline with 4 MiB of DXIL or more goes to a thread of its own
 that also waits for 40 GB of commit, so it never holds up the others; until then its draws stay skipped. The sample summary counts the
 queued builds and the threads waiting for memory.
 
