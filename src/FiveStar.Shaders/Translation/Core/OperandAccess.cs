@@ -55,11 +55,15 @@ internal sealed partial class OperandAccess
             return SnapOne($"{WaveOps.Ballot}({Mask(operand)}).{half}");
         }
 
-        if (operand.Kind == OperandKind.Scalar && IsMaskHighHalf(key))
+        if (operand.Kind == OperandKind.Scalar && key.Index == SpecialRegisters.ExecHi && _state.IsWave64)
         {
-            // The high dword of a wave64 lane mask named on its own (vcc_hi, exec_hi, s11 after v_cmp_e64 s[10:11]).
-            return SnapOne($"{WaveOps.Ballot}({Mask(OperandParser.Sgpr(key.Index - 1))}).y");
+            // exec_hi named on its own: the high dword of the lanes.
+            return SnapOne($"{WaveOps.Ballot}(active).y");
         }
+
+        // The high dword of a wave64 lane mask (s11 after v_cmp_e64 s[10:11]) is its integer variable: every mask write
+        // sets it (ShadowHighHalf), so a read sees whichever write ran last on the path taken; the mask tracking is by
+        // emission order, which on another path left s43 an integer the culling program adds to (s_add_i32 s32, s43, s32).
 
         if (!_state.Written.Contains(key))
         {
@@ -188,6 +192,22 @@ internal sealed partial class OperandAccess
 
         MarkMask(key);
         _state.Emit($"  {key.MaskName} = {condition};");
+        ShadowHighHalf(key);
+    }
+
+    /// <summary>On wave64, after a mask write: the integer variable of its high dword gets the mask's high lanes.</summary>
+    public void ShadowHighHalf(RegisterKey key)
+    {
+        if (!_state.IsWave64 || key.Kind != RegisterKey.Scalar || key == SpecialRegisters.Exec)
+        {
+            return;
+        }
+
+        var high = key.Plus(1);
+        var bits = SnapOne($"{WaveOps.Ballot}({key.MaskName}).y");
+        _state.Touch(high);
+        _state.Variables.Add(high);
+        _state.Emit($"  {high.Name} = {bits};");
     }
 
     /// <summary>Records that a register now holds a lane mask (and, on wave64, that the next one is its high half).</summary>
@@ -323,16 +343,6 @@ internal sealed partial class OperandAccess
         }
 
         return $"STATIC_SAMPLER_BASE + {slot}u";
-    }
-
-    private bool IsMaskHighHalf(RegisterKey key)
-    {
-        if (_state.MaskHighHalves.Contains(key))
-        {
-            return true;
-        }
-
-        return key.Index == SpecialRegisters.ExecHi && _state.IsWave64;
     }
 
     private void TrackConstant(RegisterKey key, string value)

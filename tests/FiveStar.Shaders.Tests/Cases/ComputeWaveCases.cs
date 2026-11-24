@@ -120,7 +120,8 @@ public static class ComputeWaveCases
             .Concat(Variants("cs_dpp", DppCase))
             .Concat(Variants("cs_waterfall", WaterfallCase))
             .Append(VccHighBranchCase())
-            .Append(ExecLowHalfCase());
+            .Append(ExecLowHalfCase())
+            .Append(MaskHighHalfPathCase());
     }
 
     // Wave64 s_cbranch_vccnz / vccz on VCC written as an integer test all 64 bits: only vcc_hi is set, then neither half.
@@ -154,6 +155,22 @@ public static class ComputeWaveCases
             """;
 
         return new ComputeCase("cs_exec_lo_half_w64", Program, 1, thread => [LowHalfOff(thread.Lane)]) { Wave = 64 };
+    }
+
+    // Wave64: s43 holds an integer on the path taken; a v_cmp into s[42:43] on the path not taken must not turn the
+    // later integer read of s43 into the high half of that mask.
+    private static ComputeCase MaskHighHalfPathCase()
+    {
+        const string Program = """
+            s_mov_b32 s43, 5
+            s_cmp_eq_u32 s8, 0
+            s_cbranch_scc1 .Lskip
+            v_cmp_eq_u32_e64 s[42:43], v0, v0
+            .Lskip:
+            v_mov_b32 v20, s43
+            """;
+
+        return new ComputeCase("cs_mask_high_half_path_w64", Program, 1, _ => [5u]) { Wave = 64, User = [0] };
     }
 
     private static uint LowHalfOff(int lane)
