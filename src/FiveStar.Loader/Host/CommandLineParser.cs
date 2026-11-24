@@ -165,8 +165,6 @@ internal sealed class CommandLineParser
                 return SetWatch(option);
             case "--screens":
                 return SetScreensFile();
-            case "--user-change-after-add":
-                return SetUserChangeAfterAdd();
             case "--audio-capture":
                 return SetAudioCapture();
             case "--record-audio":
@@ -418,13 +416,6 @@ internal sealed class CommandLineParser
     private bool SetInputScript()
     {
         _options.InputScript = Path.GetFullPath(Next());
-
-        return true;
-    }
-
-    private bool SetUserChangeAfterAdd()
-    {
-        _options.UserChangeAfterAdd = true;
 
         return true;
     }

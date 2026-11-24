@@ -21,7 +21,6 @@ internal static class HostUsage
           --trace-system         with --run: the call trace also records System32 imports
           --input-script <file>  timed key presses ("<s> <key> [hold <s>] [repeat <n> every <s>]", "<s> capture", "<s> learn <screen>" per line; "screen <name>" starts a block timed from when that screen shows; reloaded when the file changes)
           --screens <file>       learned screens of --input-script (default %LOCALAPPDATA%\FiveStar\screens.txt)
-          --user-change-after-add  call the game's XUser change callback once after the user is added (SignedInAgain, Gamertag)
                                  added to the desktop keys, so the keyboard and the virtual gamepad see them
           --profile-threads      with --sample-threads: also log the main image's busiest functions on running threads
           --trace-module <dll>   with --run: the call trace also records calls into this mapped image

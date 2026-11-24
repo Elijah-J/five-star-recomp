@@ -146,7 +146,6 @@ internal sealed class LoaderHost
             _log.Info($"  [input] mapping from {_options.InputConfig}");
         }
 
-        _runtime.Gdk.Users.ChangeAfterAdd = _options.UserChangeAfterAdd;
         FrameCapture? capture = null;
 
         if (_options.CaptureDirectory is not null || _options.D3D12TraceDraws)

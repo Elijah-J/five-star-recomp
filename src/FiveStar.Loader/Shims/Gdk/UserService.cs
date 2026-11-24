@@ -52,14 +52,8 @@ internal sealed unsafe class UserService
     /// <summary>The handle block: two pointer-sized words, zeroed.</summary>
     private const int HandleSize = 2 * sizeof(ulong);
 
-    // XUserChangeEvent values (XUser.h).
-    private const uint ChangeSignedInAgain = 0;
-    private const uint ChangeGamertag = 3;
-
     private readonly nint _user;
     private long _changeToken;
-    private (nint Queue, nint Context, nint Callback) _change;
-    private int _changeSent;
     private int _refs;
 
     public UserService()
@@ -68,9 +62,6 @@ internal sealed unsafe class UserService
     }
 
     public int RefCount => Volatile.Read(ref _refs);
-
-    /// <summary>Call the change callback once after the user is added (<c>--user-change-after-add</c>): SignedInAgain, then Gamertag.</summary>
-    public bool ChangeAfterAdd { get; set; }
 
     /// <summary>The device the player's controller is: the GameInput id of the first XInput gamepad.</summary>
     public static ReadOnlySpan<byte> ControllerId => DeviceInfoWriter.DeviceId(InputDeviceCatalog.GamepadName(0));
@@ -209,46 +200,17 @@ internal sealed unsafe class UserService
         return HResult.Ok;
     }
 
-    /// <summary>Registration succeeds; the event fires only with <see cref="ChangeAfterAdd"/>, once after the add.</summary>
-    public int RegisterForChangeEvent(nint queue, nint context, nint callback, ulong* token)
+    /// <summary>Registration succeeds; the event never fires because the user never changes.</summary>
+    public int RegisterForChangeEvent(nint callback, ulong* token)
     {
         if (callback == 0 || token == null)
         {
             return HResult.InvalidArgument;
         }
 
-        _change = (queue, context, callback);
-
         *token = (ulong)Interlocked.Increment(ref _changeToken);
 
         return HResult.Ok;
-    }
-
-    /// <summary>After XUserAddAsync: with <see cref="ChangeAfterAdd"/>, queues the change events once on the registered queue.</summary>
-    public void Added(TaskQueueService taskQueues, NativeBoundary boundary)
-    {
-        var (queue, context, callback) = _change;
-
-        if (!ChangeAfterAdd || callback == 0 || Interlocked.Exchange(ref _changeSent, 1) != 0)
-        {
-            return;
-        }
-
-        var target = taskQueues.ResolveQueue(queue);
-
-        if (target is null)
-        {
-            boundary.Info($"XUser change events: queue 0x{queue:x} unknown, not sent");
-
-            return;
-        }
-
-        foreach (uint change in (uint[])[ChangeSignedInAgain, ChangeGamertag])
-        {
-            _ = target.Completion.Submit(new TaskEntry(0, 0, new UserChangeNotification(callback, context, LocalId, change)), target, 0);
-        }
-
-        boundary.Info("XUser change events SignedInAgain and Gamertag queued after the add");
     }
 
     /// <summary>XUserFindForDevice: every input device belongs to the one player.</summary>

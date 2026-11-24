@@ -21,7 +21,7 @@ internal static unsafe partial class XUserShim
 
         try
         {
-            return gdk.Async.BeginManaged(async, UserService.AddApi, new UserAddOperation(gdk.Users, gdk.TaskQueues, gdk.Boundary, options));
+            return gdk.Async.BeginManaged(async, UserService.AddApi, new UserAddOperation(gdk.Users, gdk.Boundary, options));
         }
         catch (Exception e)
         {
@@ -161,7 +161,7 @@ internal static unsafe partial class XUserShim
     [UnmanagedCallersOnly]
     private static int XUserRegisterForChangeEvent(nint queue, nint context, nint callback, ulong* token)
     {
-        return ShimContext.Runtime.Gdk.Users.RegisterForChangeEvent(queue, context, callback, token);
+        return ShimContext.Runtime.Gdk.Users.RegisterForChangeEvent(callback, token);
     }
 
     /// <summary>bool XUserUnregisterForChangeEvent(XTaskQueueRegistrationToken token, bool wait).</summary>

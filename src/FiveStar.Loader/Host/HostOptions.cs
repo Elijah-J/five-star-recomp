@@ -59,9 +59,6 @@ internal sealed record HostOptions
     /// <summary>The learned screens of the input script (<c>--screens</c>); null: %LOCALAPPDATA%\FiveStar\screens.txt.</summary>
     public string? ScreensFile { get; set; }
 
-    /// <summary>XUser calls the change callback once after the user is added (<c>--user-change-after-add</c>).</summary>
-    public bool UserChangeAfterAdd { get; set; }
-
     /// <summary>Extracted FSSM programs (`fivestar shader extract`) for pipeline creation.</summary>
     public string? ShaderDirectory { get; set; }
 
