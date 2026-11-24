@@ -7,12 +7,13 @@ using FiveStar.Loader.Native;
 namespace FiveStar.Loader.Host;
 
 /// <summary>
-/// Gives the process the console's millisecond waits. The game paces threads with short sleeps: its audio mixer
-/// sleeps about 4 ms per 256-frame block (5.3 ms at 48 kHz). A desktop process sleeps in 15.6 ms timer ticks unless it
-/// asks for finer ones, and then the mixer makes a third of the audio the output plays. Windows 11 also drops the
-/// request while the window is hidden, unless the process opts out of that throttling. Set once, for the whole run.
+/// Gives the process the console's millisecond waits, for every sleep and timed wait of every thread. The game paces
+/// threads with short sleeps: its audio mixer sleeps about 4 ms per 256-frame block (5.3 ms at 48 kHz). A desktop
+/// process sleeps in 15.6 ms timer ticks unless it asks for finer ones, and then the mixer makes a third of the audio
+/// the output plays. Windows 11 also drops the request while the window is hidden, unless the process opts out of that
+/// throttling. Taken before any mapped code runs and given back when the run ends (<see cref="Dispose"/>).
 /// </summary>
-internal static unsafe class ConsoleTimers
+internal sealed unsafe class ConsoleTimers : IDisposable
 {
     /// <summary>ProcessPowerThrottling in PROCESS_INFORMATION_CLASS.</summary>
     private const int ProcessPowerThrottling = 4;
@@ -28,7 +29,14 @@ internal static unsafe class ConsoleTimers
 
     private const uint Milliseconds = 1;
 
-    public static void Use(LoaderLog log)
+    private readonly bool _taken;
+
+    private ConsoleTimers(bool taken)
+    {
+        _taken = taken;
+    }
+
+    public static ConsoleTimers Take(LoaderLog log)
     {
         // PROCESS_POWER_THROTTLING_STATE: version, control mask, state mask; a clear state bit keeps the resolution.
         uint* state = stackalloc uint[] { ThrottlingVersion, IgnoreTimerResolution, 0 };
@@ -38,5 +46,23 @@ internal static unsafe class ConsoleTimers
         string resolution = fine ? $"{Milliseconds} ms timer resolution" : "timeBeginPeriod failed: 15.6 ms timer ticks";
 
         log.Info($"  [timer] {resolution}, {hidden}");
+
+        return new ConsoleTimers(fine);
+    }
+
+    /// <summary>The desktop's timer ticks (<c>--desktop-timers</c>): nothing is taken.</summary>
+    public static ConsoleTimers Desktop(LoaderLog log)
+    {
+        log.Info("  [timer] desktop timer ticks (--desktop-timers)");
+
+        return new ConsoleTimers(false);
+    }
+
+    public void Dispose()
+    {
+        if (_taken)
+        {
+            _ = Winmm.timeEndPeriod(Milliseconds);
+        }
     }
 }

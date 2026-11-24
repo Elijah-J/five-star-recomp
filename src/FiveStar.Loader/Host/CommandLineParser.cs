@@ -167,6 +167,10 @@ internal sealed class CommandLineParser
                 return true;
             case "--record-audio":
                 return SetRecordAudio();
+            case "--desktop-timers":
+                _options.DesktopTimers = true;
+
+                return true;
             case "--bcpack-missing":
                 return SetBcPackMissing();
             case "--bcpack-tables":

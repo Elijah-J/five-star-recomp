@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 
 namespace FiveStar.Loader.Native;
 
-/// <summary>The multimedia timer call the loader makes.</summary>
+/// <summary>The multimedia timer calls the loader makes.</summary>
 internal static class Winmm
 {
     private const string Library = "winmm";
@@ -13,4 +13,8 @@ internal static class Winmm
     /// <summary>MMRESULT timeBeginPeriod(UINT ms): 0 on success.</summary>
     [DllImport(Library)]
     public static extern uint timeBeginPeriod(uint milliseconds);
+
+    /// <summary>MMRESULT timeEndPeriod(UINT ms): ends a matching timeBeginPeriod.</summary>
+    [DllImport(Library)]
+    public static extern uint timeEndPeriod(uint milliseconds);
 }

@@ -61,6 +61,7 @@ internal sealed class LoaderHost
             _runtime.Faults.Install();
         }
 
+        using var timers = Timers();
         CheckCpu();
 
         if (!ConfigureMods())
@@ -322,11 +323,26 @@ internal sealed class LoaderHost
             TransientPoolWatch.Start(_log);
         }
 
-        ConsoleTimers.Use(_log);
         StartAudioCapture();
         _runtime.D3D12X.WaitForProgramIndex();
 
         return new ExecutableRunner(_runtime.Faults, _log).Run(main, _options.RunTimeout);
+    }
+
+    /// <summary>With --run, the console's millisecond timers for the whole process, unless <c>--desktop-timers</c>.</summary>
+    private ConsoleTimers? Timers()
+    {
+        if (!_options.RunMain)
+        {
+            return null;
+        }
+
+        if (_options.DesktopTimers)
+        {
+            return ConsoleTimers.Desktop(_log);
+        }
+
+        return ConsoleTimers.Take(_log);
     }
 
     /// <summary><c>--audio-capture</c>: starts the recorder, a child copy of the loader that records this process tree.</summary>

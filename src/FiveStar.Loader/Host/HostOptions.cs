@@ -164,6 +164,9 @@ internal sealed record HostOptions
     /// <summary>Run the XDsp convolution effects on the CPU instead of returning silence (<c>--xdsp-convolution</c>).</summary>
     public bool XDspConvolution { get; set; }
 
+    /// <summary>Keep the desktop's 15.6 ms timer ticks instead of 1 ms ones (<c>--desktop-timers</c>), to compare.</summary>
+    public bool DesktopTimers { get; set; }
+
     /// <summary>Record what the game plays to this WAVE file (<c>--audio-capture</c>), from a child recorder process.</summary>
     public string? AudioCapture { get; set; }
 

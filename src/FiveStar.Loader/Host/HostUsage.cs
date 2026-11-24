@@ -69,6 +69,7 @@ internal static class HostUsage
                                  rehydration into game memory (off: desktop sizes, nothing written)
           --xdsp-convolution     run the XDsp convolution effects on the CPU (default: silence; response format inferred)
           --audio-capture <wav>  record what the game plays (process loopback, 48 kHz stereo) and print how much had sound
+          --desktop-timers       keep 15.6 ms timer ticks (default with --run: 1 ms, which the game's audio mixer needs)
           --bcpack-tables <file> the BCPack tables (bcpack-tables.bin, not shipped; fivestar setup imports them):
                                  every BCPack codec decodes exactly; without them BC3, BC6H and BC7 have no
                                  decoder and BC4 and BC5 decode approximately
