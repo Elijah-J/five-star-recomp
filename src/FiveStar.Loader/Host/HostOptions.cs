@@ -140,6 +140,9 @@ internal sealed record HostOptions
     /// <summary>Run the XDsp convolution effects on the CPU instead of returning silence (<c>--xdsp-convolution</c>).</summary>
     public bool XDspConvolution { get; set; }
 
+    /// <summary>Fail DirectStorage BCPack pages that have no block decoder instead of writing placeholder blocks (<c>--bcpack-missing fail</c>).</summary>
+    public bool FailMissingBcPack { get; set; }
+
     /// <summary>What XNetworking reports (<c>--network</c>); outbound traffic is sealed in every mode.</summary>
     public NetworkMode NetworkMode { get; set; }
 

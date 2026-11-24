@@ -2,7 +2,7 @@
 
 The game imports `XCRDAPI.dll!DStorageGetFactory`, the console's DirectStorage. The loader answers with a CPU
 implementation (`src/FiveStar.Loader/Shims/Storage`): queues read package files with overlapped, unbuffered I/O on a
-worker thread per queue and inflate zlib chunks. Bytes are served exactly as stored.
+worker thread per queue, inflate zlib chunks and decode BCPack texture pages to BC blocks.
 
 ## How the game uses it
 
@@ -70,13 +70,38 @@ zeroes 0x48 bytes.
 
 ### Compression formats
 
+The low byte of the options. For a `.ttpf` page the game builds it at 0x144ffd71a from the page's flag byte
+([textures.md](textures.md)): bit 0 is the page's zlib bit, and when it is clear bits 1-3 are the page's codec
+(`DSTORAGE_BCPACK_MODE`).
+
 | Value | Format | Game |
 |---|---|---|
-| 0 | none | chunks stored raw |
-| 1 | zlib (RFC 1950) | chunks whose archive descriptor kind is 3 ([archives.md](archives.md): chunks are zlib streams) |
+| 0 | none | archive chunks stored raw, stored pages |
+| 1 | zlib (RFC 1950) | chunks whose archive descriptor kind is 3 ([archives.md](archives.md)), zlib pages |
+| 2, 6, 8, 10, 12, 14 | BCPack BC1, BC3, BC4, BC5, BC6H, BC7 (codec × 2) | BCPack pages |
 
-The game requests no other format and no destination other than system memory. BCPack through DirectStorage is not
-used; a request with another format fails with E_NOTIMPL and is logged once.
+A request with any other format fails with E_NOTIMPL and is logged once.
+
+### BCPack pages
+
+A BCPack request reads one stored page (source size: its bytes without the padding to 0x100); DestinationSize is the
+page's virtual size, and the destination gets the page's BC blocks in stored order, which is the texture's memory
+layout. Example: `ttdb_graphics.ttpf` at 0x8dbd00, 0xc744 bytes, format 14, 0x10000 out is page 618, a BC7 page of
+virtual size 0x10000.
+
+The worker decodes with `FiveStar.Formats`' BCPack decoder into a block buffer it reuses, then writes the destination
+as for any request.
+
+| Codec | Output |
+|---|---|
+| BC1 | exact blocks |
+| BC4, BC5 | approximate blocks (fitted tables; logged once per codec) |
+| BC3, BC6H, BC7 | placeholder blocks: BC3 and BC7 opaque mid grey, BC6H black |
+
+A page that does not decode gets placeholder blocks too (BC1 mid grey, BC4 and BC5 0.5 per channel); the first
+failure per codec is logged. `--bcpack-missing fail` fails such requests instead (E_NOTIMPL without a decoder,
+ERROR_INVALID_DATA when the page does not decode). The thread sampler's DirectStorage line counts pages decoded
+exactly, approximately, as placeholders and failed.
 
 ## The CPU queue
 
@@ -105,7 +130,7 @@ requests with E_NOTIMPL and logs the first.
 ## Unknown
 
 - The console's destination types and their option bits, and bits 8-21 and 23-63 of the options.
-- Which value would select BCPack, and the fields at 0x10 and 0x34..0x47 of a request.
+- The fields at 0x34..0x47 of a request; whether the console accepts zlib and BCPack together.
 - Factory slots 3, 6, 7 and 9; queue slots 7 and 9-11 (CancelRequests, GetErrorEvent, RetrieveErrorRecord, Query in
   `dstorage.h`); whether the console auto-submits a full queue.
 - Whether queue Close releases the queue: the game never releases it after Close.

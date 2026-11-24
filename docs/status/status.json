@@ -53,7 +53,7 @@
           "done": 0,
           "partial": 1,
           "todo": 0,
-          "note": "DirectStorage compression format 14 next"
+          "note": "one more XG texture method next"
         },
         {
           "name": "First image",
@@ -199,12 +199,8 @@
       "area": "Running the game",
       "items": [
         {
-          "name": "DirectStorage format 14",
-          "note": "texture pages, likely BCPack"
-        },
-        {
-          "name": "Memory corruption",
-          "note": "intermittent crashes being tracked down"
+          "name": "XG texture method",
+          "note": "an element-offset query the game uses after streaming"
         },
         {
           "name": "First image",

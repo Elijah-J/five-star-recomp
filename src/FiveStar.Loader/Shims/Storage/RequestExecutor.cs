@@ -9,18 +9,12 @@ namespace FiveStar.Loader.Shims.Storage;
 
 /// <summary>
 /// Runs the requests of one queue on its worker thread: two overlapped read slots, so the next request reads while the
-/// current one inflates, a reusable zlib inflater, and delivery to system memory or the destination sink. A request
+/// current one inflates, a reusable zlib inflater, BCPack pages decoded into a reused block buffer, and delivery to system memory or the destination sink. A request
 /// whose sector-aligned source does not fit the staging size is read in pieces when it is uncompressed, and fails
 /// otherwise.
 /// </summary>
 internal sealed unsafe class RequestExecutor : IDisposable
 {
-    /// <summary>Compression format 0: the bytes are copied as stored.</summary>
-    public const byte CompressionNone = 0;
-
-    /// <summary>Compression format 1: a zlib stream (RFC 1950); the archives' chunks are zlib streams.</summary>
-    public const byte CompressionZlib = 1;
-
     private const int SlotCount = 2;
     private const int MinimumStagingBytes = 0x100000;
     private const int MaxLoggedFailures = 16;
@@ -28,15 +22,18 @@ internal sealed unsafe class RequestExecutor : IDisposable
     private readonly ReadSlot[] _slots = new ReadSlot[SlotCount];
     private readonly ZlibInflater _inflater = new();
     private readonly IStorageDestinationSink _sink;
+    private readonly BcPackPages _bcPack;
     private readonly LoaderLog _log;
     private readonly int _stagingBytes;
+    private byte[] _pageBlocks = [];
     private int _loggedFailures;
     private bool _loggedCompression;
 
-    public RequestExecutor(uint stagingBytes, IStorageDestinationSink sink, LoaderLog log)
+    public RequestExecutor(uint stagingBytes, IStorageDestinationSink sink, BcPackPages bcPack, LoaderLog log)
     {
         _stagingBytes = (int)Math.Clamp(stagingBytes, MinimumStagingBytes, int.MaxValue);
         _sink = sink;
+        _bcPack = bcPack;
         _log = log;
 
         for (int i = 0; i < SlotCount; i++)
@@ -136,7 +133,7 @@ internal sealed unsafe class RequestExecutor : IDisposable
     /// <summary>An uncompressed request larger than the staging size, read through one slot a staging buffer at a time.</summary>
     private int ReadInPieces(in StorageRequest request, nint handle)
     {
-        if (request.Compression != CompressionNone || !request.DestinationIsMemory || request.Destination == 0 || request.DestinationSize < request.SourceSize)
+        if (request.Compression != StorageCompression.None || !request.DestinationIsMemory || request.Destination == 0 || request.DestinationSize < request.SourceSize)
         {
             return HResult.InvalidArgument;
         }
@@ -166,22 +163,11 @@ internal sealed unsafe class RequestExecutor : IDisposable
     [HotPath]
     private int Deliver(in StorageRequest request, ReadOnlySpan<byte> source)
     {
-        ReadOnlySpan<byte> data = source;
+        int result = Decompress(request, source, out var data);
 
-        if (request.Compression == CompressionZlib)
+        if (HResult.Failed(result))
         {
-            var inflated = _inflater.Inflate(source, DeflateWrapper.Zlib, (int)request.DestinationSize);
-
-            if (inflated.Status != InflateStatus.Complete || _inflater.Output.Length != request.DestinationSize)
-            {
-                return HResult.InvalidData;
-            }
-
-            data = _inflater.Output;
-        }
-        else if (request.Compression != CompressionNone)
-        {
-            return UnknownCompression(request);
+            return result;
         }
 
         if (!request.DestinationIsMemory)
@@ -197,6 +183,59 @@ internal sealed unsafe class RequestExecutor : IDisposable
         data.CopyTo(new Span<byte>((void*)request.Destination, (int)request.DestinationSize));
 
         return HResult.Ok;
+    }
+
+    /// <summary>The request's final bytes: the source as stored, inflated, or decoded from BCPack to BC blocks.</summary>
+    [HotPath]
+    private int Decompress(in StorageRequest request, ReadOnlySpan<byte> source, out ReadOnlySpan<byte> data)
+    {
+        data = source;
+
+        if (request.Compression == StorageCompression.None)
+        {
+            return HResult.Ok;
+        }
+
+        if (request.Compression == StorageCompression.Zlib)
+        {
+            var inflated = _inflater.Inflate(source, DeflateWrapper.Zlib, (int)request.DestinationSize);
+            data = _inflater.Output;
+
+            if (inflated.Status != InflateStatus.Complete || data.Length != request.DestinationSize)
+            {
+                return HResult.InvalidData;
+            }
+
+            return HResult.Ok;
+        }
+
+        int codec = StorageCompression.BcPackCodec(request.Compression);
+
+        if (codec == 0)
+        {
+            return UnknownCompression(request);
+        }
+
+        if (request.DestinationSize > (uint)_stagingBytes)
+        {
+            return HResult.InvalidArgument;
+        }
+
+        var blocks = PageBlocks((int)request.DestinationSize);
+        data = blocks;
+
+        return _bcPack.Decode(codec, source, blocks);
+    }
+
+    /// <summary>The reused buffer for a page's BC blocks, grown to the largest page so far.</summary>
+    private Span<byte> PageBlocks(int size)
+    {
+        if (_pageBlocks.Length < size)
+        {
+            _pageBlocks = new byte[size];
+        }
+
+        return _pageBlocks.AsSpan(0, size);
     }
 
     [HotPath]
@@ -227,13 +266,13 @@ internal sealed unsafe class RequestExecutor : IDisposable
         return null;
     }
 
-    /// <summary>A format the game was not seen to use (BCPack would be one): logged once, failed with E_NOTIMPL.</summary>
+    /// <summary>A format neither zlib nor BCPack: logged once, failed with E_NOTIMPL.</summary>
     private int UnknownCompression(in StorageRequest request)
     {
         if (!_loggedCompression)
         {
             _loggedCompression = true;
-            _log.Warn($"  [xcrdapi] DirectStorage compression format {request.Compression} is not implemented (only none and zlib)");
+            _log.Warn($"  [xcrdapi] DirectStorage compression format {request.Compression} is not implemented (only none, zlib and BCPack)");
         }
 
         return HResult.NotImplemented;
