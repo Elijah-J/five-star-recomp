@@ -609,11 +609,22 @@ commit). With breadcrumbs, compute queue #2's first list stopped at operation 12
 `meshlet_culling~CS_AllocBatchCSCullOutput` (no loop in its translation; the list's one ExecuteIndirect is the likely
 operation, so its arguments, built for the X-only argument type 0x69 that becomes DISPATCH, are the open question);
 every other list had not started. The buffer-stride fix in descriptor records did not change it. With markers per
-recording (two boots), that list finished and queues #2 and #4 stopped in their second execution at operation 4, a
-plain dispatch (45 to 80 groups) of `InstanceCulling~CS_Prop_BatchCull`, whose translation has counted loops that end
-only when the counter equals a bound read from a buffer; queues #3 and #5 finished the same list shape. The game's five
-command signatures are DRAW (stride 16), DRAW_INDEXED (20), 0x69, DISPATCH and DISPATCH_MESH (12 each, 0x1424794da);
-the 0x69 one is used by 0x14248cd20 and 0x140094421, DISPATCH by 0x14248cbe0.
+recording (four boots, also with the 24 programs the scanner had skipped), that list finished and queues #2 and #4
+stopped in their second execution at a plain dispatch (45 to 80 groups) of `InstanceCulling~CS_Prop_BatchCull`; queues
+#3 and #5 finished the same list shape. No boot stopped at an ExecuteIndirect. Broadcasting every scalar branch
+condition from lane 0 in that program's wave32 variant did not help; bounding its loops did, and the next stop was a
+direct-queue dispatch of `scattering_transmittance_system~CS_DensityShadowMapCheckerboard`, a ray march whose float
+step counter cannot reach its bound. With every loop bounded ([shader-translation.md](shader-translation.md#loop-guard))
+three boots passed that point without a GPU stall and ended on the CPU: once list slot 139's Reset refused with
+E_INVALIDARG on a compute list even on a fresh allocator (the game then breaks at 0x142474ce1), once a silent end at
+115 of 123 GB of commit (debug layer on, cold pipeline cache), once an access violation at 0x144e9b4b2: the game's
+transient-memory allocator (0x140188430 on context +0x12780, block from 0x14005c280) walks a list at block +0x48 whose
+nodes hold garbage (0xa, 0x200000009). Boot 2 had the same fault after its GPU hang. The loops' inputs are wrong on
+the PC, and something writes over CPU data in title memory; both were before the root-descriptor address map.
+
+The game's five command signatures are DRAW (stride 16), DRAW_INDEXED (20), 0x69, DISPATCH and DISPATCH_MESH (12
+each, 0x1424794da); the 0x69 one is used by 0x14248cd20 (list at context +0x12348) and 0x140094421, DISPATCH by
+0x14248cbe0 (list at +0x127C8). The 0x69 type's argument dword after the type is written as 0.
 
 Two readback aids (`DrawTrace`, `FrameCapture`; debug only, they allocate and wait for the GPU):
 
