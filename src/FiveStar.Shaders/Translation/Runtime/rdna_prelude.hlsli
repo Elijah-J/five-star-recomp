@@ -69,7 +69,14 @@ void TRACE_ADDR(uint lo, uint hi, uint v) {
     }
 #endif
 }
-void TRACE_GUARD(uint guard) {   // a structured loop that reached the loop guard
+void TRACE_VSTORE(uint d0, uint d1, uint off, uint v) {   // a buffer store through a V# whose base is a game address
+#ifdef FIVESTAR_STORE_TRACE
+    uint hi = d1 & 0xffffu;
+    if (hi == 0u) return;
+    uint2 a = ptr_add(d0, hi, off, 0);
+    TRACE_ADDR(a.x, a.y, v);
+#endif
+}void TRACE_GUARD(uint guard) {   // a structured loop that reached the loop guard
 #ifdef FIVESTAR_STORE_TRACE
     trace_entry(0u, 0x40000000u | guard, 0u);
 #endif
