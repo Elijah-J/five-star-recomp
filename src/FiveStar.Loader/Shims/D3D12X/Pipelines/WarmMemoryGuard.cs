@@ -9,7 +9,9 @@ namespace FiveStar.Loader.Shims.D3D12X.Pipelines;
 /// Keeps pipeline builds within the machine's memory: the driver's compile of one translated program can take tens of
 /// gigabytes, so no build (warm-up or game) starts while less than <see cref="ReserveBytes"/> of commit is available,
 /// and in the warm-up a pipeline of <see cref="PipelineFactory.HeavyShaderBytes"/> or more starts only with
-/// <see cref="HeavyBytes"/> available.
+/// <see cref="HeavyBytes"/> available. Commit counts with the growth Windows can still give the page files
+/// (<see cref="PageFileGrowth"/>): a system-managed page file grows with commit, so the current limit alone parked
+/// every build of a story load while 16 to 28 GB of physical memory was free.
 /// </summary>
 internal static unsafe class WarmMemoryGuard
 {
@@ -29,6 +31,12 @@ internal static unsafe class WarmMemoryGuard
     public const ulong BuildBytes = 2UL << 30;
 
     private const int PauseMilliseconds = 2000;
+
+    /// <summary>How long a page-file growth reading is reused (it reads the registry and the drives).</summary>
+    private static readonly TimeSpan GrowthReuse = TimeSpan.FromSeconds(30);
+
+    private static ulong _growth;
+    private static long _growthRead;
 
     /// <summary>Waits until <see cref="ReserveBytes"/> of commit is available or <paramref name="stopping"/> says so.</summary>
     public static void WaitForRoom(Func<bool> stopping)
@@ -55,7 +63,7 @@ internal static unsafe class WarmMemoryGuard
         var status = Status();
         ulong builds = (ulong)(running + 1) * BuildBytes;
 
-        return status.AvailablePageFile >= ReserveBytes + builds && status.AvailablePhysical >= PhysicalReserveBytes + builds;
+        return CommitHeadroom(status) >= ReserveBytes + builds && status.AvailablePhysical >= PhysicalReserveBytes + builds;
     }
 
     /// <summary>Whether a heavy pipeline may start while the game runs.</summary>
@@ -66,7 +74,27 @@ internal static unsafe class WarmMemoryGuard
 
     private static ulong AvailableCommit()
     {
-        return Status().AvailablePageFile;
+        return CommitHeadroom(Status());
+    }
+
+    /// <summary>The commit available now plus the page files' remaining growth.</summary>
+    private static ulong CommitHeadroom(MemoryStatusEx status)
+    {
+        if (status.AvailablePageFile == ulong.MaxValue)
+        {
+            return ulong.MaxValue;
+        }
+
+        long now = Environment.TickCount64;
+
+        if (now - Volatile.Read(ref _growthRead) > (long)GrowthReuse.TotalMilliseconds)
+        {
+            ulong pageFiles = status.TotalPageFile > status.TotalPhysical ? status.TotalPageFile - status.TotalPhysical : 0;
+            Volatile.Write(ref _growth, PageFileGrowth.Headroom(status.TotalPhysical, pageFiles));
+            Volatile.Write(ref _growthRead, now);
+        }
+
+        return status.AvailablePageFile + Volatile.Read(ref _growth);
     }
 
     /// <summary>The machine's memory; all available when it cannot be read.</summary>

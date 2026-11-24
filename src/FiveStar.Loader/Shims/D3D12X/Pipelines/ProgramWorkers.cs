@@ -81,34 +81,42 @@ internal sealed class ProgramWorkers
 
         while (true)
         {
-            // TakeFromAny takes from the first queue that has work, so urgent work goes first.
+            // Memory first, then the work: a thread waiting for memory holds no work, so urgent work queued meanwhile
+            // is the next taken. TakeFromAny takes from the first queue that has work.
+            WaitForRoom(_room);
             BlockingCollection<Action>.TakeFromAny(queues, out var work);
-            Run(work!, _room);
+            Run(work!);
         }
     }
 
     private void RunHeavy()
     {
-        foreach (var work in _heavy.GetConsumingEnumerable())
+        while (true)
         {
-            Run(work, _heavyRoom);
+            WaitForRoom(_heavyRoom);
+            Run(_heavy.Take());
         }
     }
 
-    private void Run(Action work, Func<int, bool> room)
+    private void WaitForRoom(Func<int, bool> room)
     {
-        if (!room(Running))
+        if (room(Running))
         {
-            Interlocked.Increment(ref _waiting);
-
-            while (!room(Running))
-            {
-                Thread.Sleep(PauseMilliseconds);
-            }
-
-            Interlocked.Decrement(ref _waiting);
+            return;
         }
 
+        Interlocked.Increment(ref _waiting);
+
+        while (!room(Running))
+        {
+            Thread.Sleep(PauseMilliseconds);
+        }
+
+        Interlocked.Decrement(ref _waiting);
+    }
+
+    private void Run(Action work)
+    {
         Interlocked.Increment(ref _running);
 
         try
