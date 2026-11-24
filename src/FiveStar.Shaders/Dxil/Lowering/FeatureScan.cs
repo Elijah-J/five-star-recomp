@@ -79,7 +79,8 @@ public static class FeatureScan
 
         if (operation == DxOpCode.CreateHandleFromHeap)
         {
-            var sampler = instruction.Operands[SamplerOperand] is Constant { Bits: not 0 };
+            var heap = instruction.Operands[SamplerOperand] as Constant;
+            var sampler = heap is not null && heap.Bits != 0;
 
             return Choice.Of(sampler, ShaderFlagBits.SamplerDescriptorHeapIndexing, ShaderFlagBits.ResourceDescriptorHeapIndexing);
         }
