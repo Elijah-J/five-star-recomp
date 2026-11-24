@@ -170,7 +170,7 @@ public sealed class Lexer
             _position++;
         }
 
-        Add(new Token(TokenKind.Identifier, Intern(_source[start.._position]), _line, _startsLine));
+        Add(new Token(TokenKind.Identifier, Intern(_source.AsSpan(start, _position - start)), _line, _startsLine));
     }
 
     private void Number()
@@ -295,7 +295,7 @@ public sealed class Lexer
 
     private void Punctuator()
     {
-        var text = Match(ThreeCharacter) ?? Match(TwoCharacter) ?? Intern(_source[_position].ToString());
+        var text = Match(ThreeCharacter) ?? Match(TwoCharacter) ?? Intern(_source.AsSpan(_position, 1));
         _position += text.Length;
         Add(new Token(TokenKind.Punctuator, text, _line, _startsLine));
     }
@@ -318,12 +318,15 @@ public sealed class Lexer
         _tokens.Add(token with { Offset = _tokenStart });
     }
 
-    private string Intern(string text)
+    /// <summary>One string per distinct name, looked up without making a string first.</summary>
+    private string Intern(ReadOnlySpan<char> text)
     {
-        if (!_interned.TryGetValue(text, out var interned))
+        var lookup = _interned.GetAlternateLookup<ReadOnlySpan<char>>();
+
+        if (!lookup.TryGetValue(text, out var interned))
         {
-            interned = text;
-            _interned[text] = text;
+            interned = text.ToString();
+            _interned[interned] = interned;
         }
 
         return interned;

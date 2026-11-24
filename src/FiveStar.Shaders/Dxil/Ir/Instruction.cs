@@ -18,6 +18,15 @@ public sealed class Instruction : Value
     {
         Opcode = opcode;
         Block = block;
+        Operands = [];
+    }
+
+    internal Instruction(Opcode opcode, IrType type, BasicBlock block, int operands)
+        : base(type)
+    {
+        Opcode = opcode;
+        Block = block;
+        Operands = new List<Value>(operands);
     }
 
     public Opcode Opcode { get; }
@@ -30,7 +39,7 @@ public sealed class Instruction : Value
 
     public BasicBlock Block { get; }
 
-    public List<Value> Operands { get; } = [];
+    public List<Value> Operands { get; }
 
     public int Code { get; init; }
 

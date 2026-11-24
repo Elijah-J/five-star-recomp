@@ -7,6 +7,13 @@ namespace FiveStar.Shaders.Dxil.Ir;
 public sealed class IrBuilder
 {
     private const string DxOpPrefix = "dx.op.";
+    private const int BinaryOperands = 2;
+    private const int TernaryOperands = 3;
+    private const long SignatureBasis = unchecked((long)0xcbf2_9ce4_8422_2325);
+    private const long SignaturePrime = 0x100_0000_01b3;
+
+    // dx.op declarations by name and type signature, so a call does not rebuild the type key and name.
+    private readonly Dictionary<(string Name, int Result, long Signature), IrFunction> _operations = [];
 
     public IrBuilder(DxilModule module, BasicBlock entry)
     {
@@ -23,29 +30,29 @@ public sealed class IrBuilder
 
     public Value Binary(BinaryOp op, Value left, Value right)
     {
-        return Append(new Instruction(Opcode.Binary, left.Type, Block) { Code = (int)op }, left, right);
+        return Append(new Instruction(Opcode.Binary, left.Type, Block, BinaryOperands) { Code = (int)op }, left, right);
     }
 
     public Value Cast(CastOp op, Value value, IrType to)
     {
-        return Append(new Instruction(Opcode.Cast, to, Block) { Code = (int)op }, value);
+        return Append(new Instruction(Opcode.Cast, to, Block, 1) { Code = (int)op }, value);
     }
 
     public Value Compare(Predicate predicate, Value left, Value right)
     {
-        return Append(new Instruction(Opcode.Compare, Types.Bool, Block) { Code = (int)predicate }, left, right);
+        return Append(new Instruction(Opcode.Compare, Types.Bool, Block, BinaryOperands) { Code = (int)predicate }, left, right);
     }
 
     public Value Select(Value condition, Value whenTrue, Value whenFalse)
     {
-        return Append(new Instruction(Opcode.Select, whenTrue.Type, Block), condition, whenTrue, whenFalse);
+        return Append(new Instruction(Opcode.Select, whenTrue.Type, Block, TernaryOperands), condition, whenTrue, whenFalse);
     }
 
     public Value Extract(Value aggregate, int index)
     {
         var type = aggregate.Type.Kind == IrTypeKind.Array ? aggregate.Type.Element! : aggregate.Type.Members[index];
 
-        return Append(new Instruction(Opcode.ExtractValue, type, Block) { Code = index }, aggregate);
+        return Append(new Instruction(Opcode.ExtractValue, type, Block, 1) { Code = index }, aggregate);
     }
 
     public Value Call(IrFunction function, params Value[] arguments)
@@ -58,6 +65,28 @@ public sealed class IrBuilder
     /// </summary>
     public Value DxOp(string name, int opcode, AttributeSet attribute, IrType result, params Value[] arguments)
     {
+        var signature = SignatureBasis;
+
+        foreach (var argument in arguments)
+        {
+            signature = unchecked((signature ^ argument.Type.Id) * SignaturePrime);
+        }
+
+        if (!_operations.TryGetValue((name, result.Id, signature), out var declared))
+        {
+            declared = Declare(name, attribute, result, arguments);
+            _operations[(name, result.Id, signature)] = declared;
+        }
+
+        var all = new Value[arguments.Length + 1];
+        all[0] = Module.Int32((uint)opcode);
+        arguments.CopyTo(all, 1);
+
+        return Call(declared, all);
+    }
+
+    private IrFunction Declare(string name, AttributeSet attribute, IrType result, Value[] arguments)
+    {
         var parameters = new IrType[arguments.Length + 1];
         parameters[0] = Types.Int32;
 
@@ -66,9 +95,7 @@ public sealed class IrBuilder
             parameters[index + 1] = arguments[index].Type;
         }
 
-        var function = Module.Function(DxOpPrefix + name, Types.Function(result, parameters), attribute, hasBody: false);
-
-        return Call(function, [Module.Int32((uint)opcode), .. arguments]);
+        return Module.Function(DxOpPrefix + name, Types.Function(result, parameters), attribute, hasBody: false);
     }
 
     /// <summary>A phi at the top of <paramref name="block"/>; its incoming values are added later.</summary>
@@ -86,29 +113,29 @@ public sealed class IrBuilder
         var array = pointer.Type.Element!;
         var type = Types.Pointer(array.Element!, pointer.Type.AddressSpace);
 
-        return Append(new Instruction(Opcode.GetElementPtr, type, Block) { SourceType = array }, pointer, Module.Int32(0), index);
+        return Append(new Instruction(Opcode.GetElementPtr, type, Block, TernaryOperands) { SourceType = array }, pointer, Module.Int32(0), index);
     }
 
     public Value Load(Value pointer)
     {
-        return Append(new Instruction(Opcode.Load, pointer.Type.Element!, Block), pointer);
+        return Append(new Instruction(Opcode.Load, pointer.Type.Element!, Block, 1), pointer);
     }
 
     public void Store(Value pointer, Value value)
     {
-        Append(new Instruction(Opcode.Store, Types.Void, Block), pointer, value);
+        Append(new Instruction(Opcode.Store, Types.Void, Block, BinaryOperands), pointer, value);
     }
 
     public Value AtomicRmw(AtomicOp op, Value pointer, Value value)
     {
-        return Append(new Instruction(Opcode.AtomicRmw, value.Type, Block) { Code = (int)op }, pointer, value);
+        return Append(new Instruction(Opcode.AtomicRmw, value.Type, Block, BinaryOperands) { Code = (int)op }, pointer, value);
     }
 
     /// <summary>The old value of a compare-exchange.</summary>
     public Value CompareExchange(Value pointer, Value expected, Value replacement)
     {
         var pair = Types.Struct(null, [replacement.Type, Types.Bool]);
-        var result = Append(new Instruction(Opcode.CompareExchange, pair, Block), pointer, expected, replacement);
+        var result = Append(new Instruction(Opcode.CompareExchange, pair, Block, TernaryOperands), pointer, expected, replacement);
 
         return Extract(result, 0);
     }
@@ -159,9 +186,39 @@ public sealed class IrBuilder
         Block.Terminator = new Instruction(Opcode.Return, Types.Void, Block);
     }
 
-    private Instruction Append(Instruction instruction, params Value[] operands)
+    private Instruction Append(Instruction instruction, Value first)
+    {
+        instruction.Operands.Add(first);
+
+        return Append(instruction);
+    }
+
+    private Instruction Append(Instruction instruction, Value first, Value second)
+    {
+        instruction.Operands.Add(first);
+        instruction.Operands.Add(second);
+
+        return Append(instruction);
+    }
+
+    private Instruction Append(Instruction instruction, Value first, Value second, Value third)
+    {
+        instruction.Operands.Add(first);
+        instruction.Operands.Add(second);
+        instruction.Operands.Add(third);
+
+        return Append(instruction);
+    }
+
+    private Instruction Append(Instruction instruction, Value[] operands)
     {
         instruction.Operands.AddRange(operands);
+
+        return Append(instruction);
+    }
+
+    private Instruction Append(Instruction instruction)
+    {
         Block.Body.Add(instruction);
 
         return instruction;
