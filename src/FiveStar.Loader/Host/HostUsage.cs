@@ -28,6 +28,9 @@ internal static class HostUsage
                                  DirectStorage totals and every thread's stack
           --memory-map <s>       with --run: every s seconds log the private memory by owner, protection and
                                  allocation size, its change, the largest allocations and GPU memory
+          --min-free-memory <GB> with --run: end the process (code 5, after a last memory map) when the machine's
+                                 free physical memory drops below this
+          --max-commit <GB>      with --run: the same when the machine's commit charge passes this
           --main <name>          image that plays the process exe for GetModuleHandle(NULL)/GetModuleFileName(NULL)
                                  (default: first mapped exe, else the first --load)
           --patch-peb            also point PEB.ImageBaseAddress at the main image (off by default)

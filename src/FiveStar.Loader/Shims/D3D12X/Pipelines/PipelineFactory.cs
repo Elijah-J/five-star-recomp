@@ -381,7 +381,8 @@ internal sealed unsafe class PipelineFactory
     /// Builds the pipeline of <paramref name="stream"/> on this thread and stores it in the cache, or loads it when an
     /// earlier build stored it meanwhile; disposes the stream.
     /// Pipelines with <see cref="HeavyShaderBytes"/> of DXIL or more are built one at a time, and no build starts while
-    /// the machine is short of commit (<see cref="WarmMemoryGuard"/>), since one driver compile can take gigabytes.
+    /// the machine lacks the memory it is expected to take (<see cref="CompileBudget"/>), since one driver compile can
+    /// take gigabytes.
     /// </summary>
     public PipelineResult Build(DesktopStream stream, Guid iid, string what)
     {
@@ -396,8 +397,7 @@ internal sealed unsafe class PipelineFactory
                 return new PipelineResult(HResult.Ok, cached);
             }
 
-            WarmMemoryGuard.WaitForRoom(static () => false);
-
+            CompileBudget.Enter(stream.ShaderBytes);
             Compiling.Begin(PipelineCreationsInFlight.NoSlot);
             Compiling.Describe($"{what} ({stream.ShaderBytes >> MegabyteShift} MB of DXIL)");
 
@@ -416,6 +416,7 @@ internal sealed unsafe class PipelineFactory
             finally
             {
                 Compiling.End();
+                CompileBudget.Exit(stream.ShaderBytes);
             }
         }
     }

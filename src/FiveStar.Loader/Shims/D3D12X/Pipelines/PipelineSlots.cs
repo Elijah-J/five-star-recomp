@@ -103,12 +103,14 @@ internal sealed unsafe class PipelineSlots
 
     private static string Compiles(string summary)
     {
-        if (summary.Length == 0)
+        int waiting = CompileBudget.Waiting;
+
+        if (summary.Length == 0 && waiting == 0)
         {
-            return summary;
+            return string.Empty;
         }
 
-        return $"driver compiles {summary}";
+        return $"driver compiles: {waiting} waiting for memory, {summary}";
     }
 
     private int Guarded(int slot, nint* result, Func<int> create)

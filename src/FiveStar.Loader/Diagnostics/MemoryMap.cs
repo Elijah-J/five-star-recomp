@@ -201,14 +201,33 @@ internal sealed class MemoryMap
         return $"{added.Count} new ({Gigabytes(added.Sum(a => a.Private))}: {string.Join(", ", addedByOwner)}; sizes {CommonSizes(added)}), {gone.Count} gone ({Gigabytes(gone.Sum(p => p.Value))}), kept ones changed by {Gigabytes(grown)}";
     }
 
+    /// <summary>The largest allocations; an anonymous one with the modules its first page points into.</summary>
     private static string Largest(List<MemoryAllocation> allocations)
     {
+        var modules = ModulePointers.Loaded();
         var largest = allocations
             .OrderByDescending(a => a.Private)
             .Take(TopAllocations)
-            .Select(a => $"0x{a.Base:x} {a.Label} {Megabytes(a.Private)} of {Megabytes(a.Reserved)} (0x{a.Protect:x})");
+            .Select(a => $"0x{a.Base:x} {a.Label}{PointerHint(a, modules)} {Megabytes(a.Private)} of {Megabytes(a.Reserved)} (0x{a.Protect:x})");
 
         return string.Join("; ", largest);
+    }
+
+    private static string PointerHint(MemoryAllocation allocation, ModulePointers modules)
+    {
+        if (allocation.Label != Anonymous)
+        {
+            return string.Empty;
+        }
+
+        string hint = modules.Hint(allocation.Base);
+
+        if (hint.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        return $" [{hint}]";
     }
 
     private static string Gigabytes(long bytes)
