@@ -71,4 +71,69 @@ public sealed unsafe class TlsHostTests
         Assert.True(size >= RawSize + ZeroFill + TlsSlotZero.SaveSize);
         Assert.True(block + size <= allocation + (nint)allocated, $"block 0x{block:x} + 0x{size:x} ends past allocation 0x{allocation:x} + 0x{allocated:x}");
     }
+
+    [Fact]
+    public void A_thread_started_before_the_host_gets_slot_zero_pointed_at_its_block_and_back()
+    {
+        uint* imageIndex = (uint*)NativeMemory.AllocZeroed(sizeof(uint));
+        var template = new TlsTemplate(new byte[RawSize], ZeroFill, Align16Bytes, [], 0, (ulong)imageIndex, true);
+        string path = Path.Combine(Path.GetTempPath(), $"fs_tlshost_early_{Environment.ProcessId}.dll");
+        File.WriteAllBytes(path, TlsHostBuilder.Build(template));
+
+        var heap = new CodeHeap();
+        var readArray = (delegate* unmanaged<nint*>)heap.Write(ReadTlsArray);
+        heap.Seal();
+        uint index = 0;
+        var slotZero = new nint[3];
+        nint block = 0;
+        using var ask = new SemaphoreSlim(0);
+        using var answered = new SemaphoreSlim(0);
+
+        // The thread reads its own slot 0 before the host loads, after EnterExisting and after LeaveExisting.
+        var thread = new Thread(() =>
+        {
+            for (int step = 0; step < slotZero.Length; step++)
+            {
+                ask.Wait();
+                nint* array = readArray();
+                slotZero[step] = array[0];
+
+                if (index != 0)
+                {
+                    block = array[index];
+                }
+
+                answered.Release();
+            }
+        });
+        thread.Start();
+        ask.Release();
+        answered.Wait();
+
+        nint host;
+
+        fixed (char* name = path)
+        {
+            host = Kernel32.LoadLibraryExW(name, 0, 0);
+        }
+
+        Assert.NotEqual(0, host);
+        index = *(uint*)(host + (nint)(TlsHostBuilder.DataRva + TlsHostBuilder.HostIndexOffset));
+        int saveOffset = TlsSlotZero.SaveOffset(template);
+        int entered = TlsSlotZeroThreads.EnterExisting(index, saveOffset);
+        ask.Release();
+        answered.Wait();
+        nint saved = *(nint*)(block + saveOffset);
+        TlsSlotZeroThreads.LeaveExisting(index, saveOffset);
+        ask.Release();
+        answered.Wait();
+        thread.Join();
+        _ = FreeLibrary(host);
+        File.Delete(path);
+
+        Assert.True(entered >= 1);
+        Assert.Equal(block, slotZero[1]);
+        Assert.Equal(slotZero[0], saved);
+        Assert.Equal(slotZero[0], slotZero[2]);
+    }
 }

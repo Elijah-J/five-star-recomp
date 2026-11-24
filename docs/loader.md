@@ -34,8 +34,13 @@ host imports `kernel32!GetLastError`.
 executable's slot is always 0 and `_tls_index` is not read. Slot 0 of this process belongs to the host executable, so
 the TLS host of a mapped executable gets two more callbacks around the image's: the first (process and thread attach)
 saves the thread's slot-0 pointer in 8 bytes added after the template and points slot 0 at the executable's block; the
-last (process and thread detach) puts it back before ntdll frees the blocks. Threads that existed before the
-executable was mapped, other than the loading thread, keep the host's slot 0.
+last (process and thread detach) puts it back before ntdll frees the blocks. ntdll runs no THREAD_ATTACH for threads
+that already existed, so right after the host loads `TlsSlotZeroThreads` does the same for every other live thread
+(under the loader lock; it reads each TEB through `NtQueryInformationThread`), and undoes it before the host unloads.
+Without it, thread-pool workers started before the game was mapped (the program-index load starts them) ran game
+completion routines against the host's slot-0 block: the game's allocator read its per-thread pointer at block+0x13A8
+as 1 (fault at RVA 0x3afc after `XAsyncComplete(XUserAddAsync)`), and its writes into the 0x1480-byte TLS data
+landed past the apphost's 16-byte block on the process heap ("Internal CLR error" 0x80131506, coreclr faults). `TlsHostTests` checks an early thread.
 
 **Block size.** ntdll sizes the TLS block of a LoadLibrary'd module by its raw template alone and ignores
 SizeOfZeroFill (a 16-byte-aligned block also starts 16 bytes into its heap allocation, after the allocation pointer
