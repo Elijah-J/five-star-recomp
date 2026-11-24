@@ -80,6 +80,9 @@ internal sealed record HostOptions
     /// <summary>The warm-up builds only pipelines with a program whose name contains one of these.</summary>
     public List<string> WarmMatches { get; } = [];
 
+    /// <summary>The warm-up builds only the pipelines earlier boots asked for (<c>pipelines-used.bin</c>).</summary>
+    public bool WarmUsedOnly { get; set; }
+
     /// <summary>The PC FidelityFX API DLL the console FidelityFX calls are forwarded to; null leaves FidelityFX off.</summary>
     public string? FidelityFxLibrary { get; set; }
 

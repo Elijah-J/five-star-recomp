@@ -73,10 +73,18 @@ internal static unsafe class WarmPipelinesCommand
         var factory = new PipelineFactory(device2, root, library, new ProgramSignatures(folders.Programs!), warnings, null, standIns, cache);
         var warmup = new PipelineWarmup(factory, cache, folders.Cache!, log);
 
-        var targets = WarmTargets.Read(ConsolePipelineSource.Load(options.WarmSource!), Math.Max(1, options.WarmStep));
-        targets = Matching(targets, options.WarmMatches, index);
+        // The pipelines earlier boots asked for, in first-use order, then (unless --warm-used-only) the console cache's.
+        var used = PipelineJournal.Read(folders.Cache!);
+        List<WarmTarget> targets = [.. used];
+
+        if (!options.WarmUsedOnly)
+        {
+            targets.AddRange(WarmTargets.Read(ConsolePipelineSource.Load(options.WarmSource!), 1));
+        }
+
+        targets = Matching(targets.Where((_, position) => position % Math.Max(1, options.WarmStep) == 0).ToList(), options.WarmMatches, index);
         var jobs = options.WarmJobs ?? Math.Clamp(Environment.ProcessorCount / PipelineSlots.CoresPerBuildThread, 1, DefaultJobs);
-        log.Info($"warm-up: {targets.Count} pipelines on {jobs} threads into {folders.Cache}");
+        log.Info($"warm-up: {targets.Count} pipelines ({used.Count} from {PipelineJournal.FileName} first) on {jobs} threads into {folders.Cache}");
 
         ConsoleCancelEventHandler stop = (_, args) =>
         {

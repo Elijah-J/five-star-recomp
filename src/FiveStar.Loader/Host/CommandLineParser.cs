@@ -173,6 +173,10 @@ internal sealed class CommandLineParser
                 return SetWarmStep();
             case "--warm-match":
                 return Add(_options.WarmMatches);
+            case "--warm-used-only":
+                _options.WarmUsedOnly = true;
+
+                return true;
             default:
                 throw new CommandLineException($"unknown argument {option}");
         }

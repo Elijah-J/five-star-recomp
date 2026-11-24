@@ -67,8 +67,12 @@ internal sealed unsafe class PipelineFactory
     /// <summary>The creations running now (<see cref="PipelineSlots"/> marks them).</summary>
     public PipelineCreationsInFlight InFlight { get; } = new();
 
+    /// <summary>Where the descriptions the game asks for are recorded, for the warm-up; null for none.</summary>
+    public PipelineJournal? Journal { get; init; }
+
     public int Graphics(GraphicsPipelineDescription description, Guid* iid, nint* result)
     {
+        Journal?.Record(description);
         var recipe = PrepareGraphics(description);
 
         if (recipe is null)
@@ -85,6 +89,7 @@ internal sealed unsafe class PipelineFactory
 
     public int Compute(ComputePipelineDescription description, Guid* iid, nint* result)
     {
+        Journal?.Record(description);
         var recipe = PrepareCompute(description);
 
         if (recipe is null)
@@ -224,7 +229,8 @@ internal sealed unsafe class PipelineFactory
     }
 
     /// <summary>
-    /// Builds the pipeline of <paramref name="stream"/> on this thread and stores it in the cache; disposes the stream.
+    /// Builds the pipeline of <paramref name="stream"/> on this thread and stores it in the cache, or loads it when an
+    /// earlier build stored it meanwhile; disposes the stream.
     /// Pipelines with <see cref="HeavyShaderBytes"/> of DXIL or more are built one at a time, and no build starts while
     /// the machine is short of commit (<see cref="WarmMemoryGuard"/>), since one driver compile can take gigabytes.
     /// </summary>
@@ -232,6 +238,15 @@ internal sealed unsafe class PipelineFactory
     {
         using (stream)
         {
+            // The game asks for the same desktop pipeline again while its first build waits in the queue (game
+            // pipelines that differ only in what the desktop form drops): the build of the first one stored it.
+            nint cached = 0;
+
+            if (Cache is not null && !HResult.Failed(Cache.Load(stream, &iid, &cached)))
+            {
+                return new PipelineResult(HResult.Ok, cached);
+            }
+
             WarmMemoryGuard.WaitForRoom(static () => false);
 
             if (stream.ShaderBytes < HeavyShaderBytes)
