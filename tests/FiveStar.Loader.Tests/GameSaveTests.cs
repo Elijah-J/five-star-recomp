@@ -54,6 +54,40 @@ public sealed unsafe class GameSaveTests
         Assert.Empty(Directory.EnumerateDirectories(test.SaveRoot, "slot*", SearchOption.AllDirectories));
     }
 
+    [Fact]
+    public void A_read_buffer_sized_for_the_blobs_and_their_data_only_still_reads()
+    {
+        using var test = TestRuntime.Create();
+        nint user = AddUser(test);
+        var data = Enumerable.Range(0, 100).Select(i => (byte)i).ToArray();
+        nint provider = 0;
+        nint container = 0;
+
+        fixed (byte* config = "test-config\0"u8)
+        {
+            ((delegate* unmanaged<nint, byte*, byte, nint*, int>)test.Gdk("XGameSaveInitializeProvider"))(user, config, 0, &provider);
+        }
+
+        fixed (byte* name = "Player\0"u8)
+        {
+            ((delegate* unmanaged<nint, byte*, nint*, int>)test.Gdk("XGameSaveCreateContainer"))(provider, name, &container);
+        }
+
+        WriteBlobs(test, container, data);
+        var read = (delegate* unmanaged<nint, byte**, uint*, nuint, byte*, int>)test.Gdk("XGameSaveReadBlobData");
+        nuint size = (nuint)((2 * 24) + data.Length + 10);
+        byte* buffer = (byte*)NativeMemory.Alloc(size);
+        uint count = 0;
+
+        int hr = read(container, null, &count, size, buffer);
+        string? second = Marshal.PtrToStringUTF8(*(nint*)(buffer + 24));
+        NativeMemory.Free(buffer);
+
+        Assert.Equal(0, hr);
+        Assert.Equal(2u, count);
+        Assert.Equal("thumb", second);
+    }
+
     private static nint AddUser(TestRuntime test)
     {
         nint block = TestNative.AsyncBlock(0, 0);
