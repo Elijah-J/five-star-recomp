@@ -17,6 +17,9 @@ public sealed unsafe class XgTests
 {
     private const int Ok = 0;
     private const int GetResourceLayoutSlot = 2;
+    private const int GetResourceSizeBytesSlot = 3;
+    private const int GetMipLevelOffsetBytesSlot = 5;
+    private const int GetTexelElementOffsetBytesSlot = 6;
     private const int CopyIntoSubresourceSlot = 8;
     private const int CopyFromSubresourceSlot = 9;
     private const int GetResourceTilingSlot = 10;
@@ -67,6 +70,25 @@ public sealed unsafe class XgTests
         Assert.Equal((512u, 256u), (shape.WidthInTexels, shape.HeightInTexels));
         Assert.Equal((4u, (ushort)8, 11u), (tilings[0].WidthInTiles, tilings[0].HeightInTiles, tilings[0].StartTileIndexInOverallResource));
         Assert.Equal(0u, ((delegate* unmanaged<nint, uint>)Slot(computer, ReleaseSlot))(computer));
+    }
+
+    [Fact]
+    public void Element_offsets_follow_the_64_kb_blocks_and_the_tail_slot()
+    {
+        using var test = TestRuntime.Create();
+        nint computer = Create(test, LargeTexture);
+        var mipOffset = (delegate* unmanaged<nint, uint, uint, ulong>)Slot(computer, GetMipLevelOffsetBytesSlot);
+
+        // Mip 0 starts at 0xb0000 with 4 blocks of 128x64 elements per row; mip 3 is the first tail mip, half a block in.
+        Assert.Equal(0x2b0000ul, ((delegate* unmanaged<nint, ulong>)Slot(computer, GetResourceSizeBytesSlot))(computer));
+        Assert.Equal(0xb0000ul, mipOffset(computer, 0, 0));
+
+        Assert.Equal(0xb0000ul, TexelOffset(computer, 0, 0, 0));
+        Assert.Equal(0xc0000ul, TexelOffset(computer, 0, 128, 0));
+        Assert.Equal(0xf0000ul, TexelOffset(computer, 0, 0, 64));
+        Assert.Equal(0x8000ul, TexelOffset(computer, 3, 0, 0));
+        Assert.Equal(0ul, TexelOffset(computer, 7, 0, 0));
+        ((delegate* unmanaged<nint, uint>)Slot(computer, ReleaseSlot))(computer);
     }
 
     [Fact]
@@ -133,6 +155,8 @@ public sealed unsafe class XgTests
                 Assert.Equal(Ok, copyInto(computer, target, 0, mip, rows, (uint)width * 8, (uint)linear.Length));
             }
 
+            AssertElementsAt(computer, shipped, linear, mip, width, height);
+
             if (previous is not null && width >= 4 && height >= 4)
             {
                 Assert.True(Correlation(previous, linear, width, height) > 0.85, $"mip {mip} does not match mip {mip - 1}");
@@ -144,6 +168,23 @@ public sealed unsafe class XgTests
         int mip0 = (int)desc.Width / 4 * ((int)desc.Height / 4) * 8;
         Assert.Equal(shipped.AsSpan(shipped.Length - mip0).ToArray(), rebuilt.AsSpan(rebuilt.Length - mip0).ToArray());
         ((delegate* unmanaged<nint, uint>)Slot(computer, ReleaseSlot))(computer);
+    }
+
+    /// <summary>Every BC1 block of a read-back mip sits in the shipped bytes at its GetTexelElementOffsetBytes offset.</summary>
+    private static void AssertElementsAt(nint computer, byte[] shipped, byte[] linear, uint mip, int width, int height)
+    {
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                int offset = (int)TexelOffset(computer, mip, (ulong)x, (uint)y);
+
+                if (!shipped.AsSpan(offset, 8).SequenceEqual(linear.AsSpan(((y * width) + x) * 8, 8)))
+                {
+                    Assert.Fail($"mip {mip} element ({x}, {y}) is not at offset 0x{offset:x}");
+                }
+            }
+        }
     }
 
     /// <summary>Correlation of each block's endpoint brightness with the mean of the four blocks it shrinks.</summary>
@@ -198,6 +239,14 @@ public sealed unsafe class XgTests
         Assert.Equal(Ok, create(&desc, &computer));
 
         return computer;
+    }
+
+    /// <summary>Slot 6 as the game calls it (0x145151e7d): plane 0, mip, x, y, slice 0, sample 0, no bit offset.</summary>
+    private static ulong TexelOffset(nint computer, uint mip, ulong x, uint y)
+    {
+        var texel = (delegate* unmanaged<nint, uint, uint, ulong, uint, uint, uint, uint*, ulong>)Slot(computer, GetTexelElementOffsetBytesSlot);
+
+        return texel(computer, 0, mip, x, y, 0, 0, null);
     }
 
     private static nint Slot(nint computer, int slot)
