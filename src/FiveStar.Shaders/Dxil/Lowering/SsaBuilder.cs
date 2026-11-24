@@ -241,10 +241,10 @@ public sealed class SsaBuilder
 
         if (state.Predecessors.Count == 0)
         {
-            var undefined = _module.Undefined(type);
-            state.Definitions[slot] = undefined;
+            var initial = Initial(type);
+            state.Definitions[slot] = initial;
 
-            return undefined;
+            return initial;
         }
 
         var phi = IrBuilder.Phi(block, type);
@@ -288,7 +288,7 @@ public sealed class SsaBuilder
             same = resolved;
         }
 
-        same ??= _module.Undefined(phi.Type);
+        same ??= Initial(phi.Type);
         phi.Replacement = same;
         var phis = phi.Block.Phis;
 
@@ -318,6 +318,25 @@ public sealed class SsaBuilder
         }
 
         return changed;
+    }
+
+    /// <summary>
+    /// The value of a slot read before any write: zero (the validator refuses instructions that read undef), or undef
+    /// for a handle.
+    /// </summary>
+    private Value Initial(IrType type)
+    {
+        if (type.IsInteger)
+        {
+            return _module.Int(type, 0);
+        }
+
+        if (type.IsFloatingPoint)
+        {
+            return _module.FloatBits(type, 0);
+        }
+
+        return _module.Undefined(type);
     }
 
     private static Value Find(Value value)
