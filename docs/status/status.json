@@ -74,7 +74,7 @@
           "done": 0,
           "partial": 1,
           "todo": 0,
-          "note": "corruption fixed; the game\u0027s watchdog ends the load"
+          "note": "watchdog and memory fixed; GPU writes corrupt the load"
         },
         {
           "name": "In game",
@@ -210,15 +210,15 @@
       "items": [
         {
           "name": "Story load",
-          "note": "the game ends itself while frames wait for shaders"
+          "note": "GPU work corrupts game memory about 130 s in"
         },
         {
           "name": "Brightness symbol",
           "note": "still black on the calibration screen"
         },
         {
-          "name": "Memory",
-          "note": "a small commit limit parks shader compiles in the story load"
+          "name": "GPU writes",
+          "note": "draw-argument records still overrun the transient pool"
         },
         {
           "name": "In-game audio",

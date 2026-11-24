@@ -10,9 +10,10 @@ first real image: its UI layer and the intro video (Bink, decoded on the CPU and
 shaders) in the right colours. It then shows the Rockstar logo, the intro art and every first-run screen (text size,
 brightness, controls, legal, privacy policy and terms), which scripted input answers, saves its settings, loads story
 mode and has shown the story intro's title card ("Vice City, two years ago"). Shaders are translated and compiled when
-the game first uses them, so no preparation step is needed. The memory corruption and GPU hangs of the story load are
-fixed (the console's buffer range checks); the current blocker is the game ending itself late in the story load,
-most likely its hang watchdog while frames wait for shaders still being compiled (see [Roadmap](Roadmap.md)).
+the game first uses them, so no preparation step is needed, and the first-run screens are answered by a script that
+reacts to what is on screen (story load after about 72 s). The GPU hangs, the game's hang watchdog and the memory
+blow-up of the story load are fixed; the current blocker is GPU work that still corrupts game memory about 130 s in
+(see [Roadmap](Roadmap.md)).
 
 ![Progress](progress.svg)
 

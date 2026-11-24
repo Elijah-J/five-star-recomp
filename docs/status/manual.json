@@ -17,7 +17,7 @@
         { "name": "Next stage streaming", "done": 1, "partial": 0, "todo": 0, "note": "three-minute boots run without a crash" },
         { "name": "First image", "done": 1, "partial": 0, "todo": 0, "note": "the intro video" },
         { "name": "First-run screens", "done": 1, "partial": 0, "todo": 0, "note": "options, legal, privacy; UI text complete" },
-        { "name": "Story load", "done": 0, "partial": 1, "todo": 0, "note": "corruption fixed; the game's watchdog ends the load" },
+        { "name": "Story load", "done": 0, "partial": 1, "todo": 0, "note": "watchdog and memory fixed; GPU writes corrupt the load" },
         { "name": "In game", "done": 0, "partial": 0, "todo": 1 }
       ]
     },
@@ -74,9 +74,9 @@
     {
       "area": "Running the game",
       "items": [
-        { "name": "Story load", "note": "the game ends itself while frames wait for shaders" },
+        { "name": "Story load", "note": "GPU work corrupts game memory about 130 s in" },
         { "name": "Brightness symbol", "note": "still black on the calibration screen" },
-        { "name": "Memory", "note": "a small commit limit parks shader compiles in the story load" },
+        { "name": "GPU writes", "note": "draw-argument records still overrun the transient pool" },
         { "name": "In-game audio", "note": "menus and intro play; XMA voices not yet heard" },
         { "name": "Pipeline warm-up", "note": "programs and pipelines made on first use; only what the game uses is kept" }
       ]
