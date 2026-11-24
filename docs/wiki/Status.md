@@ -7,8 +7,10 @@ descriptor heaps, render targets and pipelines, and into its frame loop: it now 
 window through a swap chain at its own 30 frames per second. Its frame loop advances: it polls input, starts its save
 system, and after a scripted button press pairs a gamepad with the user and streams its next stage. It now draws its
 first real image: its UI layer and the intro video (Bink, decoded on the CPU and drawn with the game's own translated
-shaders) in the right colours. It then streams its next stage, BCPack texture pages included, and three-minute runs finish without a crash while the
-game is still loading (see [Roadmap](Roadmap.md)).
+shaders) in the right colours. It then shows the Rockstar logo, the intro art and every first-run screen (text size,
+brightness, controls, legal, privacy policy and terms), which scripted input answers, saves its settings and starts
+loading story mode. About six minutes into that load the GPU hangs; that is the current blocker (see
+[Roadmap](Roadmap.md)).
 
 ![Progress](progress.svg)
 
