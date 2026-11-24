@@ -94,6 +94,26 @@ destination a pointer into the game's page table, one frame number per 64 KiB pa
 offset into the first page in the 16-bit field at request offset 0x10. `PhysicalPageSink` copies the data into those
 frames through the store (`XMemPhysicalMemory.WriteFrames`).
 
+**CopyPageMappingsBatchX (queue slot 31).** The game also remaps pages through the queue:
+(count, batches, pool, pool pages, flags), call at 0x140f2cc7f. VIctory named the method and the layouts. A batch is
+(destination, range count, ranges), and a range is (kind, start page, count) in 64 KiB pages:
+
+| Kind | Mapping |
+|---|---|
+| 0 | pool pages from start, in order |
+| 1 | pool page start at every page |
+| 2 | unmapped |
+| 3 | unchanged |
+
+On the console the remap is queue work, after the queue's earlier work. `QueuePageMappings` waits until the desktop
+queue has finished everything submitted so far (its shim fence), then remaps on the CPU
+(`XMemPhysicalMemory.CopyPageMappings`) before the call returns. Until then the slot was a stub, and the destinations
+kept their old pages.
+
+GPU limit: desktop buffers placed over the pages when a slot-133 resource was created, and the address map's views of
+them, keep the pages of that moment. A later remap is seen by the CPU and by resources created after it, not by
+earlier ones. The same holds for `XMemMapPhysicalPages`.
+
 ## Working set statistics
 
 The structure is 0x78 bytes (callers zero that much). One caller (flags 0x20000001) takes qword 0 minus qword 1 and

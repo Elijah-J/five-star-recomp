@@ -160,6 +160,73 @@ internal sealed unsafe class XMemPhysicalMemory : IDisposable
     }
 
     /// <summary>
+    /// D3D12.X queue CopyPageMappingsBatchX (<see cref="D3D12X.QueuePageMappings"/>): maps pages of a pool (a range the
+    /// game mapped physical pages into) at each batch's destination, range by range: kind 0 the pool pages from
+    /// <c>Start</c> in order, 1 pool page <c>Start</c> at every page, 2 unmapped, 3 left as they are. False when a range
+    /// names pages past the pool or a mapping fails; the other ranges are still mapped.
+    /// </summary>
+    public bool CopyPageMappings(uint count, PageBatch* batches, nint pool, uint poolPages)
+    {
+        bool mapped = true;
+        nint poolCpu = CpuAddress(pool);
+
+        for (uint b = 0; b < count && batches != null; b++)
+        {
+            var batch = batches[b];
+            nint at = (nint)batch.Destination;
+
+            for (uint r = 0; r < batch.Count && batch.Ranges != null; r++)
+            {
+                var range = batch.Ranges[r];
+                mapped &= MapRange(at, range, poolCpu, poolPages);
+                at += (nint)(range.Count * PageSize);
+            }
+        }
+
+        if (!mapped)
+        {
+            _log.Warn("[xmem] CopyPageMappingsBatchX: a page mapping failed");
+        }
+
+        return mapped;
+    }
+
+    private bool MapRange(nint destination, PageRange range, nint pool, uint poolPages)
+    {
+        bool mapped = true;
+
+        for (uint k = 0; k < range.Count; k++)
+        {
+            nint at = destination + (nint)(k * PageSize);
+
+            switch (range.Kind)
+            {
+                case PageRange.PoolPages when (ulong)range.Start + range.Count <= poolPages:
+                    mapped &= MapOne(at, FrameAt(pool + (nint)((range.Start + k) * PageSize)));
+                    break;
+                case PageRange.OnePoolPage when range.Start < poolPages:
+                    mapped &= MapOne(at, FrameAt(pool + (nint)(range.Start * PageSize)));
+                    break;
+                case PageRange.Unmapped:
+                    mapped &= MapOne(at, 0);
+                    break;
+                case PageRange.Unchanged:
+                    break;
+                default:
+                    return false;
+            }
+        }
+
+        return mapped;
+    }
+
+    /// <summary>The frame mapped at <paramref name="address"/>; 0 when none is.</summary>
+    private ulong FrameAt(nint address)
+    {
+        return _reservations.Find(address)?.FrameAt(address) ?? 0;
+    }
+
+    /// <summary>
     /// The section and byte offset of the page mapped at <paramref name="address"/>: what a GPU heap over the same
     /// memory needs. False when nothing is mapped there.
     /// </summary>

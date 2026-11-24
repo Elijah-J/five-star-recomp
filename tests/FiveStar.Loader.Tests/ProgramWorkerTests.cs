@@ -61,6 +61,32 @@ public sealed class ProgramWorkerTests
         Assert.Equal(["first use", "journal 2, then set", "journal 1"], order.ToArray());
     }
 
+    [Fact]
+    public async Task A_queued_creation_made_on_the_game_thread_runs_once()
+    {
+        var room = false;
+        var runs = 0;
+        var queue = new PipelineBuildQueue(1, _ => Volatile.Read(ref room));
+        queue.Start();
+
+        Func<PipelineResult> counted = () =>
+        {
+            Interlocked.Increment(ref runs);
+
+            return default;
+        };
+
+        var build = queue.Queue(counted, urgent: false);
+
+        Assert.True(queue.RunNow(build));
+        Assert.False(queue.RunNow(build));
+        Volatile.Write(ref room, true);
+        await queue.Queue(() => default, urgent: false).Done.Task.WaitAsync(Limit);
+
+        Assert.Equal(1, runs);
+        Assert.True(build.Done.Task.IsCompleted);
+    }
+
     [Theory]
     [InlineData(@"?:\pagefile.sys", 64, 18, 41, 25)]
     [InlineData(@"C:\pagefile.sys 0 0", 64, 18, 200, 174)]

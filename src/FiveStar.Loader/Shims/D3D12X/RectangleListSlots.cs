@@ -37,7 +37,9 @@ internal static unsafe class RectangleListSlots
         }
 
         CommandListBindings.Of(self)->PipelinePending = pending ? 1 : 0;
-        ListActivity.Of(self)->Pipeline = desktop;
+        var activity = ListActivity.Of(self);
+        activity->Pipeline = desktop;
+        activity->StandIn = pending ? runtime.Objects.Unwrap(pipeline) : 0;
         runtime.Rectangles.SetPipeline(self, desktop);
 
         if (pending)

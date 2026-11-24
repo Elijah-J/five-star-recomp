@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using FiveStar.Loader.Native;
@@ -18,6 +19,21 @@ internal sealed unsafe class StandInPipelines
 {
     /// <summary>A build that takes longer than this is named in the log when it ends.</summary>
     private static readonly TimeSpan SlowBuild = TimeSpan.FromMinutes(1);
+
+    /// <summary>How long the first use of a small compute stand-in waits for its pipeline (made on that thread if queued).</summary>
+    public static readonly TimeSpan SmallBudget = TimeSpan.FromMilliseconds(250);
+
+    /// <summary>Pipelines whose skipped work is logged by name.</summary>
+    private const int SkipsLogged = 64;
+
+    /// <summary>Names listed in the summary's count of work skipped before later work of the same list ran.</summary>
+    private const int SkipsShown = 4;
+
+    private readonly ConcurrentDictionary<nint, string> _names = new();
+    private readonly ConcurrentDictionary<string, long> _skippedByName = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, long> _skippedBefore = new(StringComparer.Ordinal);
+    private readonly HashSet<nint> _small = [];
+    private int _smallMade;
 
     private readonly object _gate = new();
     private readonly HashSet<nint> _live = [];
@@ -52,14 +68,14 @@ internal sealed unsafe class StandInPipelines
     }
 
     /// <summary>Stand-ins handed out, how many have their pipeline, the work skipped meanwhile and the work recorded.</summary>
-    public string Summary => $"{Volatile.Read(ref _created)} stand-in pipelines ({Volatile.Read(ref _deferred)} built on first use, {Volatile.Read(ref _used)} of them used, {Volatile.Read(ref _onDemand)} with programs made on demand, {Volatile.Read(ref _ready)} built since, {Count(queue => queue.Backlog)} queued, {Count(queue => queue.WaitingForMemory)} build threads waiting for memory), {Interlocked.Read(ref _skipped)} draws and dispatches skipped, {Interlocked.Read(ref _recorded)} recorded";
+    public string Summary => $"{Volatile.Read(ref _created)} stand-in pipelines ({Volatile.Read(ref _deferred)} built on first use, {Volatile.Read(ref _used)} of them used, {Volatile.Read(ref _onDemand)} with programs made on demand, {Volatile.Read(ref _ready)} built since, {Count(queue => queue.Backlog)} queued, {Count(queue => queue.WaitingForMemory)} build threads waiting for memory), {Interlocked.Read(ref _skipped)} draws and dispatches skipped, {Interlocked.Read(ref _recorded)} recorded, {SkippedBeforeSummary()}, {Volatile.Read(ref _smallMade)} small compute pipelines made at first use";
 
     /// <summary>
     /// Runs <paramref name="create"/> and writes its pipeline to <paramref name="result"/>; when it takes longer than
     /// the budget, or when earlier creations still wait for a thread, writes a stand-in instead and returns S_OK.
     /// <paramref name="built"/> is told the desktop pipeline when there is one; <paramref name="heavy"/> builds on the heavy thread.
     /// </summary>
-    public int Create(Func<PipelineResult> create, nint* result, string what, Action<nint>? built, bool heavy = false)
+    public int Create(Func<PipelineResult> create, nint* result, string what, Action<nint>? built, bool heavy = false, bool small = false)
     {
         var budget = _budget;
         var queue = _builds;
@@ -90,7 +106,7 @@ internal sealed unsafe class StandInPipelines
             return build.Result.Hr;
         }
 
-        nint standIn = NewStandIn();
+        nint standIn = NewStandIn(what, small);
         Track(standIn, new StandInWork { Creation = (queued, queue) });
         build.ContinueWith(task => Complete(standIn, task.Result, what, started, built), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
         Interlocked.Increment(ref _created);
@@ -105,9 +121,9 @@ internal sealed unsafe class StandInPipelines
     /// creates tens of thousands of pipelines while loading and draws with a small part of them. <paramref name="used"/>
     /// runs then, before the build is queued.
     /// </summary>
-    public int Deferred(Func<PipelineResult> create, nint* result, string what, Action<nint>? built, bool heavy, Action used)
+    public int Deferred(Func<PipelineResult> create, nint* result, string what, Action<nint>? built, bool heavy, Action used, bool small = false)
     {
-        nint standIn = NewStandIn();
+        nint standIn = NewStandIn(what, small);
         ((StandInPipelineObject*)standIn)->Deferred = 1;
 
         lock (_gate)
@@ -117,7 +133,9 @@ internal sealed unsafe class StandInPipelines
                 used();
                 var queue = heavy ? _heavyBuilds : _builds;
                 long started = Stopwatch.GetTimestamp();
-                queue.Queue(create, urgent: true).Done.Task.ContinueWith(task => Complete(standIn, task.Result, what, started, built), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
+                var queued = queue.Queue(create, urgent: true);
+                Track(standIn, new StandInWork { Creation = (queued, queue) });
+                queued.Done.Task.ContinueWith(task => Complete(standIn, task.Result, what, started, built), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
             };
         }
 
@@ -134,9 +152,9 @@ internal sealed unsafe class StandInPipelines
     /// the build, queued as in <see cref="Create"/>; null leaves the stand-in unbuilt. With <paramref name="used"/> this
     /// starts when a command list first sets the stand-in (as <see cref="Deferred"/>), else now.
     /// </summary>
-    public int Waiting(Func<bool, Task> programs, Func<PendingBuild?> prepare, nint* result, Action? used)
+    public int Waiting(Func<bool, Task> programs, Func<PendingBuild?> prepare, nint* result, Action? used, string what = "", bool small = false)
     {
-        nint standIn = NewStandIn();
+        nint standIn = NewStandIn(what, small);
         Track(standIn, new StandInWork { Programs = programs });
         Interlocked.Increment(ref _created);
         Interlocked.Increment(ref _onDemand);
@@ -270,7 +288,9 @@ internal sealed unsafe class StandInPipelines
         pending = desktop == 0;
 
         // Used first, so a deferred stand-in started below queues its creation as urgent.
-        if (pending && Volatile.Read(ref standIn->Used) == 0 && Interlocked.Exchange(ref standIn->Used, 1) == 0)
+        bool firstUse = pending && Volatile.Read(ref standIn->Used) == 0 && Interlocked.Exchange(ref standIn->Used, 1) == 0;
+
+        if (firstUse)
         {
             Promote(pipeline);
         }
@@ -278,6 +298,12 @@ internal sealed unsafe class StandInPipelines
         if (pending && Volatile.Read(ref standIn->Deferred) == 1 && Interlocked.Exchange(ref standIn->Deferred, 0) == 1)
         {
             Start(pipeline);
+        }
+
+        if (firstUse && IsSmall(pipeline))
+        {
+            desktop = MakeNow(pipeline);
+            pending = desktop == 0;
         }
 
         return desktop;
@@ -299,16 +325,22 @@ internal sealed unsafe class StandInPipelines
 
     /// <summary>Counts a draw or dispatch a command list recorded (draws per frame: its growth over the presents).</summary>
     [HotPath]
-    public void Recorded()
+    public void Recorded(nint skippedBefore)
     {
         Interlocked.Increment(ref _recorded);
+
+        if (skippedBefore != 0)
+        {
+            CountSkippedBefore(skippedBefore);
+        }
     }
 
     /// <summary>Counts a dispatch a command list dropped because its pipeline is still a stand-in.</summary>
     [HotPath]
-    public void Skipped()
+    public void Skipped(nint standIn)
     {
         Interlocked.Increment(ref _skipped);
+        CountSkipped(standIn);
     }
 
     /// <summary>The last reference went: releases the desktop pipeline (or lets the build release it) and frees the stand-in.</summary>
@@ -321,9 +353,11 @@ internal sealed unsafe class StandInPipelines
             _live.Remove((nint)standIn);
             _waiting.Remove((nint)standIn);
             _work.Remove((nint)standIn);
+            _small.Remove((nint)standIn);
             desktop = standIn->Desktop;
         }
 
+        _names.TryRemove((nint)standIn, out _);
         ComObject.Release(desktop);
         NativeMemory.Free(standIn);
     }
@@ -339,6 +373,88 @@ internal sealed unsafe class StandInPipelines
         return NewStandIn();
     }
 
+    /// <summary>Counts skipped work by pipeline name; the first <see cref="SkipsLogged"/> names are logged.</summary>
+    private void CountSkipped(nint standIn)
+    {
+        var name = Name(standIn);
+        var count = _skippedByName.AddOrUpdate(name, 1, static (_, value) => value + 1);
+
+        if (count == 1 && _skippedByName.Count <= SkipsLogged)
+        {
+            _warnings.Warn($"skipped-{name}", $"[d3d12_xs] work of pipeline {name} skipped: it is a stand-in until the driver is done");
+        }
+    }
+
+    /// <summary>A list ran work after skipping the stand-in's: its consumers read what the skipped work did not write.</summary>
+    private void CountSkippedBefore(nint standIn)
+    {
+        _skippedBefore.AddOrUpdate(Name(standIn), 1, static (_, value) => value + 1);
+    }
+
+    private string SkippedBeforeSummary()
+    {
+        var total = _skippedBefore.Values.Sum();
+        var top = string.Join(", ", _skippedBefore.OrderByDescending(entry => entry.Value).Take(SkipsShown).Select(entry => $"{entry.Key} x{entry.Value}"));
+
+        return $"{total} lists ran work after a skipped one ({top})";
+    }
+
+    private string Name(nint standIn)
+    {
+        return _names.GetValueOrDefault(standIn, "unnamed");
+    }
+
+    private bool IsSmall(nint standIn)
+    {
+        lock (_gate)
+        {
+            return _small.Contains(standIn);
+        }
+    }
+
+    /// <summary>
+    /// The first use of a small compute stand-in: its creation, once its programs are ready, runs on this thread
+    /// (claimed from the queue) within <see cref="SmallBudget"/>; the desktop pipeline, or 0 when the budget ran out and
+    /// the stand-in stays as before.
+    /// </summary>
+    private nint MakeNow(nint pipeline)
+    {
+        var standIn = (StandInPipelineObject*)pipeline;
+        var deadline = Stopwatch.GetTimestamp() + (long)(SmallBudget.TotalSeconds * Stopwatch.Frequency);
+
+        while (Stopwatch.GetTimestamp() < deadline)
+        {
+            nint desktop = Volatile.Read(ref standIn->Desktop);
+
+            if (desktop != 0)
+            {
+                Interlocked.Increment(ref _smallMade);
+
+                return desktop;
+            }
+
+            (PipelineBuild Build, PipelineBuildQueue Queue)? creation = null;
+
+            lock (_gate)
+            {
+                if (_work.TryGetValue(pipeline, out var work))
+                {
+                    creation = work.Creation;
+                }
+            }
+
+            // Never on this thread while the build would wait for memory (Build waits without a limit).
+            if (creation.HasValue && WarmMemoryGuard.RoomForBuild(0))
+            {
+                creation.Value.Queue.RunNow(creation.Value.Build);
+            }
+
+            Thread.Sleep(1);
+        }
+
+        return Volatile.Read(ref standIn->Desktop);
+    }
+
     /// <summary>A count over the build queues (one when the heavy pipelines share the others' threads).</summary>
     private int Count(Func<PipelineBuildQueue, int> count)
     {
@@ -350,7 +466,7 @@ internal sealed unsafe class StandInPipelines
         return count(_builds) + count(_heavyBuilds);
     }
 
-    private nint NewStandIn()
+    private nint NewStandIn(string what = "", bool small = false)
     {
         var standIn = (StandInPipelineObject*)NativeMemory.AllocZeroed((nuint)sizeof(StandInPipelineObject));
         standIn->Vtable = (nint)_vtable;
@@ -360,6 +476,16 @@ internal sealed unsafe class StandInPipelines
         lock (_gate)
         {
             _live.Add((nint)standIn);
+
+            if (small)
+            {
+                _small.Add((nint)standIn);
+            }
+        }
+
+        if (what.Length > 0)
+        {
+            _names[(nint)standIn] = what;
         }
 
         return (nint)standIn;

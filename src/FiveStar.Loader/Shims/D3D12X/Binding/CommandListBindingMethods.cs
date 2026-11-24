@@ -289,14 +289,19 @@ internal static unsafe class CommandListBindingMethods
     [HotPath]
     private static bool PipelinePending(XboxObject* self)
     {
+        var standIns = ShimContext.Runtime.D3D12X.Pipelines?.StandIns;
+        var activity = ListActivity.Of(self);
+
         if (CommandListBindings.Of(self)->PipelinePending == 0)
         {
-            ShimContext.Runtime.D3D12X.Pipelines?.StandIns.Recorded();
+            standIns?.Recorded(activity->Skipped);
+            activity->Skipped = 0;
 
             return false;
         }
 
-        ShimContext.Runtime.D3D12X.Pipelines?.StandIns.Skipped();
+        standIns?.Skipped(activity->StandIn);
+        activity->Skipped = activity->StandIn;
 
         return true;
     }

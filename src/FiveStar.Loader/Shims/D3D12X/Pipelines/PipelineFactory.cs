@@ -21,6 +21,13 @@ internal sealed unsafe class PipelineFactory
     /// </summary>
     public const long HeavyShaderBytes = 4L << 20;
 
+    /// <summary>
+    /// A compute shader container this small (the culling chain's argument initialisers are a few hundred bytes) gets
+    /// its pipeline made on its first use, within <see cref="StandInPipelines.SmallBudget"/>, rather than a stand-in
+    /// whose skipped dispatch would leave its consumers stale counters.
+    /// </summary>
+    public const int SmallComputeShaderBytes = 16 << 10;
+
     private readonly object _gate = new();
     private readonly object _heavy = new();
     private readonly nint _device2;
@@ -116,10 +123,11 @@ internal sealed unsafe class PipelineFactory
     {
         var deferral = Deferral(Journal?.Contains(description) ?? false, () => Journal?.Record(description));
         var lacking = Lacking([description.Shader]);
+        var small = description.Shader.Bytes.Length <= SmallComputeShaderBytes;
 
         if (lacking is not null)
         {
-            return Later(lacking, () => PrepareCompute(description), iid, result, deferral);
+            return Later(lacking, () => PrepareCompute(description), iid, result, deferral, small);
         }
 
         var recipe = PrepareCompute(description);
@@ -130,7 +138,7 @@ internal sealed unsafe class PipelineFactory
         }
 
         InFlight.Describe(recipe.Names);
-        var hr = Create(recipe.Stream, iid, result, recipe.Names, null, deferral);
+        var hr = Create(recipe.Stream, iid, result, recipe.Names, null, deferral, small);
         Report(hr, recipe.Names);
 
         return hr;
@@ -237,7 +245,7 @@ internal sealed unsafe class PipelineFactory
     /// build threads (<see cref="StandInPipelines"/>) and stored in the cache. Takes ownership of the stream, whose
     /// native copy is freed while it waits for a build thread.
     /// </summary>
-    private int Create(DesktopStream stream, Guid* iid, nint* result, string names, Action<nint>? built, Action? deferral)
+    private int Create(DesktopStream stream, Guid* iid, nint* result, string names, Action<nint>? built, Action? deferral, bool small = false)
     {
         Action<nint> named = pipeline =>
         {
@@ -261,10 +269,10 @@ internal sealed unsafe class PipelineFactory
 
         if (deferral is not null)
         {
-            return StandIns.Deferred(() => Build(stream, wanted), result, names, named, heavy, deferral);
+            return StandIns.Deferred(() => Build(stream, wanted), result, names, named, heavy, deferral, small);
         }
 
-        return StandIns.Create(() => Build(stream, wanted), result, names, named, heavy);
+        return StandIns.Create(() => Build(stream, wanted), result, names, named, heavy, small);
     }
 
     /// <summary>
@@ -329,13 +337,15 @@ internal sealed unsafe class PipelineFactory
     /// A stand-in for a pipeline whose programs are made on demand; once they are ready its recipe is made and built as
     /// in <see cref="Create"/>. With a deferral this starts on first use.
     /// </summary>
-    private int Later(List<IReadOnlyList<string>> lacking, Func<PipelineRecipe?> prepare, Guid* iid, nint* result, Action? deferral)
+    private int Later(List<IReadOnlyList<string>> lacking, Func<PipelineRecipe?> prepare, Guid* iid, nint* result, Action? deferral, bool small = false)
     {
         var wanted = *iid;
         var onDemand = OnDemand!;
         Func<bool, Task> programs = urgent => Task.WhenAll(lacking.Select(names => onDemand.Request(names, urgent)));
 
-        return StandIns.Waiting(programs, () => Prepared(prepare(), wanted), result, deferral);
+        var what = string.Join(" + ", lacking.Select(names => names[0]));
+
+        return StandIns.Waiting(programs, () => Prepared(prepare(), wanted), result, deferral, what, small);
     }
 
     /// <summary>The build of a recipe whose programs are ready; null when a program could not be made.</summary>

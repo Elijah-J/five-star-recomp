@@ -43,6 +43,8 @@ internal static unsafe class PresentSlots
             d3d12x.Pacer.Presented(planes->Token);
         }
 
+        d3d12x.FrameThrottle.Presented();
+
         return d3d12x.Presenter.Present(self->Inner, count, planes, parameters);
     }
 

@@ -95,21 +95,37 @@ internal sealed class PipelineBuildQueue
             WaitForRoom();
             BlockingCollection<PipelineBuild>.TakeFromAny(queues, out var build);
 
-            if (!build!.Claim())
+            if (build!.Claim())
             {
-                continue;
+                Execute(build);
             }
+        }
+    }
 
-            Interlocked.Increment(ref _running);
+    /// <summary>Runs a queued <paramref name="build"/> on this thread unless a build thread took it; true when this ran it.</summary>
+    public bool RunNow(PipelineBuild build)
+    {
+        if (!build.Claim())
+        {
+            return false;
+        }
 
-            try
-            {
-                build.Done.SetResult(build.Create());
-            }
-            finally
-            {
-                Interlocked.Decrement(ref _running);
-            }
+        Execute(build);
+
+        return true;
+    }
+
+    private void Execute(PipelineBuild build)
+    {
+        Interlocked.Increment(ref _running);
+
+        try
+        {
+            build.Done.SetResult(build.Create());
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _running);
         }
     }
 
