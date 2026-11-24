@@ -290,7 +290,10 @@ and descriptor work will use (on the console GPU address == CPU address). Update
 (cross-adapter) heaps, so one resource cannot span sections; the page store therefore gives a multi-page allocation
 consecutive pages of one section, in the address order of the placeholder it is mapped into
 ([physical-memory.md](physical-memory.md)). The game's 0xAE00000-byte pool (three pieces of one placeholder, mapped
-later piece first) is one run and one buffer. A range with no mapped page gets a committed buffer that is not shared.
+later piece first) is one run and one buffer. A range with no mapped page in memory the game committed itself (3,259
+buffers in a boot, such as the 0x283 / PAGE_GRAPHICS_READWRITE allocation) shares the buffer over that allocation
+(below); its offsets stay console ones, so buffer views (`BufferViewRanges`), CopyBufferRegion (list slot 15) and
+ExecuteIndirect move them to that buffer (`BufferCopies`). Elsewhere it gets a committed buffer that is not shared.
 A texture at a game address becomes a committed desktop texture of its own, filled from the game's bytes unless the
 GPU writes it ([gpu-resources.md](gpu-resources.md)).
 

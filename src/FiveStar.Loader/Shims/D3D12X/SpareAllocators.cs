@@ -54,15 +54,21 @@ internal sealed unsafe class SpareAllocators
             }
 
             nint created = Create(list);
+            int hr = HResult.InvalidArgument;
 
-            if (created == 0)
+            if (created != 0)
             {
-                return HResult.InvalidArgument;
+                spares.Add(created);
+                hr = reset(list, created, pipeline);
             }
 
-            spares.Add(created);
+            if (HResult.Failed(hr))
+            {
+                int type = ((delegate* unmanaged<nint, int>)ComObject.Slot(list, GetTypeSlot))(list);
+                ShimContext.Runtime.D3D12X.Warnings.Warn("spare-allocator", $"[d3d12_xs] command list Reset refused on a fresh allocator too: list type {type}, allocator created {created != 0}, {spares.Count} spares, pipeline 0x{pipeline:x}: {HResult.Format(hr)}");
+            }
 
-            return reset(list, created, pipeline);
+            return hr;
         }
     }
 

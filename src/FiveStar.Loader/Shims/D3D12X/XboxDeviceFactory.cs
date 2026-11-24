@@ -60,6 +60,7 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         Textures = new GpuTextures(MemorySource, Descriptions, log);
         PlacedResources = new XboxPlacedResources(memory, Objects, Textures, log);
         GameMemory = new XboxGameMemoryBuffers(Objects, PlacedResources.Addresses, log);
+        PlacedResources.GameMemory = GameMemory;
 
         Uploads = new UploadArena(Objects, PlacedResources.Addresses, log);
         AddressBuffers = new AddressBufferViews(GameMemory);
@@ -380,6 +381,9 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         delegate* unmanaged<XboxResourceObject*, uint, void*, void> unmap = &XboxObjectMethods.Unmap;
         Objects.SetHandler(XboxInterfaceKind.Resource, XboxObjectMethods.MapSlot, (nint)map);
         Objects.SetHandler(XboxInterfaceKind.Resource, XboxObjectMethods.UnmapSlot, (nint)unmap);
+
+        delegate* unmanaged<XboxObject*, nint, ulong, nint, ulong, ulong, void> copyBuffer = &BufferCopies.CopyBufferRegion;
+        Objects.SetHandler(XboxInterfaceKind.CommandList, BufferCopies.CopyBufferRegionSlot, (nint)copyBuffer);
 
         delegate* unmanaged<XboxObject*, int> resetAllocator = &XboxObjectMethods.ResetAllocator;
         Objects.SetHandler(XboxInterfaceKind.CommandAllocator, XboxObjectMethods.AllocatorResetSlot, (nint)resetAllocator);

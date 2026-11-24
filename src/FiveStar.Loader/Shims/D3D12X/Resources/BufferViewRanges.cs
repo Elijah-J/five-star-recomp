@@ -8,7 +8,8 @@ namespace FiveStar.Loader.Shims.D3D12X.Resources;
 /// <summary>
 /// Buffer SRVs and UAVs (device slots 18 and 19) of a buffer at a console address. A slot-133 buffer whose pages lie in
 /// two page sections is one desktop buffer per run (<see cref="XboxPlacedResources"/>), and the game's object is the
-/// first; a view over the whole buffer does not fit it and removes the device. The view goes to the run that holds its
+/// first; a view over the whole buffer does not fit it and removes the device. One in memory the game committed itself
+/// shares that memory's buffer, so its first element moves by its address. The view goes to the run that holds its
 /// first element, moved to that run's offset and cut at its end (elements past a cut read 0). A view that fits its
 /// buffer passes unchanged.
 /// </summary>
@@ -69,7 +70,7 @@ internal static unsafe class BufferViewRanges
 
         ulong end = range.GameAddress + range.Size;
 
-        if ((range.Resource == desktop && start + ((ulong)count * element) <= end) || (start - range.GameAddress) % element != 0)
+        if ((range.Resource == desktop && range.GameAddress == game && start + ((ulong)count * element) <= end) || (start - range.GameAddress) % element != 0)
         {
             return desktop;
         }

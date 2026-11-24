@@ -243,7 +243,10 @@ internal static unsafe class CommandListBindingMethods
         var objects = ShimContext.Runtime.D3D12X.Objects;
         nint inner = self->Inner;
         var execute = (delegate* unmanaged<nint, nint, uint, nint, ulong, nint, ulong, void>)ComObject.Slot(inner, DesktopExecuteIndirect);
-        execute(inner, objects.Unwrap(signature), maxCount, objects.Unwrap(arguments), argumentOffset, objects.Unwrap(count), countOffset);
+
+        nint argumentBuffer = BufferCopies.Desktop(arguments, ref argumentOffset);
+        nint countBuffer = BufferCopies.Desktop(count, ref countOffset);
+        execute(inner, objects.Unwrap(signature), maxCount, argumentBuffer, argumentOffset, countBuffer, countOffset);
     }
 
     /// <summary>
