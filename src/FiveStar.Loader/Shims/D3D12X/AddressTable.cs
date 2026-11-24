@@ -1,5 +1,7 @@
-﻿// Copyright (c) 2026 Five Star Recomp contributors.
+// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
+
+using FiveStar.Loader.Native;
 
 namespace FiveStar.Loader.Shims.D3D12X;
 
@@ -10,6 +12,9 @@ namespace FiveStar.Loader.Shims.D3D12X;
 /// </summary>
 internal sealed class AddressTable
 {
+    /// <summary>IUnknown::AddRef.</summary>
+    private const int AddRefSlot = 1;
+
     private readonly object _gate = new();
     private AddressRange[] _ranges = [];
     private Action<AddressRange>? _added;
@@ -23,16 +28,50 @@ internal sealed class AddressTable
         }
     }
 
+    /// <summary>
+    /// Adds <paramref name="range"/>, which holds a reference on its desktop resource until a later range replaces it:
+    /// the game releases buffers whose addresses views, copies and the shader address map still translate, and a view
+    /// made on a released buffer crashed the driver (CreateShaderResourceView, nvwgf2umx.dll, at the story load).
+    /// </summary>
     public void Add(AddressRange range)
     {
         lock (_gate)
         {
-            var ranges = _ranges.Where(r => r.GameAddress + r.Size <= range.GameAddress || range.GameAddress + range.Size <= r.GameAddress)
-                .Append(range)
-                .OrderBy(r => r.GameAddress)
-                .ToArray();
-            Volatile.Write(ref _ranges, ranges);
+            var kept = new List<AddressRange>(_ranges.Length + 1);
+
+            foreach (var existing in _ranges)
+            {
+                if (existing.GameAddress + existing.Size <= range.GameAddress || range.GameAddress + range.Size <= existing.GameAddress)
+                {
+                    kept.Add(existing);
+                }
+                else
+                {
+                    Release(existing.Resource);
+                }
+            }
+
+            AddRef(range.Resource);
+            kept.Add(range);
+            kept.Sort((a, b) => a.GameAddress.CompareTo(b.GameAddress));
+            Volatile.Write(ref _ranges, kept.ToArray());
             _added?.Invoke(range);
+        }
+    }
+
+    private static unsafe void AddRef(nint resource)
+    {
+        if (resource != 0)
+        {
+            ((delegate* unmanaged<nint, uint>)ComObject.Slot(resource, AddRefSlot))(resource);
+        }
+    }
+
+    private static void Release(nint resource)
+    {
+        if (resource != 0)
+        {
+            ComObject.Release(resource);
         }
     }
 
