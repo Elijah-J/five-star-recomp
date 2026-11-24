@@ -21,6 +21,9 @@ internal sealed unsafe class PipelineWarmup
     /// <summary>A build that takes longer than this is named in the log.</summary>
     private static readonly TimeSpan SlowBuild = TimeSpan.FromSeconds(20);
 
+    private const long BytesPerMebibyte = 1L << 20;
+    private const ulong BytesPerGibibyte = 1UL << 30;
+
     private static readonly TimeSpan ProgressInterval = TimeSpan.FromSeconds(30);
 
     private readonly PipelineFactory _factory;
@@ -110,7 +113,7 @@ internal sealed unsafe class PipelineWarmup
     {
         if (!_stopping)
         {
-            _log.Warn($"warm-up: {recipe.Names} ({recipe.Stream.ShaderBytes >> 20} MiB of DXIL) left out: less than {WarmMemoryGuard.HeavyBytes >> 30} GB of commit available");
+            _log.Warn($"warm-up: {recipe.Names} ({recipe.Stream.ShaderBytes / BytesPerMebibyte} MiB of DXIL) left out: less than {(WarmMemoryGuard.HeavyBytes + WarmMemoryGuard.ReserveBytes) / BytesPerGibibyte} GB of commit available");
             _tally.Count(WarmOutcome.Deferred);
         }
 
