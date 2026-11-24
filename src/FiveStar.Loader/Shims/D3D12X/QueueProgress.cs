@@ -76,7 +76,6 @@ internal static unsafe class QueueProgress
             }
 
             var activity = ListActivity.Of((XboxObject*)list);
-            activity->Position = (int)i;
             entry.Draws += activity->Draws;
             entry.Dispatches += activity->Dispatches;
             entry.Indirect += activity->Indirect;

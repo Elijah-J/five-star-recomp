@@ -14,9 +14,12 @@
 430 Down hold 0.3
 450 Space hold 0.3
 # Privacy policy and terms of service: each item is a check box that A toggles (its text need not be scrolled), so
-# one press each; then Confirm starts the story load.
-470 Space hold 0.3
-476 Down hold 0.3
-482 Space hold 0.3
-488 Down hold 0.3
-494 Space hold 0.3
+# one press each; then Confirm starts the story load. The screen drops its first press (a Space at 470 s and at 480 s
+# both left the privacy box unchecked), so an Up, which does nothing on the top item, goes first. If a box stays
+# unchecked, presses appended to the script while it runs can still fix it.
+480 Up hold 0.3
+486 Space hold 0.3
+492 Down hold 0.3
+498 Space hold 0.3
+504 Down hold 0.3
+510 Space hold 0.3

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using FiveStar.Loader.Native;
+using FiveStar.Loader.Shims.D3D12X.DebugLayer;
 
 namespace FiveStar.Loader.Shims.D3D12X;
 
@@ -67,6 +68,7 @@ internal static unsafe class ListSubmissions
             if (list != 0 && objects.Unwrap(list) != list)
             {
                 *ListSubmission.Of(list) = new ListSubmission { Fence = queue->Fence, Value = value };
+                GpuBreadcrumbs.Submitted(list, queue->Fence, value, (int)i);
             }
         }
 

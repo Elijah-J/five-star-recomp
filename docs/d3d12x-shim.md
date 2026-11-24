@@ -579,12 +579,17 @@ memory line of the thread sampler. A removed device sets every fence to UINT64_M
 as last seen, without the debug layer as well.
 
 `--d3d12-breadcrumbs` (`GpuBreadcrumbs`) adds where each list of an unfinished execution stopped: before every draw,
-dispatch, ExecuteIndirect, CopyBufferRegion, ResourceBarrier and Barrier, and at Close, a list writes its recording number and the operation's index to its own
-dword of a readback buffer with WriteBufferImmediate(MARKER_OUT), which waits for the work before it, and keeps the
-pipeline of each operation. The report then lists them in submission order with `not started`, `finished` or`
-`STOPPED at operation n` and that operation's pipeline or command. Work between markers that has no handler of its own
-(clears, texture copies, queries, X-only slots) shows as the operation after it; a list with no marked operation that
-is `not started` while the one before it `finished` stopped inside such work. Each marker drains the GPU, so it is a diagnosis mode, not for play.
+dispatch, ExecuteIndirect, CopyBufferRegion, ResourceBarrier and Barrier, and at Close, a list writes its recording's
+number and the operation's index to that recording's dword of a readback buffer with WriteBufferImmediate(MARKER_OUT),
+which waits for the work before it. Each recording (Reset to Close) takes the next of 8192 slots and keeps its first
+512 operations: kind, pipeline, a dispatch's group counts, a draw's counts, and an ExecuteIndirect's signature (the
+game's description, also logged at creation) and argument address. A submission notes in each of its recordings the
+fence value it ends at, so a list recorded again before its last submission finished keeps both. The report lists
+them in submission order with `not started`, `finished` or `STOPPED at operation n` and that operation, for an
+ExecuteIndirect with its argument dwords as title memory holds them at the report. Work between markers that has no
+handler of its own (clears, texture copies, queries, X-only slots) shows as the operation after it; a list with no
+marked operation that is `not started` while the one before it `finished` stopped inside such work. Each marker
+drains the GPU, so it is a diagnosis mode, not for play.
 
 **The story-load hang.** Five unattended boots to the story load ended the same way about 400 s after the load started
 (boot 1 instead reached the commit limit first, see [d3d12x-pipelines.md](d3d12x-pipelines.md#stand-ins)): the first
@@ -594,7 +599,12 @@ later the device is removed with DXGI_ERROR_DEVICE_HUNG. Memory was not short th
 commit). With breadcrumbs, compute queue #2's first list stopped at operation 12 of 20, under the pipeline
 `meshlet_culling~CS_AllocBatchCSCullOutput` (no loop in its translation; the list's one ExecuteIndirect is the likely
 operation, so its arguments, built for the X-only argument type 0x69 that becomes DISPATCH, are the open question);
-every other list had not started. The buffer-stride fix in descriptor records did not change it.
+every other list had not started. The buffer-stride fix in descriptor records did not change it. With markers per
+recording (two boots), that list finished and queues #2 and #4 stopped in their second execution at operation 4, a
+plain dispatch (45 to 80 groups) of `InstanceCulling~CS_Prop_BatchCull`, whose translation has counted loops that end
+only when the counter equals a bound read from a buffer; queues #3 and #5 finished the same list shape. The game's five
+command signatures are DRAW (stride 16), DRAW_INDEXED (20), 0x69, DISPATCH and DISPATCH_MESH (12 each, 0x1424794da);
+the 0x69 one is used by 0x14248cd20 and 0x140094421, DISPATCH by 0x14248cbe0.
 
 Two readback aids (`DrawTrace`, `FrameCapture`; debug only, they allocate and wait for the GPU):
 

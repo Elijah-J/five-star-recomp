@@ -192,7 +192,7 @@ internal static unsafe class CommandListBindingMethods
 
         Flush(self, false);
         ListActivity.Of(self)->Draws++;
-        GpuBreadcrumbs.Before(self);
+        GpuBreadcrumbs.Before(self, MarkedKind.Draw, vertices, instances, 0);
 
         ShimContext.Runtime.D3D12X.Rectangles.BeforeDraw(self);
         ShimContext.Runtime.D3D12X.DrawTrace?.Draw(self, vertices, instances);
@@ -212,7 +212,7 @@ internal static unsafe class CommandListBindingMethods
 
         Flush(self, false);
         ListActivity.Of(self)->Draws++;
-        GpuBreadcrumbs.Before(self);
+        GpuBreadcrumbs.Before(self, MarkedKind.Draw, indices, instances, 0);
 
         ShimContext.Runtime.D3D12X.Rectangles.BeforeDraw(self);
         ShimContext.Runtime.D3D12X.DrawTrace?.Draw(self, indices, instances);
@@ -232,7 +232,7 @@ internal static unsafe class CommandListBindingMethods
 
         Flush(self, true);
         ListActivity.Of(self)->Dispatches++;
-        GpuBreadcrumbs.Before(self);
+        GpuBreadcrumbs.Before(self, MarkedKind.Dispatch, x, y, z);
         nint inner = self->Inner;
         ((delegate* unmanaged<nint, uint, uint, uint, void>)ComObject.Slot(inner, DesktopDispatch))(inner, x, y, z);
     }
@@ -250,7 +250,7 @@ internal static unsafe class CommandListBindingMethods
         Flush(self, false);
         Flush(self, true);
         ListActivity.Of(self)->Indirect++;
-        GpuBreadcrumbs.Before(self);
+        GpuBreadcrumbs.BeforeIndirect(self, signature, maxCount, ArgumentAddress(arguments, argumentOffset));
 
         var objects = ShimContext.Runtime.D3D12X.Objects;
         nint inner = self->Inner;
@@ -259,6 +259,20 @@ internal static unsafe class CommandListBindingMethods
         nint argumentBuffer = BufferCopies.Desktop(arguments, ref argumentOffset);
         nint countBuffer = BufferCopies.Desktop(count, ref countOffset);
         execute(inner, objects.Unwrap(signature), maxCount, argumentBuffer, argumentOffset, countBuffer, countOffset);
+    }
+
+    /// <summary>The console address of an ExecuteIndirect argument, 0 for a buffer without one.</summary>
+    [HotPath]
+    private static ulong ArgumentAddress(nint arguments, ulong offset)
+    {
+        var resource = ShimContext.Runtime.D3D12X.Objects.AsResource(arguments);
+
+        if (resource == null || resource->GameAddress == 0)
+        {
+            return 0;
+        }
+
+        return resource->GameAddress + offset;
     }
 
     /// <summary>
