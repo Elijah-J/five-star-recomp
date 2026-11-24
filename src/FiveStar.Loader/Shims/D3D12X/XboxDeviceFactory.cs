@@ -474,6 +474,7 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         ResourceBarrierSlots.Bind(Objects);
         EnhancedBarrierSlots.Bind(Objects);
         UploadAllocations.Bind(Objects);
+        BottomOfPipeWrites.Bind(Objects);
     }
 
     private void BindInputBuffers()

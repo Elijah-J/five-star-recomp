@@ -160,8 +160,9 @@ method follows from the arguments and from the inline packet written instead:
 | 61 | 59 | ExecuteIndirect | (signature, 1, argument buffer, offset, null, 0); 8 sites |
 | 62 | | X | (pointer, pointer, dword, 0) |
 | 70 | 62 | OMSetDepthBounds | floats in xmm1, xmm2 |
-| 71 | | X: PIX marker (*inferred*) | (pointer, dword, 0, 0) (0x144ed46a3) |
-| 72, 74 | | X | (pointer into a record array, 0, 0, 1) (0x142482b31); (pointer, 7, pointer, 1) (0x142484b0c) |
+| 71 | | X: bottom-of-pipe dword (*inferred*) | (address, dword, 0, 0) (0x144ed46a3): a per-frame array of 18 dwords at [0x1475DF268] |
+| 72 | | X: bottom-of-pipe timestamp (*inferred*) | (address in a type-2 query record's result array, 0, 0, 1) (0x142482b31) |
+| 74 | | X: bottom-of-pipe qword (*inferred*) | (address, 7, qword, 1) (0x142484b0c): the frame number into a pending record's +0x50 address (0x144e39e77), a counter at [0x1475E75D0] that the CPU otherwise writes itself (0x14044b6c3) |
 | 75, 126, 142 | | X: state writes (*inferred*) | one byte (0x14003281a); (byte, packed dword pair) (0x140032638); one qword (0x1400329e3) |
 | 146 | | X: Barrier (ID3D12GraphicsCommandList7) | (group count, D3D12_BARRIER_GROUP*) (0x14003210d, 0x144da61d1), below |
 | 148 | | X: upload allocation | (size, alignment) returns a pointer the caller also uses as a GPU address; XboxBvhBuilder.dll only (0x180020ed6), no call in the exe |
@@ -336,6 +337,11 @@ game breaks at 0x142474ce1. The list then records on a spare allocator kept for 
 later Reset, on any allocator, with E_INVALIDARG; such a list gets a new desktop list behind the same wrapper (the old
 one is kept, as the GPU may still run it), and the failed Close is warned once. Barriers leave out write states the
 desktop resource has no flag for (ResourceStates.Allowed; error #523 on a depth texture moved to UNORDERED_ACCESS).
+**Bottom-of-pipe writes (list slots 71, 72, 74; `BottomOfPipeWrites`).** Each is a desktop WriteBufferImmediate in
+MARKER_OUT mode (after the list's earlier work) at the desktop address of the game address: 71 one dword, 74 a
+qword, 72 a timestamp taken from the CPU clock at recording, in the console's 100 MHz units. They were E_NOTIMPL
+stubs before, so those values never reached memory. None of them feeds the transient pool's retire tokens, which
+complete through the queue fences (0x144dad000, 0x142474880).
 A compute list names only compute states (VERTEX_AND_CONSTANT_BUFFER, UNORDERED_ACCESS, NON_PIXEL_SHADER_RESOURCE,
 INDIRECT_ARGUMENT, COPY_DEST, COPY_SOURCE, acceleration structure) and a copy list only the copy ones
 (`ResourceStates.Legal`): any other bit fails the desktop Close. Render targets rest in RENDER_TARGET, so a compute
