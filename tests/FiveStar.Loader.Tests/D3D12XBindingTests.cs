@@ -41,6 +41,7 @@ public sealed unsafe class D3D12XBindingTests
     private const uint SmallHeap = 16;
     private const uint FarPage = 500000;
     private const uint TableSize = 2;
+    private const uint StructureStride = 16;
 
     /// <summary>Reads table entry 0 (an SRV) and 1 (a UAV) through the window and stores the SRV's first dword + 1.</summary>
     private const string Program = """
@@ -88,6 +89,26 @@ public sealed unsafe class D3D12XBindingTests
 
         Assert.Equal(remap.Capacity, remap.MappedPages);
         Assert.Equal(DescriptorRemap.Unmapped, remap.Map(high - DescriptorRemap.PageSize));
+    }
+
+    [Fact]
+    public void A_buffer_view_record_carries_its_element_stride_into_the_window()
+    {
+        using var test = TestRuntime.Create();
+        var device = new XboxDevice(test);
+        var heap = ViewHeap(device, SmallHeap);
+        nint buffer = Buffer(test.Runtime.D3D12X.Objects.DesktopDevice, new HeapProperties { Type = HeapProperties.Upload }, 0, GenericRead);
+        var structured = new BufferViewDescription { Dimension = BufferViewDescription.BufferDimension, SrvMapping = BufferViewDescription.DefaultMapping, SrvElements = 4, SrvStride = StructureStride };
+        var raw = BufferViewDescription.RawShaderResource(1);
+
+        var create = (delegate* unmanaged<nint, nint, BufferViewDescription*, nint, void>)XboxDevice.Vtable(device.Device)[CreateShaderResourceViewSlot];
+        create(device.Device, buffer, &structured, heap.Cpu);
+        create(device.Device, buffer, &raw, heap.Cpu + (nint)heap.Increment);
+
+        // V# dword 1: what translated programs multiply an indexed (idxen) access by.
+        uint* window = (uint*)(test.Runtime.D3D12X.Bindings.Window.Data + DescriptorWindow.ViewBase);
+        Assert.Equal(StructureStride, window[1]);
+        Assert.Equal(0u, window[(DescriptorWindow.ViewRecordBytes / sizeof(uint)) + 1]);
     }
 
     [DxcFact]
