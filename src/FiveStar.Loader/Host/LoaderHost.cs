@@ -322,9 +322,30 @@ internal sealed class LoaderHost
             TransientPoolWatch.Start(_log);
         }
 
+        ConsoleTimers.Use(_log);
+        StartAudioCapture();
         _runtime.D3D12X.WaitForProgramIndex();
 
         return new ExecutableRunner(_runtime.Faults, _log).Run(main, _options.RunTimeout);
+    }
+
+    /// <summary><c>--audio-capture</c>: starts the recorder, a child copy of the loader that records this process tree.</summary>
+    private void StartAudioCapture()
+    {
+        string? path = _options.AudioCapture;
+        string? loader = Environment.ProcessPath;
+
+        if (path is null || loader is null)
+        {
+            return;
+        }
+
+        var start = new System.Diagnostics.ProcessStartInfo(loader) { UseShellExecute = false };
+        start.ArgumentList.Add("--record-audio");
+        start.ArgumentList.Add(_processId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        start.ArgumentList.Add(path);
+        using var recorder = System.Diagnostics.Process.Start(start);
+        _log.Info($"  [audio-capture] recorder pid {recorder?.Id} writes {path}");
     }
 
     /// <summary>The loader counters each thread sample logs.</summary>
@@ -333,7 +354,9 @@ internal sealed class LoaderHost
         string pipelines = _runtime.D3D12X.Pipelines?.Summary ?? "pipeline slots off";
         string memory = ProcessMemory.Summary(_runtime.XMem.LiveBytes, _runtime.XMemPhysical.LivePages * (long)XMemPhysicalMemory.PageSize);
 
-        return $"DirectStorage {_runtime.Storage.Summary()}; {pipelines}; {_runtime.D3D12X.Presenter.Presents} presents; {_runtime.Input.Summary}; {memory}; {MemorySnapshot.Summary()}";
+        string audio = $"audio: {_runtime.Audio.Summary}; XDsp {_runtime.XDsp.Submitted} commands";
+
+        return $"DirectStorage {_runtime.Storage.Summary()}; {pipelines}; {_runtime.D3D12X.Presenter.Presents} presents; {_runtime.Input.Summary}; {audio}; {memory}; {MemorySnapshot.Summary()}";
     }
 
     /// <summary>

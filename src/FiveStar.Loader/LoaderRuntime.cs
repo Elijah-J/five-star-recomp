@@ -55,8 +55,9 @@ internal sealed class LoaderRuntime : IDisposable
         Xg = new XgComputers(Stubs, CodeHeap);
 
         Apu = new ApuHeap(log);
-        AcpHal = new AcpHalDevice(Apu, log);
-        XApu = new XApuDevice(log);
+        Audio = new AudioCounters();
+        AcpHal = new AcpHalDevice(Apu, Audio, log);
+        XApu = new XApuDevice(Audio, log);
         XDsp = new XDspDevice(log);
 
         D3D12 = new D3D12Forwarder(log);
@@ -126,6 +127,9 @@ internal sealed class LoaderRuntime : IDisposable
 
     /// <summary>The acphal.dll APU heap.</summary>
     public ApuHeap Apu { get; }
+
+    /// <summary>What the audio hardware shims did, for the thread sampler.</summary>
+    public AudioCounters Audio { get; }
 
     /// <summary>The acphal.dll SHAPE contexts and IAcpHal object.</summary>
     public AcpHalDevice AcpHal { get; }

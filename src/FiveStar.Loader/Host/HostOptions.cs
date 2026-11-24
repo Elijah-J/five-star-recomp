@@ -164,6 +164,12 @@ internal sealed record HostOptions
     /// <summary>Run the XDsp convolution effects on the CPU instead of returning silence (<c>--xdsp-convolution</c>).</summary>
     public bool XDspConvolution { get; set; }
 
+    /// <summary>Record what the game plays to this WAVE file (<c>--audio-capture</c>), from a child recorder process.</summary>
+    public string? AudioCapture { get; set; }
+
+    /// <summary>The recorder mode (<c>--record-audio &lt;pid&gt; &lt;file&gt;</c>): the process whose audio is recorded.</summary>
+    public int? RecordAudioProcess { get; set; }
+
     /// <summary>Fail DirectStorage BCPack pages that have no block decoder instead of writing placeholder blocks (<c>--bcpack-missing fail</c>).</summary>
     public bool FailMissingBcPack { get; set; }
 
