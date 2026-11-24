@@ -401,6 +401,8 @@ fivestar-loader --load $dump\XboxBvhBuilder.dll --load $dump\Bink2Scarlett.dll -
 | `--no-entry`, `--no-exports`, `--unload`, `--work-dir <dir>` | skip DllMain; skip the export listing; unload at the end; folder of the TLS host DLLs |
 | `--log <file>`, `-v` | full log of every import and shim call; the same on the console |
 | `--sample-threads <s>` | with `--run`: every s seconds the calls per shim, stub and GDK slot since the last sample, DirectStorage, pipeline (queued builds, DXIL held), present and GameInput counters, memory (private commit, managed heap, XMem allocations, physical pages; the machine's free physical memory and commit), and every thread's stack (below) |
+| `--memory-map <s>` | with `--run`: every s seconds where the private commit is: by owner, protection and allocation size, what changed, the 20 largest allocations and GPU memory ([debugging.md](debugging.md#memory-map)) |
+| `--min-free-memory <GB>`, `--max-commit <GB>` | with `--run`: end the process (exit code 5, after a last memory map) when the machine's free physical memory drops below, or its commit charge passes, this |
 | `--profile-threads` | with `--sample-threads`: also the main image's busiest functions on running threads (400 rounds of every thread per sample, several seconds in which the game runs slower: frame times then are not the game's) |
 | `--trace-module <dll>` | with `--run`: the call trace also wraps imports bound to this mapped image (for example `bink2scarlett.dll`) |
 | `--input-script <file>` | timed key presses added to the desktop keys and timed captures, in blocks that wait for learned screens; followed while running (below) |
