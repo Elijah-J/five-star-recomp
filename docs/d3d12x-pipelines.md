@@ -85,7 +85,16 @@ Memory while builds wait (a cold story load queues thousands):
 |---|---|
 | Queued stream | keeps its subobjects and references the programs' DXIL; the native copy the driver reads is made for the cache lookup and again for the build, and freed while the stream waits in the queue (`DesktopStream.Release`) |
 | DXIL | `TranslatedProgramLibrary` keeps the most recently used programs up to 1 GiB and reads older ones again; rectangle-list recipes keep program names, not DXIL |
-| Build start | waits while less than 8 GB of commit is available (`WarmMemoryGuard`, as in the warm-up), since one driver compile can take gigabytes |
+| Build start | waits while less than 8 GB of commit is available (`WarmMemoryGuard`, as in the warm-up), since one driver compile can take gigabytes; also the concurrency rule below |
+
+**Memory.** The story load asks for about 29,000 pipelines the warm cache did not hold (15,000 by 210 s, 14,000 more
+at 870 s); 16 build threads compiling them took the loader from 19 to 74 GB private on a 64 GB machine, and at 978 s
+the commit charge reached the commit limit (129.1 of 129.2 GB) and the process ended without a record. So a build
+thread starts a build only while the machine has 8 GB of commit and 4 GB of physical memory available plus 2 GB of
+each for every compile running, the new one included (`WarmMemoryGuard.RoomForBuild`, polled every 2 s): during the
+load that leaves one to a few compiles instead of 16. A pipeline with 4 MiB of DXIL or more goes to a thread of its own
+that also waits for 40 GB of commit, so it never holds up the others; until then its draws stay skipped. The sample summary counts the
+queued builds and the threads waiting for memory.
 
 ### Disk cache
 

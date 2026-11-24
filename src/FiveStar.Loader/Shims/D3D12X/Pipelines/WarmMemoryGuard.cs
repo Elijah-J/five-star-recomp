@@ -22,6 +22,12 @@ internal static unsafe class WarmMemoryGuard
     /// </summary>
     public const ulong HeavyBytes = 32UL << 30;
 
+    /// <summary>Physical memory left to the game while pipelines build during a run.</summary>
+    public const ulong PhysicalReserveBytes = 4UL << 30;
+
+    /// <summary>What one compile of a translated program may grow to in the driver, for the count that may run at once.</summary>
+    public const ulong BuildBytes = 2UL << 30;
+
     private const int PauseMilliseconds = 2000;
 
     /// <summary>Waits until <see cref="ReserveBytes"/> of commit is available or <paramref name="stopping"/> says so.</summary>
@@ -39,16 +45,41 @@ internal static unsafe class WarmMemoryGuard
         return AvailableCommit() >= HeavyBytes + ReserveBytes;
     }
 
+    /// <summary>
+    /// Whether another pipeline may start while the game runs, <paramref name="running"/> already compiling: the
+    /// reserves of commit and physical memory plus <see cref="BuildBytes"/> of each for every compile, the running
+    /// ones included, so the compiles do not page the game out or exhaust the commit limit.
+    /// </summary>
+    public static bool RoomForBuild(int running)
+    {
+        var status = Status();
+        ulong builds = (ulong)(running + 1) * BuildBytes;
+
+        return status.AvailablePageFile >= ReserveBytes + builds && status.AvailablePhysical >= PhysicalReserveBytes + builds;
+    }
+
+    /// <summary>Whether a heavy pipeline may start while the game runs.</summary>
+    public static bool RoomForHeavyBuild(int running)
+    {
+        return RoomForBuild(running) && RoomForHeavy();
+    }
+
     private static ulong AvailableCommit()
+    {
+        return Status().AvailablePageFile;
+    }
+
+    /// <summary>The machine's memory; all available when it cannot be read.</summary>
+    private static MemoryStatusEx Status()
     {
         MemoryStatusEx status = default;
         status.Length = (uint)sizeof(MemoryStatusEx);
 
         if (KernelBase.GlobalMemoryStatusEx(&status) == 0)
         {
-            return ulong.MaxValue;
+            return new MemoryStatusEx { AvailablePageFile = ulong.MaxValue, AvailablePhysical = ulong.MaxValue };
         }
 
-        return status.AvailablePageFile;
+        return status;
     }
 }

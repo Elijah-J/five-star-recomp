@@ -31,4 +31,16 @@ public sealed class InputScriptTests
         Assert.Single(script.Presses);
         Assert.Equal(1, script.StartedBefore(20));
     }
+
+    [Fact]
+    public void Cursor_lines_move_the_cursor_at_their_speed_while_held()
+    {
+        var script = InputScript.Parse(["10 cursor 0 500 hold 2 repeat 2 every 10", "11 Space"]);
+
+        Assert.Single(script.Presses);
+        Assert.Equal(new CursorPosition(0, 0), script.CursorOffset(9));
+        Assert.Equal(new CursorPosition(0, 250), script.CursorOffset(10.5));
+        Assert.Equal(new CursorPosition(0, 1000), script.CursorOffset(15));
+        Assert.Equal(new CursorPosition(0, 2000), script.CursorOffset(30));
+    }
 }

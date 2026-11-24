@@ -554,6 +554,35 @@ is bound before or after), and `--d3d12-trace-queues` logs the first 4000 submis
 flags), queue Signal and Wait and CPU fence signals, numbering queues and fences as they appear. Without
 `--shader-dir` the boot reaches the first frames in about 15 s, which makes a run per bisection step cheap.
 
+### Queue progress
+
+Always on (`QueueProgress`): each queue keeps its last 64 calls, ExecuteCommandLists with the draws, dispatches and
+indirect executions its lists recorded and the last pipeline set (named by its translated programs), and Signal and
+Wait (queue slot 17, a handler for this) on game fences. A watch thread reads every queue's shim fence
+([Resubmitted lists](#boot)) four times a second. A queue whose submitted work has not advanced for 1.5 s is logged
+once per stall as `[gpu] queue #n: executions done up to v of w, no progress for t s`, with its calls since the last
+finished execution (`NOT DONE` marks the ones the GPU has not finished; a Wait shows the fence's value then) and the
+memory line of the thread sampler. A removed device sets every fence to UINT64_MAX; the watch then logs every queue
+as last seen, without the debug layer as well.
+
+`--d3d12-breadcrumbs` (`GpuBreadcrumbs`) adds where each list of an unfinished execution stopped: before every draw,
+dispatch, ExecuteIndirect, CopyBufferRegion, ResourceBarrier and Barrier, and at Close, a list writes its recording number and the operation's index to its own
+dword of a readback buffer with WriteBufferImmediate(MARKER_OUT), which waits for the work before it, and keeps the
+pipeline of each operation. The report then lists them in submission order with `not started`, `finished` or`
+`STOPPED at operation n` and that operation's pipeline or command. Work between markers that has no handler of its own
+(clears, texture copies, queries, X-only slots) shows as the operation after it; a list with no marked operation that
+is `not started` while the one before it `finished` stopped inside such work. Each marker drains the GPU, so it is a diagnosis mode, not for play.
+
+**The story-load hang.** Five unattended boots to the story load ended the same way about 400 s after the load started
+(boot 1 instead reached the commit limit first, see [d3d12x-pipelines.md](d3d12x-pipelines.md#stand-ins)): the first
+executions on the four compute queues (meshlet culling, strand and imposter work), which stay idle until then, and the
+direct queue's next execution (depth pyramid, then 32 lists of post-processing dispatches) never finish, and 2 to 5 s
+later the device is removed with DXGI_ERROR_DEVICE_HUNG. Memory was not short then (10.7 GB physical free, 15 GB of
+commit). With breadcrumbs, compute queue #2's first list stopped at operation 12 of 20, under the pipeline
+`meshlet_culling~CS_AllocBatchCSCullOutput` (no loop in its translation; the list's one ExecuteIndirect is the likely
+operation, so its arguments, built for the X-only argument type 0x69 that becomes DISPATCH, are the open question);
+every other list had not started. The buffer-stride fix in descriptor records did not change it.
+
 Two readback aids (`DrawTrace`, `FrameCapture`; debug only, they allocate and wait for the GPU):
 
 - `--d3d12-trace-draws` logs the first 24 draws, and 32 after each captured present: pipeline (programs, input

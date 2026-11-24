@@ -1,0 +1,22 @@
+# Copyright (c) 2026 Five Star Recomp contributors.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# fivestar-loader --input-script: answers the first-run screens of an empty save folder unattended, up to the story
+# load (docs/running.md#first-run-in-the-game). Times are seconds from loader start. With a warm pipeline cache the
+# black "press a button" screen showed 45 to 220 s in. Presses are held 0.3 s: while pipelines compile the game runs
+# at 10 to 20 frames a second and missed 0.2 s presses, and from about 0.5 s a held arrow repeats.
+#
+# A tap passes the black screen, skips the logos and confirms each option screen (minimap, text size, the Off
+# option, brightness, controls notice); on the legal screen it does nothing while the Legal item has the focus.
+40 Space hold 0.3 repeat 91 every 4
+# Legal and photosensitivity: focus down twice (the photosensitivity item keeps the focus about 15 s), then Next.
+410 Down hold 0.3
+430 Down hold 0.3
+450 Space hold 0.3
+# Privacy policy and terms of service: each item is a check box that A toggles (its text need not be scrolled), so
+# one press each; then Confirm starts the story load.
+470 Space hold 0.3
+476 Down hold 0.3
+482 Space hold 0.3
+488 Down hold 0.3
+494 Space hold 0.3

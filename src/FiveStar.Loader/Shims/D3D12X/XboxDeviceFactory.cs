@@ -174,6 +174,8 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         }
 
         Debugging.AttachDevice(inner);
+        QueueProgress.Start(_log);
+        GpuBreadcrumbs.Attach(inner, _log);
         *device = Objects.WrapDevice(inner);
         Bindings.Attach(inner);
         CreatePipelines(inner);
@@ -232,9 +234,12 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         var rectangles = new RectanglePipelines(device2, root, Path.Combine(translated, RectangleGeometryShader.Folder), library, warnings);
         Rectangles.Attach(rectangles);
 
-        var builds = new PipelineBuildQueue(Environment.ProcessorCount / PipelineSlots.CoresPerBuildThread);
+        // Builds start only while the machine has the memory; heavy ones on their own thread (docs/d3d12x-pipelines.md#stand-ins).
+        var builds = new PipelineBuildQueue(Environment.ProcessorCount / PipelineSlots.CoresPerBuildThread, WarmMemoryGuard.RoomForBuild);
+        var heavyBuilds = new PipelineBuildQueue(1, WarmMemoryGuard.RoomForHeavyBuild);
         builds.Start();
-        var standIns = new StandInPipelines(PipelineSlots.CreationBudget, builds, warnings);
+        heavyBuilds.Start();
+        var standIns = new StandInPipelines(PipelineSlots.CreationBudget, builds, heavyBuilds, warnings);
 
         var cache = OpenCache(device2);
         Pipelines = new PipelineSlots(new PipelineFactory(device2, root, library, new ProgramSignatures(programs), warnings, rectangles, standIns, cache), warnings);
@@ -444,6 +449,9 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         delegate* unmanaged<XboxFenceObject*, uint> releaseFence = &FenceValueMirror.ReleaseFence;
         delegate* unmanaged<XboxObject*, nint, ulong, int> signal = &FenceValueMirror.QueueSignal;
         Objects.SetHandler(XboxInterfaceKind.CommandQueue, FenceValueMirror.QueueSignalSlot, (nint)signal);
+
+        delegate* unmanaged<XboxObject*, nint, ulong, int> wait = &FenceValueMirror.QueueWait;
+        Objects.SetHandler(XboxInterfaceKind.CommandQueue, FenceValueMirror.QueueWaitSlot, (nint)wait);
         Objects.SetHandler(XboxInterfaceKind.Fence, FenceValueMirror.CompletedValueAddressSlot, (nint)fenceValue);
         Objects.SetHandler(XboxInterfaceKind.Fence, ComObject.ReleaseSlot, (nint)releaseFence);
 

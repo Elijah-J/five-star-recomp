@@ -66,10 +66,10 @@ public sealed unsafe class D3D12XStandInPipelineTests
 
     private static StandInPipelines StandIns(TimeSpan budget)
     {
-        var builds = new PipelineBuildQueue(1);
+        var builds = new PipelineBuildQueue(1, PipelineBuildQueue.AnyTime);
         builds.Start();
 
-        return new StandInPipelines(budget, builds, new OnceLog(new LoaderLog(new StringWriter(), null, false)));
+        return new StandInPipelines(budget, builds, builds, new OnceLog(new LoaderLog(new StringWriter(), null, false)));
     }
 
     private static PipelineResult Slow(ManualResetEventSlim gate, nint pipeline)

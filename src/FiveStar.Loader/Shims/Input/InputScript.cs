@@ -10,7 +10,8 @@ namespace FiveStar.Loader.Shims.Input;
 /// <c>&lt;seconds&gt; &lt;key&gt; [hold &lt;s&gt;] [repeat &lt;n&gt; every &lt;s&gt;]</c>, '#' starting a comment. Keys are
 /// the names of the input config; a scripted key reaches the game like a held desktop key, so the keyboard and the
 /// keyboard-and-mouse gamepad both see it (Space is A, Escape is Menu). <c>capture</c> in place of a key reads back
-/// the next present at that time (with <c>--capture-dir</c>).
+/// the next present at that time (with <c>--capture-dir</c>); <c>cursor &lt;dx&gt; &lt;dy&gt;</c> moves the cursor that
+/// many pixels a second for the hold time (the gamepad's right stick, full at 1000).
 /// </summary>
 internal sealed class InputScript
 {
@@ -20,19 +21,29 @@ internal sealed class InputScript
     private const string RepeatWord = "repeat";
     private const string EveryWord = "every";
     private const string CaptureWord = "capture";
+    private const string CursorWord = "cursor";
 
     /// <summary>A line starts with the time and the key; the options follow as word and value pairs.</summary>
     private const int FixedFields = 2;
     private const int OptionFields = 2;
 
-    private InputScript(IReadOnlyList<ScriptedPress> presses, IReadOnlyList<double> captures)
+    /// <summary>A cursor line has the two speeds after the word.</summary>
+    private const int SpeedXField = 2;
+    private const int SpeedYField = 3;
+    private const int CursorFields = 4;
+
+    private InputScript(IReadOnlyList<ScriptedPress> presses, IReadOnlyList<ScriptedMotion> motions, IReadOnlyList<double> captures)
     {
         Presses = presses;
+        Motions = motions;
         Captures = captures;
     }
 
     /// <summary>Every press, in start order.</summary>
     public IReadOnlyList<ScriptedPress> Presses { get; }
+
+    /// <summary>Every cursor motion.</summary>
+    public IReadOnlyList<ScriptedMotion> Motions { get; }
 
     /// <summary>The times of the <c>capture</c> lines, in order.</summary>
     public IReadOnlyList<double> Captures { get; }
@@ -45,6 +56,7 @@ internal sealed class InputScript
     public static InputScript Parse(IEnumerable<string> lines)
     {
         var presses = new List<ScriptedPress>();
+        var motions = new List<ScriptedMotion>();
         var captures = new List<double>();
 
         foreach (string raw in lines)
@@ -65,6 +77,10 @@ internal sealed class InputScript
             {
                 captures.Add(Number(fields[0]));
             }
+            else if (fields[1].Equals(CursorWord, StringComparison.OrdinalIgnoreCase))
+            {
+                motions.AddRange(ParseMotion(fields));
+            }
             else
             {
                 presses.AddRange(ParseLine(fields));
@@ -73,7 +89,24 @@ internal sealed class InputScript
 
         captures.Sort();
 
-        return new InputScript([.. presses.OrderBy(p => p.Start)], captures);
+        return new InputScript([.. presses.OrderBy(p => p.Start)], motions, captures);
+    }
+
+    /// <summary>How far the scripted cursor motions moved the cursor by <paramref name="seconds"/>, in pixels.</summary>
+    [HotPath]
+    public CursorPosition CursorOffset(double seconds)
+    {
+        double x = 0;
+        double y = 0;
+
+        for (int i = 0; i < Motions.Count; i++)
+        {
+            double elapsed = Motions[i].Elapsed(seconds);
+            x += elapsed * Motions[i].PerSecondX;
+            y += elapsed * Motions[i].PerSecondY;
+        }
+
+        return new CursorPosition((long)x, (long)y);
     }
 
     /// <summary>Marks the scripted keys held at <paramref name="seconds"/> as down.</summary>
@@ -105,13 +138,35 @@ internal sealed class InputScript
 
     private static IEnumerable<ScriptedPress> ParseLine(string[] fields)
     {
-        double start = Number(fields[0]);
         int key = KeyNames.Parse(fields[1]) ?? throw new FormatException("input script: 'none' is not a key");
+        var (start, hold, repeat, every) = Timing(fields, FixedFields);
+
+        return Enumerable.Range(0, repeat).Select(n => new ScriptedPress(start + (n * every), hold, key, fields[1]));
+    }
+
+    private static IEnumerable<ScriptedMotion> ParseMotion(string[] fields)
+    {
+        if (fields.Length < CursorFields)
+        {
+            throw new FormatException("input script: cursor needs two speeds, x and y in pixels a second");
+        }
+
+        double perSecondX = Number(fields[SpeedXField]);
+        double perSecondY = Number(fields[SpeedYField]);
+        var (start, hold, repeat, every) = Timing(fields, CursorFields);
+
+        return Enumerable.Range(0, repeat).Select(n => new ScriptedMotion(start + (n * every), hold, perSecondX, perSecondY));
+    }
+
+    /// <summary>The line's time and its hold, repeat and every options, which start at field <paramref name="first"/>.</summary>
+    private static (double Start, double Hold, int Repeat, double Every) Timing(string[] fields, int first)
+    {
+        double start = Number(fields[0]);
         double hold = DefaultHold;
         int repeat = 1;
         double every = 0;
 
-        for (int i = FixedFields; i + 1 < fields.Length; i += OptionFields)
+        for (int i = first; i + 1 < fields.Length; i += OptionFields)
         {
             switch (fields[i].ToLowerInvariant())
             {
@@ -129,7 +184,7 @@ internal sealed class InputScript
             }
         }
 
-        return Enumerable.Range(0, repeat).Select(n => new ScriptedPress(start + (n * every), hold, key, fields[1]));
+        return (start, hold, repeat, every);
     }
 
     private static double Number(string text)

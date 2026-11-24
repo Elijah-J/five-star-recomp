@@ -72,7 +72,10 @@ internal sealed class ScriptedDesktopInput : IDesktopSource
     [HotPath]
     public CursorPosition ReadCursor()
     {
-        return _inner.ReadCursor();
+        var cursor = _inner.ReadCursor();
+        var offset = _script.CursorOffset(_clock.Elapsed.TotalSeconds);
+
+        return new CursorPosition(cursor.X + offset.X, cursor.Y + offset.Y);
     }
 
     [HotPath]

@@ -67,7 +67,9 @@ internal static unsafe class WarmPipelinesCommand
         var warnings = new OnceLog(log);
         var index = ProgramIndex.Load(folders.Programs!);
         var library = TranslatedProgramLibrary.Open(index, folders.Translated!, device2, warnings, log);
-        var standIns = new StandInPipelines(PipelineSlots.CreationBudget, new PipelineBuildQueue(1), warnings);
+
+        var builds = new PipelineBuildQueue(1, PipelineBuildQueue.AnyTime);
+        var standIns = new StandInPipelines(PipelineSlots.CreationBudget, builds, builds, warnings);
         var factory = new PipelineFactory(device2, root, library, new ProgramSignatures(folders.Programs!), warnings, null, standIns, cache);
         var warmup = new PipelineWarmup(factory, cache, folders.Cache!, log);
 

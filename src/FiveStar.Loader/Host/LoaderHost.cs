@@ -314,6 +314,7 @@ internal sealed class LoaderHost
             new ThreadSampler(_runtime.Images, _runtime.Trace, SampledCounters, _options.ProfileThreads, _log).Start(interval.Value);
         }
 
+        GpuBreadcrumbs.Enable(_options.D3D12Breadcrumbs);
         _runtime.D3D12X.WaitForProgramIndex();
 
         return new ExecutableRunner(_runtime.Faults, _log).Run(main, _options.RunTimeout);
@@ -325,7 +326,7 @@ internal sealed class LoaderHost
         string pipelines = _runtime.D3D12X.Pipelines?.Summary ?? "pipeline slots off";
         string memory = ProcessMemory.Summary(_runtime.XMem.LiveBytes, _runtime.XMemPhysical.LivePages * (long)XMemPhysicalMemory.PageSize);
 
-        return $"DirectStorage {_runtime.Storage.Summary()}; {pipelines}; {_runtime.D3D12X.Presenter.Presents} presents; {_runtime.Input.Summary}; {memory}";
+        return $"DirectStorage {_runtime.Storage.Summary()}; {pipelines}; {_runtime.D3D12X.Presenter.Presents} presents; {_runtime.Input.Summary}; {memory}; {MemorySnapshot.Summary()}";
     }
 
     /// <summary>

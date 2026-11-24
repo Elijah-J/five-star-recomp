@@ -23,6 +23,7 @@ internal sealed unsafe class StandInPipelines
     private readonly HashSet<nint> _live = [];
     private readonly TimeSpan _budget;
     private readonly PipelineBuildQueue _builds;
+    private readonly PipelineBuildQueue _heavyBuilds;
     private readonly OnceLog _warnings;
     private readonly nint* _vtable;
     private readonly GCHandle _self;
@@ -33,35 +34,43 @@ internal sealed unsafe class StandInPipelines
 
     /// <param name="budget">How long a creation may take before the game gets a stand-in.</param>
     /// <param name="builds">The threads that call the driver (started by the caller).</param>
+    /// <param name="heavyBuilds">The same queue, or the thread for pipelines of <see cref="PipelineFactory.HeavyShaderBytes"/> or more, which wait for more memory without holding up the others.</param>
     /// <param name="warnings">Where stand-ins and late pipelines are reported, once per name.</param>
-    public StandInPipelines(TimeSpan budget, PipelineBuildQueue builds, OnceLog warnings)
+    public StandInPipelines(TimeSpan budget, PipelineBuildQueue builds, PipelineBuildQueue heavyBuilds, OnceLog warnings)
     {
         _budget = budget;
         _builds = builds;
+        _heavyBuilds = heavyBuilds;
         _warnings = warnings;
         _vtable = StandInPipelineMethods.CreateVtable();
         _self = GCHandle.Alloc(this, GCHandleType.Weak);
     }
 
-    /// <summary>Stand-ins handed out, how many have their pipeline, the builds still queued, the work skipped meanwhile and the work recorded.</summary>
-    public string Summary => $"{Volatile.Read(ref _created)} stand-in pipelines ({Volatile.Read(ref _ready)} built since, {_builds.Backlog} builds queued), {Interlocked.Read(ref _skipped)} draws and dispatches skipped, {Interlocked.Read(ref _recorded)} recorded";
+    /// <summary>Stand-ins handed out, how many have their pipeline, the work skipped meanwhile and the work recorded.</summary>
+    public string Summary => $"{Volatile.Read(ref _created)} stand-in pipelines ({Volatile.Read(ref _ready)} built since, {Count(queue => queue.Backlog)} queued, {Count(queue => queue.WaitingForMemory)} build threads waiting for memory), {Interlocked.Read(ref _skipped)} draws and dispatches skipped, {Interlocked.Read(ref _recorded)} recorded";
 
     /// <summary>
     /// Runs <paramref name="create"/> and writes its pipeline to <paramref name="result"/>; when it takes longer than
     /// the budget, or when earlier creations still wait for a thread, writes a stand-in instead and returns S_OK.
-    /// <paramref name="built"/> is told the desktop pipeline when there is one.
+    /// <paramref name="built"/> is told the desktop pipeline when there is one; <paramref name="heavy"/> builds on the heavy thread.
     /// </summary>
-    public int Create(Func<PipelineResult> create, nint* result, string what, Action<nint>? built)
+    public int Create(Func<PipelineResult> create, nint* result, string what, Action<nint>? built, bool heavy = false)
     {
         var budget = _budget;
+        var queue = _builds;
 
-        if (_builds.Backlog > 0)
+        if (heavy)
+        {
+            queue = _heavyBuilds;
+        }
+
+        if (queue.Backlog > 0)
         {
             budget = TimeSpan.Zero;
         }
 
         long started = Stopwatch.GetTimestamp();
-        var build = _builds.Enqueue(create);
+        var build = queue.Enqueue(create);
 
         if (build.Wait(budget))
         {
@@ -142,6 +151,17 @@ internal sealed unsafe class StandInPipelines
         Interlocked.Increment(ref _created);
 
         return NewStandIn();
+    }
+
+    /// <summary>A count over the build queues (one when the heavy pipelines share the others' threads).</summary>
+    private int Count(Func<PipelineBuildQueue, int> count)
+    {
+        if (ReferenceEquals(_builds, _heavyBuilds))
+        {
+            return count(_builds);
+        }
+
+        return count(_builds) + count(_heavyBuilds);
     }
 
     private nint NewStandIn()
