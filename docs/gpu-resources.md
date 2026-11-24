@@ -15,6 +15,9 @@ game's pages ([d3d12x-shim.md](d3d12x-shim.md)). Code: `src/FiveStar.Loader/Shim
 | The streaming range | GPU-only alias range | the CPU range at the same offset |
 | Memory the game committed (XMemVirtualAlloc with MEM_COMMIT) | the same address | the same address |
 
+Translated programs reach buffer memory at these addresses (root descriptors, V#s and pointers the game builds)
+through the address map of the buffers the shim placed there ([d3d12x-shim.md](d3d12x-shim.md#binding)).
+
 The game reserves its 6 GiB streaming range twice: a CPU range (xmemFlags 0x21, PAGE_READWRITE, 0x141E6C1A6) and a
 GPU-only range of the same size (0x3, PAGE_NOACCESS | PAGE_GRAPHICS_NOACCESS, 0x141E6C1CB). Pages are mapped only
 into the CPU range (scatter mapping at 0x140F2CC3E); the address a texture's view carries is CPU address - CPU base

@@ -31,7 +31,8 @@ flowchart TD
 | EXEC mask | a per-lane `active` flag |
 | Branches | structured `if`/`else` and loops; a wave-uniform block dispatch loop (`switch` on the program counter) where the graph does not allow that, or with `--dispatch` |
 | Lane masks | per-lane booleans; wave ballots where a mask is read as an integer |
-| Resource descriptors | bindless heap indices written by the runtime into the descriptors |
+| Resource descriptors | bindless heap indices written by the runtime where the descriptor holds its base address; the other fields (stride, format, swizzle) as the hardware lays them out |
+| GPU addresses (root descriptors, pointers, descriptors a program builds) | looked up per 64 KiB page in an address map the runtime keeps of the game's GPU memory |
 | Hardware input registers | decoded from the program header (stage, wave size, input layout) |
 | Semantics | taken from the input and output signatures that survive in each record |
 

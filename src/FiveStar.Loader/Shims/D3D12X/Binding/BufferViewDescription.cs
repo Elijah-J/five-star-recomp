@@ -59,15 +59,15 @@ internal struct BufferViewDescription
     [FieldOffset(32)]
     public int UavFlags;
 
-    /// <summary>A raw SRV of <paramref name="dwords"/> dwords from the start of the buffer.</summary>
-    public static BufferViewDescription RawShaderResource(uint dwords)
+    /// <summary>A raw SRV of <paramref name="dwords"/> dwords from dword <paramref name="first"/> of the buffer.</summary>
+    public static BufferViewDescription RawShaderResource(uint dwords, ulong first = 0)
     {
-        return new BufferViewDescription { Format = RawFormat, Dimension = BufferDimension, SrvMapping = DefaultMapping, SrvElements = dwords, SrvFlags = RawFlag };
+        return new BufferViewDescription { Format = RawFormat, Dimension = BufferDimension, SrvMapping = DefaultMapping, SrvFirstElement = first, SrvElements = dwords, SrvFlags = RawFlag };
     }
 
-    /// <summary>A raw UAV of <paramref name="dwords"/> dwords from the start of the buffer.</summary>
-    public static BufferViewDescription RawUnorderedAccess(uint dwords)
+    /// <summary>A raw UAV of <paramref name="dwords"/> dwords from dword <paramref name="first"/> of the buffer.</summary>
+    public static BufferViewDescription RawUnorderedAccess(uint dwords, ulong first = 0)
     {
-        return new BufferViewDescription { Format = RawFormat, Dimension = BufferDimension, UavElements = dwords, UavFlags = RawFlag };
+        return new BufferViewDescription { Format = RawFormat, Dimension = BufferDimension, UavFirstElement = first, UavElements = dwords, UavFlags = RawFlag };
     }
 }

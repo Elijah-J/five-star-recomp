@@ -70,7 +70,7 @@ public static class PixelMemoryCases
         return new PixelCase("s_buffer_load", Program, 8, _ => expected) { Bindings = Raw(1, BufferWords, 1, 0, 0x100, 0) };
     }
 
-    // offen / idxen (stride = V# dword1) / soffset / instruction offset.
+    // offen / idxen (stride = V# dword1 bits 16-29) / soffset / instruction offset.
     private static PixelCase BufferLoad()
     {
         const string Program = """
@@ -89,7 +89,7 @@ public static class PixelMemoryCases
             5,
             pixel => [BufferWords[pixel.X], BufferWords[pixel.X + 4], BufferWords[pixel.X + 5], BufferWords[2 * pixel.X], BufferWords[(2 * pixel.X) + 3]])
         {
-            Bindings = Raw(1, BufferWords, 1, 8, 0x100, 0, 8),
+            Bindings = Raw(1, BufferWords, 1, 8 << 16, 0x100, 0, 8),
         };
     }
 
@@ -122,38 +122,45 @@ public static class PixelMemoryCases
         };
     }
 
-    // Format code = layout * 8 + numeric type (written into V# dword3); missing components read (0, 0, 0, 1).
+    // V# dword3 as the hardware holds it: the gfx10 unified format (RDNA 2 ISA numbering) and the destination swizzle;
+    // missing components read (0, 0, 0, 1).
     private static PixelCase[] Formats()
     {
         var h = (double value) => FloatBits.Half(value);
         uint[] tenBits = [0xC0300401, 0x3FF003FF, 0x40100403, 0xFFFFFFFF];
         uint[] halves = [FloatBits.Pack(h(1.5), h(-2.0)), FloatBits.Pack(h(65504.0), 0x0001), FloatBits.Pack(0x7C00, h(0.1)), FloatBits.Pack(h(-0.0), h(3.0))];
+        uint[] smallFloats = [0x801C03C0, 0xF7C00FC0, 0x12345678, 0];
+        uint[] bytes = [0xFF804000, 0x01020304, 0x7F7F7F7F, 0x00FFFF00];
 
         return
         [
-            FormatCase("8_8_8_8_unorm", 10, BufferFormats.Unorm, 4, [0xFF804000, 0x01020304, 0x7F7F7F7F, 0x00FFFF00], 1),
-            FormatCase("16_16_16_16_float", 12, BufferFormats.FloatingPoint, 8, [.. halves, .. halves], 0),
-            FormatCase("32_32_uint", 11, BufferFormats.UnsignedInt, 8, [0xDEADBEEF, 0x12345678, 1, 2, 3, 4, 5, 6], 0),
-            FormatCase("8_8_snorm", 3, BufferFormats.Snorm, 4, [0x7F80, 0x8100, 0x0040, 0xFFC0], 1),
-            FormatCase("16_16_sint", 5, BufferFormats.SignedInt, 4, [0x8000FFFF, 0x7FFF0001, 0x00010000, 0xFFFE8001], 0),
-            FormatCase("2_10_10_10_uint", 9, BufferFormats.UnsignedInt, 4, tenBits, 0),
-            FormatCase("10_10_10_2_uint", 8, BufferFormats.UnsignedInt, 4, tenBits, 0),
+            FormatCase("8_8_8_8_unorm", 56, 10, BufferFormats.Unorm, 4, bytes, 1),
+            FormatCase("16_16_16_16_float", 71, 12, BufferFormats.FloatingPoint, 8, [.. halves, .. halves], 0),
+            FormatCase("32_32_uint", 62, 11, BufferFormats.UnsignedInt, 8, [0xDEADBEEF, 0x12345678, 1, 2, 3, 4, 5, 6], 0),
+            FormatCase("8_8_snorm", 15, 3, BufferFormats.Snorm, 4, [0x7F80, 0x8100, 0x0040, 0xFFC0], 1),
+            FormatCase("16_16_sint", 28, 5, BufferFormats.SignedInt, 4, [0x8000FFFF, 0x7FFF0001, 0x00010000, 0xFFFE8001], 0),
+            FormatCase("2_10_10_10_uint", 54, 9, BufferFormats.UnsignedInt, 4, tenBits, 0),
+            FormatCase("10_10_10_2_uint", 48, 8, BufferFormats.UnsignedInt, 4, tenBits, 0),
+            FormatCase("10_11_11_float", 36, 6, BufferFormats.FloatingPoint, 4, smallFloats, 0),
+            FormatCase("11_11_10_float", 43, 7, BufferFormats.FloatingPoint, 4, smallFloats, 0),
+            FormatCase("8_8_8_8_unorm_bgra", 56, 10, BufferFormats.Unorm, 4, bytes, 1, BufferFormats.Bgra),
         ];
     }
 
-    private static PixelCase FormatCase(string suffix, int layout, int numeric, int stride, uint[] words, int ulps)
+    private static PixelCase FormatCase(string suffix, int unified, int layout, int numeric, int stride, uint[] words, int ulps, int[]? swizzle = null)
     {
         var perElement = stride / 4;
+        var select = swizzle ?? BufferFormats.Identity;
 
         Expected[] Expect(PixelContext pixel)
         {
             var element = words.Skip((pixel.X & 3) * perElement).Take(perElement).ToArray();
             var decoded = BufferFormats.Decode(element, layout, numeric);
 
-            return [.. decoded.Select(bits => Tolerant(bits, ulps))];
+            return [.. select.Select(component => Tolerant(decoded[component], ulps))];
         }
 
-        var user = new uint[] { 1, (uint)stride, 0x1000, (uint)((layout * 8) + numeric) };
+        var user = new uint[] { 1, (uint)stride << 16, 0x1000, BufferFormats.Word3(unified, select) };
 
         return new PixelCase($"buffer_load_format[{suffix}]", FormatProgram, 4, Expect) { Bindings = Raw(1, words, user) };
     }

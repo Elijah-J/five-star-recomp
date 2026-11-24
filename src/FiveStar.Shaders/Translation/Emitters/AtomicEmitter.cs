@@ -7,9 +7,9 @@ using FiveStar.Shaders.Translation.Core;
 namespace FiveStar.Shaders.Translation.Emitters;
 
 /// <summary>
-/// buffer_atomic_*, global_atomic_* and image_atomic_*: an HLSL Interlocked* on the RW view (buffer: heap index in V#
-/// dword0; global: the writable GPU-memory window; image: a typed RW texture). With glc the pre-op value is returned
-/// in the data register.
+/// buffer_atomic_*, global_atomic_* and image_atomic_*: an HLSL Interlocked* on the RW view (buffer: the V#'s view,
+/// <see cref="BufferAddress.View"/>; global: the pointer's, prelude gpu_rw; image: a typed RW texture). With glc the
+/// pre-op value is returned in the data register.
 /// </summary>
 internal sealed partial class AtomicEmitter
 {
@@ -107,7 +107,7 @@ internal sealed partial class AtomicEmitter
         _operands.Write(atomic.Data, value);
     }
 
-    /// <summary>global_atomic_* [vdst (glc),] vaddr, vdata, saddr|off on the writable GPU-memory window.</summary>
+    /// <summary>global_atomic_* [vdst (glc),] vaddr, vdata, saddr|off on the pointer's writable view.</summary>
     private void Global(AtomicOperation atomic, List<string> arguments, InstructionModifiers modifiers)
     {
         // Without glc the operands are vaddr, vdata, saddr; with glc vdst comes first.
@@ -116,21 +116,26 @@ internal sealed partial class AtomicEmitter
         var address = OperandParser.Parse(arguments[first]);
         var data = OperandParser.Parse(arguments[first + 1]);
         var scalarBase = arguments[first + ScalarBaseAfterAddress];
+
         string low;
+        string high;
 
         if (scalarBase != "off")
         {
-            low = $"{_operands.Read(OperandParser.Parse(scalarBase), 0)} + {_operands.Read(address)}";
+            var pointer = OperandParser.Parse(scalarBase);
+            low = $"{_operands.Read(pointer, 0)} + {_operands.Read(address)}";
+            high = _operands.Read(pointer, 1);
         }
         else
         {
             low = _operands.Read(address, 0);
+            high = _operands.Read(address, 1);
         }
 
-        var byteAddress = $"({low} + {Hlsl.HexUint(modifiers.Integer("offset", 0) & AddressMask)})";
+        var target = _operands.SnapPair($"gpu_rw({low} + {Hlsl.HexUint(modifiers.Integer("offset", 0) & AddressMask)}, {high})");
         var result = atomic.Result;
-        _state.Emit($"  uint {result} = 0; if (active) {{ RWByteAddressBuffer _b{result} = ResourceDescriptorHeap[GPU_MEM_HEAP + 1];");
-        _state.Emit($"    _b{result}.{Operation(atomic, data, byteAddress)}; }}");
+        _state.Emit($"  uint {result} = 0; if (active) {{ RWByteAddressBuffer _b{result} = ResourceDescriptorHeap[{target}.x];");
+        _state.Emit($"    _b{result}.{Operation(atomic, data, $"{target}.y")}; }}");
 
         if (returns)
         {
@@ -158,10 +163,11 @@ internal sealed partial class AtomicEmitter
         var vaddr = OperandParser.Parse(arguments[Address]);
         var soffset = OperandParser.Parse(arguments[SOffset]);
         var byteAddress = BufferAddress.Build(_operands, vaddr, resource, soffset, modifiers);
+        var view = BufferAddress.View(_operands, resource, true);
         var result = atomic.Result;
 
-        _state.Emit($"  uint {result} = 0; if (active) {{ RWByteAddressBuffer _b{result} = ResourceDescriptorHeap[{_operands.Read(resource, 0)}];");
-        _state.Emit($"    _b{result}.{Operation(atomic, atomic.Data, byteAddress)}; }}");
+        _state.Emit($"  uint {result} = 0; if (active) {{ RWByteAddressBuffer _b{result} = ResourceDescriptorHeap[{view}.x];");
+        _state.Emit($"    _b{result}.{Operation(atomic, atomic.Data, $"({view}.y + {byteAddress})")}; }}");
     }
 
     /// <summary>image_atomic_*: false when the result is already written (cmpswap).</summary>

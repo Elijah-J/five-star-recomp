@@ -211,8 +211,8 @@
           "note": "the GPU hangs in meshlet culling\u0027s indirect dispatch"
         },
         {
-          "name": "Root descriptors",
-          "note": "a third of the programs read them as heap indices"
+          "name": "Brightness symbol",
+          "note": "still black on the calibration screen"
         },
         {
           "name": "Memory",
