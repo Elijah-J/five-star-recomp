@@ -161,8 +161,8 @@ internal sealed class CommandLineParser
     {
         switch (option)
         {
-            case "--watch-transient":
-                return SetWatchTransient();
+            case "--watch-transient" or "--watch-hang":
+                return SetWatch(option);
             case "--screens":
                 return SetScreensFile();
             case "--audio-capture":
@@ -541,9 +541,17 @@ internal sealed class CommandLineParser
         return true;
     }
 
-    private bool SetWatchTransient()
+    /// <summary><c>--watch-transient</c> or <c>--watch-hang</c>.</summary>
+    private bool SetWatch(string option)
     {
-        _options.WatchTransient = true;
+        if (option == "--watch-hang")
+        {
+            _options.WatchHang = true;
+        }
+        else
+        {
+            _options.WatchTransient = true;
+        }
 
         return true;
     }

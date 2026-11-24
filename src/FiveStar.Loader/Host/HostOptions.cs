@@ -155,6 +155,9 @@ internal sealed record HostOptions
     /// <summary>Check the game's transient-memory pool for corrupted nodes (<c>--watch-transient</c>).</summary>
     public bool WatchTransient { get; set; }
 
+    /// <summary>Follow the game's hang watchdog, main state and loading-screen flags (<c>--watch-hang</c>).</summary>
+    public bool WatchHang { get; set; }
+
     /// <summary>Presents read back when --capture-presents is not given: early, after the first seconds, later.</summary>
     private static readonly long[] DefaultCapturePresents = [60, 300, 900, 1500];
 

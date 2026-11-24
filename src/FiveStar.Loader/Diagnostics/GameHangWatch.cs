@@ -1,0 +1,153 @@
+// Copyright (c) 2026 Five Star Recomp contributors.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+using System.Diagnostics;
+using FiveStar.Loader.Loading;
+using FiveStar.Loader.Native;
+
+namespace FiveStar.Loader.Diagnostics;
+
+/// <summary>
+/// <c>--watch-hang</c>: follows the game's hang watchdog and the state it ends the game from. The watchdog thread
+/// (0x142215a60) checks once a second that the main loop's heartbeat (a QueryPerformanceCounter value, written by
+/// 0x1422159f0) has moved; after 30 checks without a move it calls the handler at 0x1471b6348, if any, and writes to
+/// address 0. The watch logs the heartbeat's stalls, the main state machine's state, the loading-screen flags and the
+/// handler as they change, and every thread's stack while the heartbeat stands still. It reads game memory only.
+/// </summary>
+internal sealed unsafe class GameHangWatch
+{
+    /// <summary>Game globals (1.0.2.1).</summary>
+    private const ulong HeartbeatAddress = 0x1471B6338;
+    private const ulong WatchdogPausedAddress = 0x1471B6330;
+    private const ulong WatchdogHandlerAddress = 0x1471B6348;
+    private const ulong MainStatesAddress = 0x1471273A0;
+    private const ulong LoadingScreenAddress = 0x147453ED4;
+    private const ulong SessionPointerAddress = 0x14AAE3B70;
+    private const ulong LoadingRenderAddress = 0x14A210D60;
+    private const ulong LoadingRenderOtherAddress = 0x14A210D70;
+
+    /// <summary>The state machine's current and requested state, 16-bit each (0x1453ebea0).</summary>
+    private const int StateOffset = 0x10;
+    private const int NextStateOffset = 0x12;
+    private const int SessionReadyOffset = 0x1B3;
+
+    private const ulong LowestUserAddress = 0x10000;
+    private const int PollMilliseconds = 100;
+    private const int MaxFrames = 64;
+    private const string Prefix = "  [hang] ";
+
+    /// <summary>Heartbeat ages at which every thread's stack is logged; the watchdog fires at about 30 s.</summary>
+    private static readonly double[] DumpAfterSeconds = [5, 15, 25];
+
+    /// <summary>A stall shorter than this is not logged when the heartbeat moves again.</summary>
+    private const double StallSeconds = 2;
+
+    private readonly ThreadStacks _stacks;
+    private readonly Func<string> _counters;
+    private readonly LoaderLog _log;
+    private readonly Stopwatch _clock = Stopwatch.StartNew();
+
+    private GameHangWatch(ImageTable images, Func<string> counters, LoaderLog log)
+    {
+        _stacks = new ThreadStacks(images, MaxFrames);
+        _counters = counters;
+        _log = log;
+    }
+
+    /// <summary>Starts the watch thread. <paramref name="counters"/> gives the loader counters logged with stacks.</summary>
+    public static void Start(ImageTable images, Func<string> counters, LoaderLog log)
+    {
+        var watch = new GameHangWatch(images, counters, log);
+        var thread = new Thread(watch.Run) { IsBackground = true, Name = "fivestar hang watch" };
+        thread.Start();
+        log.Info($"{Prefix}watching the game's heartbeat, main state and loading-screen flags");
+    }
+
+    private void Run()
+    {
+        string last = string.Empty;
+        ulong beat = 0;
+        double beatAt = 0;
+        int dumps = 0;
+
+        while (true)
+        {
+            Thread.Sleep(PollMilliseconds);
+            double now = _clock.Elapsed.TotalSeconds;
+            string state = Describe();
+
+            if (state != last)
+            {
+                _log.Info($"{Prefix}{now:F1} s: {state}");
+                last = state;
+            }
+
+            ulong current = *(ulong*)HeartbeatAddress;
+
+            if (current != beat)
+            {
+                double stalled = now - beatAt;
+
+                if (beat != 0 && stalled >= StallSeconds)
+                {
+                    _log.Info($"{Prefix}{now:F1} s: heartbeat moved again after {stalled:F1} s");
+                }
+
+                beat = current;
+                beatAt = now;
+                dumps = 0;
+
+                continue;
+            }
+
+            if (beat == 0 || dumps == DumpAfterSeconds.Length || now - beatAt < DumpAfterSeconds[dumps])
+            {
+                continue;
+            }
+
+            dumps++;
+            _log.Info($"{Prefix}{now:F1} s: heartbeat still for {now - beatAt:F1} s; {BlockingWaits.Summary()}; {_counters()}");
+            _stacks.Log(_log, Prefix);
+        }
+    }
+
+    private static string Describe()
+    {
+        ushort state = *(ushort*)(MainStatesAddress + StateOffset);
+        ushort next = *(ushort*)(MainStatesAddress + NextStateOffset);
+        byte loading = *(byte*)LoadingScreenAddress;
+        byte paused = *(byte*)WatchdogPausedAddress;
+        ulong handler = *(ulong*)WatchdogHandlerAddress;
+
+        int loadingRender = 0;
+
+        if (*(ulong*)LoadingRenderAddress != 0 || *(ulong*)LoadingRenderOtherAddress != 0)
+        {
+            loadingRender = 1;
+        }
+
+        ulong session = *(ulong*)SessionPointerAddress;
+        string ready = "no session";
+
+        if (IsReadable(session + SessionReadyOffset))
+        {
+            ready = (*(byte*)(session + SessionReadyOffset)).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        return $"main state {(short)state} (next {(short)next}), loading screen {loading}, loading render callback {loadingRender}, session 0x{session:x} ready {ready}, watchdog paused {paused}, handler 0x{handler:x}";
+    }
+
+    private static bool IsReadable(ulong address)
+    {
+        MemoryBasicInformation info;
+
+        if (address < LowestUserAddress || Kernel32.VirtualQueryEx(Kernel32.GetCurrentProcess(), (nint)address, &info, (nuint)sizeof(MemoryBasicInformation)) == 0)
+        {
+            return false;
+        }
+
+        bool blocked = (info.Protect & (Win32Constants.PageNoAccess | Win32Constants.PageGuard)) != 0;
+
+        return info.State == Win32Constants.MemCommit && !blocked;
+    }
+}

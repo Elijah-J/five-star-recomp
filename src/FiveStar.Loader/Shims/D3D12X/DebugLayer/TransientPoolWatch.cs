@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using FiveStar.Loader.Diagnostics;
 
@@ -59,10 +60,24 @@ internal sealed unsafe class TransientPoolWatch
     private static ulong _poolEnd;
     private static long _rootCount;
 
+    /// <summary>Operations of the window listed per report, and user-data ranges listed per list.</summary>
+    private const int WindowOperations = 400;
+    private const int RangesShown = 32;
+
     private readonly LoaderLog _log;
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private ulong _suspect;
     private int _seen;
+
+    /// <summary>
+    /// Breadcrumb markers (with <c>--d3d12-breadcrumbs</c>): taken before each check, kept from the last clean one, and
+    /// taken after the check that first saw the corrupted node; the GPU work between them wrote it, or was writing it.
+    /// </summary>
+    private uint[] _markers = [];
+    private uint[] _clean = [];
+    private uint[] _first = [];
+    private double _cleanAt;
+    private double _firstAt;
 
     private TransientPoolWatch(LoaderLog log)
     {
@@ -72,6 +87,7 @@ internal sealed unsafe class TransientPoolWatch
     /// <summary>Starts the watch thread; it waits for the game to set the pool up.</summary>
     public static void Start(LoaderLog log)
     {
+        TransientPoolViews.Enable();
         var watch = new TransientPoolWatch(log);
         var thread = new Thread(watch.Run) { IsBackground = true, Name = "fivestar transient watch" };
         thread.Start();
@@ -100,7 +116,10 @@ internal sealed unsafe class TransientPoolWatch
                 announced = true;
                 _poolStart = pool;
                 Volatile.Write(ref _poolEnd, pool + ((ulong)count * size));
+                TransientPoolHits.Pool(pool, pool + ((ulong)count * size));
             }
+
+            TakeMarkers();
 
             if (Check(pool, table, count, size))
             {
@@ -149,8 +168,28 @@ internal sealed unsafe class TransientPoolWatch
         }
 
         _seen = 0;
+        (_clean, _markers) = (_markers, _clean);
+        _cleanAt = _clock.Elapsed.TotalMilliseconds;
 
         return false;
+    }
+
+    /// <summary>The breadcrumb markers before a check, when the breadcrumbs are on.</summary>
+    private void TakeMarkers()
+    {
+        if (!GpuBreadcrumbs.Active)
+        {
+            return;
+        }
+
+        if (_markers.Length == 0)
+        {
+            _markers = new uint[GpuBreadcrumbs.Slots];
+            _clean = new uint[GpuBreadcrumbs.Slots];
+            _first = new uint[GpuBreadcrumbs.Slots];
+        }
+
+        GpuBreadcrumbs.Snapshot(_markers);
     }
 
     /// <summary>A node address inside the pool whose pooled-object pointer is a user-space pointer.</summary>
@@ -176,6 +215,12 @@ internal sealed unsafe class TransientPoolWatch
 
         _seen++;
 
+        if (_seen == 1 && _first.Length != 0)
+        {
+            GpuBreadcrumbs.Snapshot(_first);
+            _firstAt = _clock.Elapsed.TotalMilliseconds;
+        }
+
         if (_seen < Confirmations)
         {
             return false;
@@ -197,6 +242,7 @@ internal sealed unsafe class TransientPoolWatch
         }
 
         Recent(text, block, size);
+        Writers(text, block, size);
         _log.Error(text.ToString());
         QueueProgress.Report("transient pool corrupted");
 
@@ -234,6 +280,32 @@ internal sealed unsafe class TransientPoolWatch
                 printed++;
             }
         }
+    }
+
+    /// <summary>
+    /// With breadcrumbs: the GPU operations between the last clean check and the first corrupt one, the user-data
+    /// ranges of those operations that reach the block, and the newest ranges of any operation that reach it.
+    /// </summary>
+    private void Writers(StringBuilder text, ulong block, uint size)
+    {
+        if (_first.Length == 0)
+        {
+            return;
+        }
+
+        var operations = new HashSet<(uint, int)>();
+        text.Append(CultureInfo.InvariantCulture, $"\n  GPU operations between the last clean check and the first corrupt one ({_firstAt - _cleanAt:F1} ms):");
+        int listed = GpuBreadcrumbs.DescribeWindow(text, _clean, _first, operations, WindowOperations, QueueProgress.PipelineName);
+
+        if (listed == 0)
+        {
+            text.Append("\n    none");
+        }
+
+        text.Append("\n  their user-data ranges that reach this block:");
+        TransientPoolHits.Describe(text, block, size, operations, RangesShown, QueueProgress.PipelineName);
+        text.Append("\n  newest user-data ranges of any operation that reach this block:");
+        TransientPoolHits.Describe(text, block, size, null, RangesShown, QueueProgress.PipelineName);
     }
 
     private static ulong Read(ulong address)

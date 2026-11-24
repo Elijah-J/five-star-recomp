@@ -12,6 +12,9 @@ internal sealed class StandInWork
     /// <summary>Requests the programs, urgently when told so; null when the stand-in has none to wait for.</summary>
     public Func<bool, Task>? Programs { get; init; }
 
+    /// <summary>A small stand-in's programs made on the calling thread (true when all are ready); null for others.</summary>
+    public Func<bool>? ProgramsNow { get; init; }
+
     /// <summary>The queued creation and its queue, once there is one.</summary>
     public (PipelineBuild Build, PipelineBuildQueue Queue)? Creation { get; set; }
 }

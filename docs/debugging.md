@@ -90,6 +90,46 @@ queue as last seen ([queue progress](d3d12x-shim.md#queue-progress)). Root CBV, 
 to 46) that fall in the pool are kept in a ring of 4,096 with the list's pipeline; the report lists the newest 24 in
 the corrupted block, which names the GPU work that used it. The game's code is read, never changed.
 
+With `--d3d12-breadcrumbs` as well, the watch copies every recording's marker before each check, keeps the copy from
+the last clean check, and copies them again after the check that first sees the corrupted node. The report lists the
+operations between the two (done, or still running at the second copy) with their pipelines, which bounds the GPU
+work that wrote the node to that window. Each marked draw, dispatch and ExecuteIndirect also has its user data
+searched for dword pairs whose 48-bit value reaches into the pool (a root descriptor's address, or a V#'s base with
+its stride and record count in the next dwords); a ring keeps 65,536 of them with the operation and its pipeline, and
+the report lists those of the window's operations that reach the corrupted block, then the newest of any operation.
+Buffer UAVs in descriptor tables count too: each UAV's game range is kept by the desktop index its record names,
+and a user dword that points at the window's view records is read as a table whose first 16 records are checked;
+their entries show the record's words as the program reads them (desktop index, stride, num_records, OOB_SELECT).
+
+## Hang watchdog
+
+The game ends itself when its main loop stops for 30 s. A watchdog thread (0x142215a60) checks once a second that
+the heartbeat at 0x1471B6338 moved; the main loop writes a QueryPerformanceCounter value there each frame
+(0x1422159f0, called from 0x140120790, 0x140c9e350 and the wait loop 0x141c82b20). After 30 checks without a move it
+calls the handler at 0x1471B6348, if one is set, then writes to address 0. A pause flag (0x1471B6330, set for event
+0x24 and cleared for 0x25 by 0x1422159c0) stops the count.
+
+During the story load the main state machine (object 0x1471273A0, state at +0x10, next state at +0x12) enters state
+3, whose entry 0x140812620 goes straight to state 4 when the loading screen flag 0x147453ED4 and byte +0x1B3 of the
+session object at [0x14AAE3B70] are set. Otherwise, the usual case for a fresh load, it stops the loading screen
+first: 0x1423cf6a0 sets the handler to 0x1423cf620, which reports `GPU Loc Sig` and writes 0x4D8BD421 to address 0,
+then waits without a limit (0x1423ceeb0) for the loading-screen render thread (0x1423cefe0) to signal the end of a
+frame (event 0x14A210CF8). That thread renders through 0x1443c38a0 and waits for each of the five `Subrender:%02u`
+workers (0x1443c4140). While it waits no heartbeat is written, so a loading-screen frame that takes more than 30 s
+ends the game with `GPU Loc Sig`.
+
+Two causes were seen. Workers that fault in the game's pool allocators (the transient-pool corruption) never return.
+And workers slept in the loader: a small compute stand-in waited up to 250 ms at its first use even while its
+programs were still being made on demand (55 to 73 s on average during the story load), and a loading-screen frame
+met hundreds of them, so all five workers slept for more than 30 s. A first use now waits only when the programs are
+ready. Waits a game thread can reach inside the loader register with `BlockingWaits`, so a stack that ends in JIT
+code still names the wait (`(waiting in ... for N ms)`), and the stall line sums the time spent in each.
+
+`fivestar-loader --watch-hang` reads these globals every 100 ms and logs the main state, the loading-screen flags,
+the session byte, the pause flag and the handler when they change, a heartbeat that moves again after 2 s or more, and
+the loader counters and every thread's stack (64 frames, with thread names) when the heartbeat has stood still for 5,
+15 and 25 s. The game's code is read, never changed.
+
 ## Memory map
 
 `fivestar-loader --memory-map <s>` walks the address space (VirtualQueryEx) every s seconds and logs `[memory]` lines:
@@ -114,6 +154,7 @@ pipelines ran on the build threads (stacks in nvgpucomp64.dll under CreatePipeli
 its arena 1, 2, 4, 8 GB. Everything else stayed flat: heaps 1.5 to 2 GB, `XMemVirtualAlloc` 4.5 GB, game images
 0.2 GB, managed heap 1 to 1.5 GB, write-combined 5.2 GB. [d3d12x-pipelines.md](d3d12x-pipelines.md#stand-ins) has
 the compile budget.
+
 ## Unknown
 
 - Whether ntdll keeps honouring `PEB.NtGlobalFlag` set at the create-process event in later Windows releases (checked
