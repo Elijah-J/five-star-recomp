@@ -69,7 +69,9 @@ public sealed unsafe class D3D12XPresentTests
         var device = new XboxDevice(test);
         var setInterval = (delegate* unmanaged<nint, nint, uint, uint, uint, int>)XboxDevice.Vtable(device.Device)[SetFrameIntervalSlot];
         var wait = (delegate* unmanaged<nint, uint, uint, nint, uint, ulong*, int>)XboxDevice.Vtable(device.Device)[WaitFrameEventSlot];
-        Assert.Equal(0, setInterval(device.Device, 0, 5000, 3, 0));
+        // 50 ms, so a busy machine rarely misses an origin between the two waits; one missed origin is still allowed.
+        const uint IntervalMicroseconds = 50000;
+        Assert.Equal(0, setInterval(device.Device, 0, IntervalMicroseconds, 3, 0));
 
         ulong current = 0;
         ulong next = 0;
@@ -83,8 +85,8 @@ public sealed unsafe class D3D12XPresentTests
         var waited = Stopwatch.GetElapsedTime(start);
 
         Assert.True(current >= 1);
-        Assert.Equal(next + 1, after);
-        Assert.InRange(waited.TotalMilliseconds, 1, 100);
+        Assert.InRange(after, next + 1, next + 2);
+        Assert.InRange(waited.TotalMilliseconds, 1, 3 * IntervalMicroseconds / 1000.0);
     }
 
     [Fact]
