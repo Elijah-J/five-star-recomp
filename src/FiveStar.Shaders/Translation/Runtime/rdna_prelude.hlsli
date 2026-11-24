@@ -34,17 +34,26 @@ uint2 gpu_page(uint lo, uint hi) {
     uint2 page = map.Load2(table + (lo >> 16) * 8u);
     return uint2(page.x, page.y + (lo & 0xffffu));
 }
-uint PtrLoad(uint lo, uint hi, uint off) {   // carries out of the low dword are not propagated
-    uint a = lo + off;
-    if (hi == 0u) return MemLoad(a, 0u);
-    uint2 p = gpu_page(a, hi);
+// 64-bit address arithmetic as the hardware's: a game-memory pointer plus an unsigned and a signed 32-bit addend
+// carries into (or borrows from) the high dword; the window (high dword 0) stays in its 32-bit space.
+uint2 ptr_add(uint lo, uint hi, uint u, int s) {
+    uint a = lo + u;
+    uint b = a + asuint(s);
+    if (hi == 0u) return uint2(b, 0u);
+    uint h = hi + (a < lo ? 1u : 0u);
+    return uint2(b, h + (s < 0 ? 0xffffffffu : 0u) + (b < a ? 1u : 0u));
+}
+uint PtrLoad(uint lo, uint hi, uint off) {   // off is signed (a dword offset or an SMEM offset)
+    uint2 a = ptr_add(lo, hi, 0u, asint(off));
+    if (hi == 0u) return MemLoad(a.x, 0u);
+    uint2 p = gpu_page(a.x, a.y);
     ByteAddressBuffer b = ResourceDescriptorHeap[p.x];
     return b.Load(p.y & ~3u);
 }
 void PtrStore(uint lo, uint hi, uint off, uint v) {
-    uint a = lo + off;
-    if (hi == 0u) { MemStore(a, 0u, v); return; }
-    uint2 p = gpu_page(a, hi);
+    uint2 a = ptr_add(lo, hi, 0u, asint(off));
+    if (hi == 0u) { MemStore(a.x, 0u, v); return; }
+    uint2 p = gpu_page(a.x, a.y);
     RWByteAddressBuffer b = ResourceDescriptorHeap[p.x + 1u];
     b.Store(p.y & ~3u, v);
 }
@@ -52,8 +61,7 @@ uint2 gpu_rw(uint lo, uint hi) {   // (RW heap index, byte address) of a pointer
     if (hi == 0u) return uint2(GPU_MEM_HEAP + 1u, lo);
     uint2 p = gpu_page(lo, hi);
     return uint2(p.x + 1u, p.y);
-}
-// A V#'s view: (heap index, byte offset of the base in it); rw takes the UAV of a game-memory base. Dword1 holds
+}// A V#'s view: (heap index, byte offset of the base in it); rw takes the UAV of a game-memory base. Dword1 holds
 // base_hi in bits 0-15 and the stride in bits 16-29.
 uint2 buf_view(uint d0, uint d1, bool rw) {
     uint hi = d1 & 0xffffu;
@@ -68,18 +76,24 @@ uint buf_stride(uint d1) { return (d1 >> 16) & 0x3fffu; }
 // dword3 bits 28-29), as measured on RDNA1 and RDNA2 hardware (Mesa's GFX11 column):
 //   0 structured: index >= num_records, or offset + 4 > stride;  1 structured: index >= num_records;
 //   2: num_records == 0;  3 raw: offset + soffset + 4 > num_records (index * stride moves the address, unchecked).
+// The hardware adds index * stride to the 48-bit base without wrapping, so an index whose product reaches 4 GiB (an
+// index of -1 from a counter at 0) lands far past any buffer; in the 32-bit offset of a view it would wrap to just
+// below the base (20 bytes below for a 20-byte record), so such an access is out of range in every mode.
 // num_records is dword2; the offset is the VGPR offset plus the instruction offset. Once per access buf_limit gives
 // the end the dwords must fit under and buf_offset the checked offset; each dword then costs one compare (buf_fits).
 uint buf_limit(uint d1, uint d2, uint d3, uint index) {
     uint sel = (d3 >> 28) & 3u;
     uint structured = select(index < d2, select(sel == 0u, buf_stride(d1), 0xffffffffu), 0u);
     uint unchecked = select(d2 == 0u, 0u, 0xffffffffu);
-    return select(sel == 3u, d2, select(sel == 2u, unchecked, structured));
+    uint limit = select(sel == 3u, d2, select(sel == 2u, unchecked, structured));
+    uint stride = buf_stride(d1);
+    return select(stride != 0u && index > 0xffffffffu / max(stride, 1u), 0u, limit);
 }
 uint buf_offset(uint d3, uint offset, uint soffset) {
     return select(((d3 >> 28) & 3u) == 3u, offset + soffset, offset);
 }
-bool buf_fits(uint start, uint limit) { return limit >= 4u && start <= limit - 4u; }// s_buffer_load: the whole offset against num_records, counted in bytes (stride 0) or in strides.
+bool buf_fits(uint start, uint limit) { return limit >= 4u && start <= limit - 4u; }
+// s_buffer_load: the whole offset against num_records, counted in bytes (stride 0) or in strides.
 uint sbuf_limit(uint d1, uint d2) {
     uint stride = max(buf_stride(d1), 1u);
     return select(d2 > 0xffffffffu / stride, 0xffffffffu, d2 * stride);

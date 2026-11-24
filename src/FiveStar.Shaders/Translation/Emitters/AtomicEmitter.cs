@@ -117,22 +117,22 @@ internal sealed partial class AtomicEmitter
         var data = OperandParser.Parse(arguments[first + 1]);
         var scalarBase = arguments[first + ScalarBaseAfterAddress];
 
-        string low;
-        string high;
+        var offset = Hlsl.HexUint(modifiers.Integer("offset", 0) & AddressMask);
+        string pointer;
 
+        // prelude ptr_add carries the offsets into the high dword as the hardware's 64-bit add does.
         if (scalarBase != "off")
         {
-            var pointer = OperandParser.Parse(scalarBase);
-            low = $"{_operands.Read(pointer, 0)} + {_operands.Read(address)}";
-            high = _operands.Read(pointer, 1);
+            var scalar = OperandParser.Parse(scalarBase);
+            pointer = $"ptr_add({_operands.Read(scalar, 0)}, {_operands.Read(scalar, 1)}, {_operands.Read(address)}, asint({offset}))";
         }
         else
         {
-            low = _operands.Read(address, 0);
-            high = _operands.Read(address, 1);
+            pointer = $"ptr_add({_operands.Read(address, 0)}, {_operands.Read(address, 1)}, 0u, asint({offset}))";
         }
 
-        var target = _operands.SnapPair($"gpu_rw({low} + {Hlsl.HexUint(modifiers.Integer("offset", 0) & AddressMask)}, {high})");
+        var full = _operands.SnapPair(pointer);
+        var target = _operands.SnapPair($"gpu_rw({full}.x, {full}.y)");
         var result = atomic.Result;
         _state.Emit($"  uint {result} = 0; if (active) {{ RWByteAddressBuffer _b{result} = ResourceDescriptorHeap[{target}.x];");
         _state.Emit($"    _b{result}.{Operation(atomic, data, $"{target}.y")}; }}");

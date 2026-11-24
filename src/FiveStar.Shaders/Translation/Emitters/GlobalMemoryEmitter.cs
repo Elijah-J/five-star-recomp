@@ -67,22 +67,22 @@ internal sealed partial class GlobalMemoryEmitter
             (data, address) = (address, data);
         }
 
-        string low;
-        string high;
+        var pointer = _operands.SnapPair(Pointer(address, scalarBase, offset));
+        Access(op.Contains("load", StringComparison.Ordinal), data, $"{pointer}.x", $"{pointer}.y", count);
+    }
 
+    /// <summary>
+    /// The 64-bit address (a uint2 expression) of a 64-bit VGPR address, or an SGPR base plus the 32-bit VGPR offset, plus
+    /// the signed instruction offset: prelude ptr_add, which carries into the high dword as the hardware does.
+    /// </summary>
+    private string Pointer(Operand address, Operand? scalarBase, string offset)
+    {
         if (scalarBase is not null)
         {
-            low = $"{_operands.Read(scalarBase, Low)} + {_operands.Read(address)}";
-            high = _operands.Read(scalarBase, High);
-        }
-        else
-        {
-            low = _operands.Read(address, Low);
-            high = _operands.Read(address, High);
+            return $"ptr_add({_operands.Read(scalarBase, Low)}, {_operands.Read(scalarBase, High)}, {_operands.Read(address)}, asint({offset}))";
         }
 
-        var pointer = _operands.Snap($"{low} + {offset}", high);
-        Access(op.Contains("load", StringComparison.Ordinal), data, pointer[0], pointer[1], count);
+        return $"ptr_add({_operands.Read(address, Low)}, {_operands.Read(address, High)}, 0u, asint({offset}))";
     }
 
     private void Access(bool load, Operand data, string low, string high, int count)
@@ -112,24 +112,10 @@ internal sealed partial class GlobalMemoryEmitter
     {
         var data = a[Destination];
         var address = a[Source0];
-        string low;
-        string high;
-
-        if (scalarBase is not null)
-        {
-            low = $"{_operands.Read(scalarBase, Low)} + {_operands.Read(address)}";
-            high = _operands.Read(scalarBase, High);
-        }
-        else
-        {
-            low = _operands.Read(address, Low);
-            high = _operands.Read(address, High);
-        }
-
-        var pointer = _operands.Snap($"{low} + {offset}", high);
-        var byteAddress = pointer[0];
+        var pointer = _operands.SnapPair(Pointer(address, scalarBase, offset));
+        var byteAddress = $"{pointer}.x";
         var bits = kind.Contains("byte", StringComparison.Ordinal) ? ByteBits : ShortBits;
-        var value = $"((PtrLoad({byteAddress} & ~3u, {pointer[1]}, 0u) >> (({byteAddress} & 3u) * 8u)) & {Hlsl.HexUint((1L << bits) - 1)})";
+        var value = $"((PtrLoad({byteAddress} & ~3u, {pointer}.y, 0u) >> (({byteAddress} & 3u) * 8u)) & {Hlsl.HexUint((1L << bits) - 1)})";
 
         if (kind.StartsWith('s'))
         {

@@ -58,6 +58,7 @@ public static class ComputeMemoryCases
             BufferReadModifyWrite(),
             BufferLoads(),
             BufferBounds(),
+            BufferIndexWrap(),
             GlobalMemory(),
             GlobalNegativeOffset(),
             GlobalAtomic(),
@@ -251,6 +252,28 @@ public static class ComputeMemoryCases
             User = [4, 4u << 16, Records, 0],
             Buffers = [new BufferResource(3, Input, Writable: false), new BufferResource(4, new uint[Threads], Writable: true)],
             Check = buffers => Differences("heap4", stored, buffers[4]),
+        };
+    }
+
+    // An index of -1 (a counter at 0) with a 20-byte stride: the hardware's index * stride does not wrap, so the store lands
+    // 4 GiB past the base and is dropped; with soffset 40 into a raw V# a wrapped product would write 20 bytes below
+    // the access's base, inside the view.
+    private static ComputeCase BufferIndexWrap()
+    {
+        const string Program = """
+            v_mov_b32 v1, -1
+            s_mov_b32 s26, 40
+            buffer_store_dword v41, v1, s[8:11], s26 idxen
+            v_mov_b32 v20, 0
+            """;
+        const uint Stride = 20;
+        const uint RawSelect = 3u << 28;
+
+        return new ComputeCase("cs_buffer_index_wrap", Program, 1, thread => [Expected.Exact(0)])
+        {
+            User = [AuxiliaryHeap, Stride << 16, Threads * 4, RawSelect],
+            Buffers = [new BufferResource(AuxiliaryHeap, new uint[Threads], Writable: true)],
+            Check = buffers => Differences($"heap{AuxiliaryHeap}", new uint[Threads], buffers[AuxiliaryHeap]),
         };
     }
 

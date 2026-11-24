@@ -124,7 +124,7 @@ The D3D12.X layer creates the views and samplers, so it decides what descriptor 
 | S# dword0 | `SamplerDescriptorHeap` index; an S# built from literal constants gets `STATIC_SAMPLER_BASE + k` and its words are listed at the top of the program |
 | V# base (dword0, dword1 bits 0-15) | base_hi 0: dword0 is a heap index (the D3D12.X shim's records); otherwise a console GPU address, found in the address map (`buf_view`) |
 | V# dword1 bits 16-29 / dword3 | stride (idxen) / hardware format word: gfx10 unified format (bits 12-18, decoded by `buf_code`) and destination swizzle (bits 0-11, `fmt_swizzle`, loads only) |
-| 64-bit pointers (`s_load`, `global_*`) | high dword 0: byte address in the window `ResourceDescriptorHeap[GPU_MEM_HEAP]` (writable view at `+ 1`); otherwise a console GPU address in the address map (`PtrLoad`, `PtrStore`, `gpu_rw`) |
+| 64-bit pointers (`s_load`, `global_*`) | high dword 0: byte address in the window `ResourceDescriptorHeap[GPU_MEM_HEAP]` (writable view at `+ 1`); otherwise a console GPU address in the address map (`PtrLoad`, `PtrStore`, `gpu_rw`). Offsets are added in 64 bits as the hardware does (`ptr_add`: the unsigned VGPR offset and the signed instruction offset carry into or borrow from the high dword); before, a carry out of the low dword was dropped and the access landed 4 GiB lower |
 | `s_getpc_b64` pointers | high dword `CODE_TAG`; loads read the program's own code, emitted as `g_code[]` |
 | BVH T# | dword0 = BVH base address >> 8 in the memory window (see [ray-intersection.md](ray-intersection.md)) |
 
@@ -139,7 +139,7 @@ an address it does not know names a null view and reads 0.
 (an atomic returns 0). Console programs rely on it: an argument or append writer runs past its allocation, and a loop
 reads zeros past an end. Without it, those stores landed through the address map in the game memory next to the
 buffer. One of the places they landed was the transient pool's block-end nodes, which caused the story-load faults at
-0x144e9b4b2 ([debugging.md](debugging.md#transient-pool-watch)).
+0x144e9b4b2 ([debugging.md](debugging.md#transient-pool-watch)). The hardware adds index * stride to the base without wrapping, so an index of -1 (a counter at 0) lands 4 GiB away and is dropped; the translated address is a 32-bit offset into a view, where the same product wraps to one record below the base, inside the game's whole-pool raw view (OOB_SELECT 3 does not check the index). An access whose index * stride reaches 4 GiB is out of range in every mode (`buf_limit`); before, 20-byte records of index -1 overwrote the transient pool's block-end nodes.
 
 The rules follow OOB_SELECT (V# dword3 bits 28-29) as measured on RDNA1 (gfx1011) and RDNA2 (gfx1036) hardware
 (Leonida's docs/buffer_bounds.md, Mesa's GFX11 column). num_records is dword2; the offset is the VGPR offset plus the

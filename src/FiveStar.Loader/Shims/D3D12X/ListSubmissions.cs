@@ -97,6 +97,7 @@ internal static unsafe class ListSubmissions
         }
 
         queue->Fence = fence;
+        RetireWaits.Register(queue);
         ShimContext.Runtime.D3D12X.FrameThrottle.Follow(queue);
 
         return true;

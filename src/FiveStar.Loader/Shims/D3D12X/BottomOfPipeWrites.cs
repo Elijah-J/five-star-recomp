@@ -68,6 +68,7 @@ internal static unsafe class BottomOfPipeWrites
     [UnmanagedCallersOnly]
     public static int Value(XboxObject* self, ulong address, uint mode, ulong value, uint flags)
     {
+        RetireWaits.Recorded(self, address, value);
         Write64(self, address, value);
 
         return HResult.Ok;
