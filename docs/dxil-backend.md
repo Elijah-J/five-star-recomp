@@ -61,6 +61,25 @@ the same digest (`DxilContainerTests`).
 **Root signature.** The same as for dxc's output (`docs/shader-translation.md`, Resources): `g_user4` at b0 space 0, everything else
 through `ResourceDescriptorHeap` and `SamplerDescriptorHeap`; no RTS0 part.
 
+## Measurements
+
+Compute programs of the dump (structured form, wave emulation), on a 64 GB machine that was running other
+translations and game boots at the same time, so times are upper bounds:
+
+| | dxc -O3 | dxc -Od | backend |
+|---|---|---|---|
+| All 2,689 compute programs | | | all compile and pass dxil.dll validation |
+| Compile time, 33-program sample, total / median | 418 s / 5.0 s | 305 s / 2.6 s | 83 s / 1.4 s |
+| Compile time, all 2,689 (4 jobs), median / p90 / max | | | 0.38 s / 3.7 s / 34 s |
+| Compile time, one 60 KB program, steady state | 2.6 s | 1.5 s | 0.24 s |
+| DXIL bytes, 33-program sample | 14.8 MB | 28.4 MB | 26.4 MB |
+| RTX 4090 pipeline creation, 113 programs, total / median | 921 s / 2.0 s | | 973 s / 2.4 s |
+| Outputs on WARP, 27 real programs, 3 input sets each | | | equal to dxc -O3 in every word |
+
+The driver's compile takes about as long on the backend's DXIL as on dxc's optimized DXIL, so the backend saves
+dxc's time without moving it into pipeline creation. The DXIL is about the size of dxc -Od's: the records are
+unabbreviated and nothing is optimized before the driver.
+
 ## Coverage
 
 Not lowered yet: function-like macros, matrices, `StructuredBuffer`, typed `Buffer` loads, `SampleCmpLevel`,
