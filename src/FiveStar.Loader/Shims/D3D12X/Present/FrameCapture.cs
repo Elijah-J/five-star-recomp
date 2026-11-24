@@ -4,6 +4,7 @@
 using FiveStar.Formats.Images;
 using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Shims.D3D12X.Resources;
+using FiveStar.Loader.Shims.Input;
 
 namespace FiveStar.Loader.Shims.D3D12X.Present;
 
@@ -88,6 +89,7 @@ internal sealed class FrameCapture : IDisposable
         }
 
         _log.Info($"  [capture] {name}: {image.Width}x{image.Height} format {image.Format}: {ReadbackPixels.Summarize(rgba, image.Width, image.Height)}");
+        _log.Info($"  [capture] {name}: screen signature {ScreenSignature.Of(rgba, image.Width, image.Height)}");
         Write(name, image, rgba);
     }
 

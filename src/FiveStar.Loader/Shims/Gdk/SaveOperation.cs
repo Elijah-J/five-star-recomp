@@ -54,7 +54,7 @@ internal sealed unsafe class SaveOperation : ManagedAsyncOperation
                 *(long*)buffer = _quota;
                 break;
             case SaveOperationKind.ReadBlobs:
-                SaveBlobLayout.Write(_blobs, buffer);
+                SaveBlobLayout.Write(_blobs, buffer, size);
                 break;
             default:
                 break;

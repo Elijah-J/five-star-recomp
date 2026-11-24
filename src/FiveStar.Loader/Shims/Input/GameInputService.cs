@@ -48,9 +48,10 @@ internal sealed class GameInputService : IDisposable
 
     /// <summary>
     /// Adds the presses of the input script at <paramref name="path"/> (<c>--input-script</c>) to the desktop keys and
-    /// follows the file while the game runs; its capture lines call <paramref name="capture"/>. Before GameInputCreate.
+    /// follows the file while the game runs; its capture lines call <paramref name="capture"/>, and it calls
+    /// <paramref name="sample"/> for the signature of the next present (<see cref="Seen"/>). Before GameInputCreate.
     /// </summary>
-    public InputScript UseScript(string path, System.Diagnostics.Stopwatch clock, Action capture)
+    public InputScript UseScript(string path, System.Diagnostics.Stopwatch clock, Action capture, Action sample, ScreenStore screens)
     {
         var script = InputScript.Load(path);
 
@@ -59,10 +60,16 @@ internal sealed class GameInputService : IDisposable
             var scripted = new ScriptedDesktopInput(_desktop, script, clock, _log);
             _desktop = scripted;
             _watcher?.Dispose();
-            _watcher = new InputScriptWatcher(path, script, scripted, clock, capture, _log);
+            _watcher = new InputScriptWatcher(path, script, scripted, clock, capture, sample, screens, _log);
         }
 
         return script;
+    }
+
+    /// <summary>The signature of a present the script asked for; any thread.</summary>
+    public void Seen(ScreenSignature signature)
+    {
+        _watcher?.Seen(signature);
     }
 
     /// <summary>GameInput use so far, for the thread sampler.</summary>

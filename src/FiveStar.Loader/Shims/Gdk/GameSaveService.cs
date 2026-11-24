@@ -167,8 +167,10 @@ internal sealed unsafe class GameSaveService
         }
 
         var container = new SaveContainer(found, text);
+        bool exists = Directory.Exists(container.Directory);
+        _boundary.Info($"XGameSaveGetContainerInfo(\"{text}\") -> exists {exists}");
 
-        if (Directory.Exists(container.Directory))
+        if (exists)
         {
             SaveStore.InvokeContainerInfo(container, context, callback);
         }
@@ -190,6 +192,8 @@ internal sealed unsafe class GameSaveService
             return HResult.Ok;
         }
 
+        var reported = new List<string>();
+
         foreach (string directory in Directory.EnumerateDirectories(found.Root).OrderBy(d => d, StringComparer.Ordinal))
         {
             var container = new SaveContainer(found, NameEscaping.Decode(Path.GetFileName(directory)));
@@ -199,11 +203,15 @@ internal sealed unsafe class GameSaveService
                 continue;
             }
 
+            reported.Add(container.Name);
+
             if (!SaveStore.InvokeContainerInfo(container, context, callback))
             {
                 break;
             }
         }
+
+        _boundary.Info($"XGameSaveEnumerateContainerInfo(\"{prefix}\") -> [{string.Join(", ", reported)}]");
 
         return HResult.Ok;
     }
@@ -218,6 +226,7 @@ internal sealed unsafe class GameSaveService
         }
 
         byte* info = stackalloc byte[SaveLayout.BlobInfoSize];
+        var reported = new List<string>();
 
         foreach (var (name, file) in SaveStore.Blobs(found))
         {
@@ -226,11 +235,15 @@ internal sealed unsafe class GameSaveService
                 continue;
             }
 
+            reported.Add(name);
+
             if (!InvokeBlobInfo(info, name, new FileInfo(file).Length, context, callback))
             {
                 break;
             }
         }
+
+        _boundary.Info($"XGameSaveEnumerateBlobInfo(\"{found.Name}\", \"{prefix}\") -> [{string.Join(", ", reported)}]");
 
         return HResult.Ok;
     }
@@ -244,20 +257,23 @@ internal sealed unsafe class GameSaveService
             return HResult.InvalidArgument;
         }
 
+        var names = ReadNames(blobNames, *countOfBlobs);
         var blobs = new List<SaveBlobData>();
-        int hr = SaveStore.ReadBlobs(found, ReadNames(blobNames, *countOfBlobs), blobs);
+        int hr = SaveStore.ReadBlobs(found, names, blobs);
+
+        if (!HResult.Failed(hr) && (blobData == null || blobsSize < SaveBlobLayout.MinimumSize(blobs)))
+        {
+            hr = SaveLayout.ProvidedBufferTooSmall;
+        }
+
+        _boundary.Info($"XGameSaveReadBlobData(\"{found.Name}\", [{string.Join(", ", names ?? [])}], {blobsSize} bytes) -> 0x{hr:x8}, {blobs.Count} blob(s), {SaveBlobLayout.Size(blobs)} bytes");
 
         if (HResult.Failed(hr))
         {
             return hr;
         }
 
-        if (blobData == null || blobsSize < SaveBlobLayout.Size(blobs))
-        {
-            return SaveLayout.ProvidedBufferTooSmall;
-        }
-
-        SaveBlobLayout.Write(blobs, blobData);
+        SaveBlobLayout.Write(blobs, blobData, blobsSize);
         *countOfBlobs = (uint)blobs.Count;
 
         return HResult.Ok;
@@ -273,7 +289,9 @@ internal sealed unsafe class GameSaveService
             return HResult.InvalidArgument;
         }
 
-        var operation = new SaveOperation(this, SaveOperationKind.ReadBlobs, found, ReadNames(blobNames, countOfBlobs), async);
+        var names = ReadNames(blobNames, countOfBlobs);
+        _boundary.Info($"XGameSaveReadBlobDataAsync(\"{found.Name}\", [{string.Join(", ", names ?? [])}])");
+        var operation = new SaveOperation(this, SaveOperationKind.ReadBlobs, found, names, async);
 
         return _async.BeginManaged(async, ReadBlobDataApi, operation);
     }

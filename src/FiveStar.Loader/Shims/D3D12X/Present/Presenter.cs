@@ -65,6 +65,9 @@ internal sealed unsafe class Presenter : IDisposable
     /// <summary>Reads back the plane at chosen presents (<c>--capture-dir</c>); null when off.</summary>
     public FrameCapture? Capture { get; set; }
 
+    /// <summary>Signatures of presents for an input script's screens; null without a script.</summary>
+    public ScreenSampler? Screens { get; set; }
+
     /// <summary>Reads back the render targets of traced draws (<c>--d3d12-trace-draws</c>); null when off.</summary>
     public DrawTrace? Trace { get; set; }
 
@@ -186,6 +189,18 @@ internal sealed unsafe class Presenter : IDisposable
         {
             Inspect(source);
         }
+
+        if (Screens is not null && Screens.Due && source.Copyable)
+        {
+            SampleScreen(source);
+        }
+    }
+
+    /// <summary>A screen signature after a present, once the presenting queue is idle.</summary>
+    private void SampleScreen(PlaneSource source)
+    {
+        _recorder!.WaitIdle(_queue);
+        Screens!.Sample(_objects.DesktopDevice, source.Resource, source.State);
     }
 
     /// <summary>Debug readbacks after a present, once the presenting queue (all the game's work) is idle.</summary>

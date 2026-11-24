@@ -3,11 +3,5 @@
 
 namespace FiveStar.Loader.Shims.Input;
 
-/// <summary>One key press of an input script: held from <paramref name="Start"/> for <paramref name="Hold"/> seconds.</summary>
-internal readonly record struct ScriptedPress(double Start, double Hold, int Key, string Name)
-{
-    public bool IsDown(double seconds)
-    {
-        return seconds >= Start && seconds < Start + Hold;
-    }
-}
+/// <summary>One key press of an input script: held from <paramref name="Start"/> seconds after its block began, for <paramref name="Hold"/> seconds.</summary>
+internal readonly record struct ScriptedPress(int Block, double Start, double Hold, int Key, string Name);

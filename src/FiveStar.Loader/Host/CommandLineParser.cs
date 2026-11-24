@@ -154,13 +154,15 @@ internal sealed class CommandLineParser
         }
     }
 
-    /// <summary>The pipeline-cache, warm-up and DirectStorage options, <c>--watch-transient</c> and the audio capture.</summary>
+    /// <summary>The pipeline-cache, warm-up and DirectStorage options, <c>--watch-transient</c>, <c>--screens</c> and the audio capture.</summary>
     private bool ApplyCacheAndStorage(string option)
     {
         switch (option)
         {
             case "--watch-transient":
                 return SetWatchTransient();
+            case "--screens":
+                return SetScreensFile();
             case "--audio-capture":
                 _options.AudioCapture = Path.GetFullPath(Next());
 
@@ -414,6 +416,13 @@ internal sealed class CommandLineParser
     private bool SetInputScript()
     {
         _options.InputScript = Path.GetFullPath(Next());
+
+        return true;
+    }
+
+    private bool SetScreensFile()
+    {
+        _options.ScreensFile = Path.GetFullPath(Next());
 
         return true;
     }
