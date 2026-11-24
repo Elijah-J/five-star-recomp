@@ -54,6 +54,12 @@ internal sealed unsafe class XMemAllocator
 
     public long FreeCount => Interlocked.Read(ref _freeCount);
 
+    /// <summary>Whether <paramref name="block"/> is a live XMemAlloc block of its own VirtualAlloc (the memory map).</summary>
+    public bool IsVirtualBlock(nint block)
+    {
+        return _allocations.TryGetValue(block, out var allocation) && allocation.IsVirtual;
+    }
+
     /// <summary>Logs a native stack walk from inside the next XMemAlloc (shows unwinding through mapped images).</summary>
     public void TraceNextAllocation()
     {

@@ -119,6 +119,9 @@ internal sealed record HostOptions
     /// <summary>With --run, log call counts and every thread's stack at this interval (<c>--sample-threads</c>).</summary>
     public TimeSpan? SampleThreads { get; set; }
 
+    /// <summary>With --run, log where the private memory is at this interval (<c>--memory-map</c>).</summary>
+    public TimeSpan? MemoryMap { get; set; }
+
     /// <summary>With --sample-threads, also a profile burst of the running threads per sample (<c>--profile-threads</c>).</summary>
     public bool ProfileThreads { get; set; }
 

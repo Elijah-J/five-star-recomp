@@ -154,19 +154,19 @@ internal sealed class CommandLineParser
         }
     }
 
-    /// <summary>The pipeline-cache, warm-up and DirectStorage options, <c>--watch-transient</c>, <c>--screens</c> and the audio capture.</summary>
+    /// <summary>The pipeline-cache, warm-up and DirectStorage options, <c>--watch-transient</c>, <c>--memory-map</c>, <c>--screens</c> and the audio capture.</summary>
     private bool ApplyCacheAndStorage(string option)
     {
         switch (option)
         {
             case "--watch-transient":
                 return SetWatchTransient();
+            case "--memory-map":
+                return SetMemoryMap();
             case "--screens":
                 return SetScreensFile();
             case "--audio-capture":
-                _options.AudioCapture = Path.GetFullPath(Next());
-
-                return true;
+                return SetAudioCapture();
             case "--record-audio":
                 return SetRecordAudio();
             case "--desktop-timers":
@@ -444,6 +444,20 @@ internal sealed class CommandLineParser
     private bool SetSampleThreads()
     {
         _options.SampleThreads = TimeSpan.FromSeconds(double.Parse(Next(), CultureInfo.InvariantCulture));
+
+        return true;
+    }
+
+    private bool SetAudioCapture()
+    {
+        _options.AudioCapture = Path.GetFullPath(Next());
+
+        return true;
+    }
+
+    private bool SetMemoryMap()
+    {
+        _options.MemoryMap = TimeSpan.FromSeconds(double.Parse(Next(), CultureInfo.InvariantCulture));
 
         return true;
     }

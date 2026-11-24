@@ -326,6 +326,11 @@ internal sealed class LoaderHost
             new ThreadSampler(_runtime.Images, _runtime.Trace, SampledCounters, _options.ProfileThreads, _log).Start(interval.Value);
         }
 
+        if (_options.MemoryMap.HasValue)
+        {
+            new MemoryMap(_runtime.Images, _runtime.XMem, _runtime.XMemPhysical, _log).Start(_options.MemoryMap.Value);
+        }
+
         GpuBreadcrumbs.Enable(_options.D3D12Breadcrumbs);
 
         if (_options.WatchTransient)

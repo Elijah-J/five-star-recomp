@@ -26,6 +26,8 @@ internal static class HostUsage
           --trace-module <dll>   with --run: the call trace also records calls into this mapped image
           --sample-threads <s>   with --run: every s seconds log the calls per shim since the last sample,
                                  DirectStorage totals and every thread's stack
+          --memory-map <s>       with --run: every s seconds log the private memory by owner, protection and
+                                 allocation size, its change, the largest allocations and GPU memory
           --main <name>          image that plays the process exe for GetModuleHandle(NULL)/GetModuleFileName(NULL)
                                  (default: first mapped exe, else the first --load)
           --patch-peb            also point PEB.ImageBaseAddress at the main image (off by default)
