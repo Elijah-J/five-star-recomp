@@ -10,7 +10,7 @@ using FiveStar.Shaders.Compilation;
 namespace FiveStar.Cli.Run;
 
 /// <summary>
-/// Checks what <c>fivestar run</c> needs before it starts anything: Windows x64, the dump, the loader, the PC GDK, dxc
+/// Checks what <c>fivestar run</c> needs before it starts anything: Windows x64, the dump, the loader, the PC GDK, the BCPack tables, dxc
 /// when shaders still have to be built, the free space of the work folder, the shader folders, and the Graphics Tools
 /// with <c>--debug</c>. Each failed check says how to fix it.
 /// </summary>
@@ -39,6 +39,7 @@ internal sealed class Prerequisites
             Dump(plan),
             Loader(plan),
             Gdk(plan),
+            Tables(plan),
             Dxc(plan),
             Space(plan),
             Shaders(plan),
@@ -122,6 +123,16 @@ internal sealed class Prerequisites
         }
 
         return RunCheck.Failed("gdk", "the PC GDK is not installed: install the Microsoft GDK (github.com/microsoft/GDK), or pass --gdk-lib <xgameruntime.lib>; without it every GDK call fails");
+    }
+
+    private static RunCheck Tables(RunPlan plan)
+    {
+        if (File.Exists(plan.Context.BcPackTables))
+        {
+            return RunCheck.Ok("bcpack", plan.Context.BcPackTables);
+        }
+
+        return RunCheck.Warning("bcpack", $"no BCPack tables (--bcpack-tables <file>): {Texture.BcPackTableSource.Fallback}; the loader writes placeholder blocks");
     }
 
     private static RunCheck Dxc(RunPlan plan)

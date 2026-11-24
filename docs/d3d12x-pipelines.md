@@ -72,6 +72,14 @@ the logical processors):
 | done within `PipelineSlots.CreationBudget` (1 s) and no creation queued before it | the desktop pipeline or the failure |
 | still running, or queued behind others | S_OK and a stand-in |
 
+**First use.** A story load creates about 85,000 pipelines (52,000 distinct desktop ones built in the first 8
+minutes of a cold boot, 32,000 more still queued), while a scene draws with few of them. So by default a pipeline the
+disk cache lacks is not built at creation: the game gets a stand-in at once, and the build is queued when a command
+list first sets the stand-in (SetPipelineState or a Reset with an initial pipeline). Pipelines an earlier boot used
+(the journal, [Warm-up](#warm-up)) are queued at creation instead, so they are ready by the time the game draws.
+`--eager-pipelines` builds every one at creation, as before. The sample summary counts the stand-ins deferred to first
+use and how many of them were used.
+
 A stand-in is our own `ID3D12PipelineState` (`StandInPipelineObject`): a vtable, the desktop pipeline once built
 (0 before), 0x20 zero bytes the game reads, its own reference count. Its last Release releases the desktop pipeline,
 or the build does when it ends later. Slot 25 of the command list (SetPipelineState) sets the built pipeline; while
@@ -123,6 +131,10 @@ flowchart LR
 | New pipelines | go to an empty library of this process. Every minute, after every 2,048 new ones and at exit it is sealed (a new empty library takes new ones at once), written to a segment file of its own through a `.tmp` file and a rename, and replaced by that file mapped read-only; no lock the game waits on is held while the driver serializes |
 | Size | past 32 GiB the oldest segments are deleted when the cache opens |
 
+A build that finds its key in the cache when its thread takes it loads the pipeline instead: the game asks for the
+same desktop pipeline again (game pipelines that differ only in what the desktop form drops, such as the root
+signature) while the first build still waits in the queue.
+
 Processes never write each other's segments, so the game and the warm-up can share the folder. A cache hit is
 synchronous: the game gets the desktop pipeline itself, never a stand-in. The sample summary counts loads, stores and
 loads the driver refused.
@@ -130,9 +142,10 @@ loads the driver refused.
 ### Warm-up
 
 `fivestar-loader --warm-pipelines <shaders.rpf | cache blob> --shader-dir <fssm> --translated-dir <dxil>
-[--pipeline-cache <dir>] [--warm-jobs N] [--warm-step K] [--warm-match text]` runs no game. On the default adapter it
-reads the console pipeline cache ([pipeline-cache.md](pipeline-cache.md)), turns every compute and graphics record
-into the description slots 67 and 57 would get, and builds each through the same factory as the game, on
+[--pipeline-cache <dir>] [--warm-jobs N] [--warm-step K] [--warm-match text] [--warm-used-only]` runs no game. On the
+default adapter it first takes the pipelines earlier boots asked for (the journal, below) in the order the game first
+asked, then (unless `--warm-used-only`) reads the console pipeline cache ([pipeline-cache.md](pipeline-cache.md)) and
+turns every compute and graphics record into the description slots 67 and 57 would get, and builds each through the same factory as the game, on
 `--warm-jobs` threads (default 4), without a time limit. No build starts while less than 8 GB of commit is available; a pipeline with 4 MiB of DXIL or more is built alone on its own thread and only with 40 GB of commit available, else it is left out (logged) for a later run or the game: one ray-traced shadow program passed 30 GB in the NVIDIA driver. Compute pipelines go first, the
 largest code first. A pipeline whose key is cached is skipped, so a stopped run (Ctrl+C finishes the running builds
 and writes the cache) resumes; pipelines the driver refuses are listed in `warm-failures.txt` in the cache folder
@@ -140,7 +153,18 @@ and not retried while their key stays the same. Builds over 20 s are named in th
 counts. `--warm-step K` takes every K-th record, `--warm-match` only records with a program whose name contains the
 text. `fivestar setup` runs it as the `pipeline-warm` step ([setup.md](setup.md)).
 
-Slot 86 streams and slot 55 derives are not in the console cache; they are cached when a run builds them.
+Slot 86 streams and slot 55 derives are not in the console cache; the journal brings them to the warm-up.
+
+**Journal.** A boot appends every description whose pipeline a command list first sets (all five slots, derives
+included; with `--eager-pipelines` every description at creation) to `pipelines-used.bin` in the cache folder, once
+each, in first-use order across boots (`PipelineJournal`). A pipeline the disk cache answered is not seen at use, so it
+enters the journal on the first boot that has to build it (after a new translation). The idea of keeping the last
+run's pipelines and starting them during loading follows VIctory (THIRD_PARTY_NOTICES.md). A record
+holds the description with each shader as its 24-byte code-block prefix, not its translation, so it still names the
+pipeline after a new translation, which makes every cached pipeline stale (the DXIL is in the key). A vertex shader
+given as a container then takes its input signature from the extracted program of that prefix, the same ISG1. Each
+record is flushed at once, so a boot that crashes keeps what it asked for; a record cut off is dropped when the next
+boot opens the file. `--warm-step` and `--warm-match` apply to the journal's pipelines too.
 
 **Measured (RTX 4090, 64 GB, 4 jobs, driver cache partly warm).** Every 20th record (1,409 pipelines): 1,367 handled
 in 26 minutes, 981 built into 137 MB (about 140 KiB each), the rest refused by the runtime (E_INVALIDARG, the stage

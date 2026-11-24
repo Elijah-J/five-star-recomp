@@ -391,7 +391,8 @@ fivestar-loader --load $dump\XboxBvhBuilder.dll --load $dump\Bink2Scarlett.dll -
 | `--present-test` | present moving color bars instead of the game's frame, to check the swap chain on its own ([d3d12x-shim.md](d3d12x-shim.md#present)) |
 | `--raytracing` | XboxBvhBuilder.dll's CPU paths: console acceleration-structure sizes and BLAS rehydration into game memory ([raytracing.md](raytracing.md)) |
 | `--xdsp-convolution` | run the XDsp convolution effects on the CPU instead of returning silence ([audio-runtime.md](audio-runtime.md#xdsp-protocol)) |
-| `--bcpack-missing placeholder\|fail` | DirectStorage BCPack pages without a block decoder (BC3, BC6H, BC7) or that do not decode: neutral placeholder blocks (default) or a failed request ([directstorage.md](directstorage.md#bcpack-pages)) |
+| `--bcpack-tables <file>` | the user's BCPack tables (not shipped; `fivestar setup --bcpack-tables` imports them): every BCPack codec decodes exactly ([textures.md](textures.md#bcpack-tables)) |
+| `--bcpack-missing placeholder\|fail` | DirectStorage BCPack pages without a block decoder (BC3, BC6H, BC7 without tables) or that do not decode: neutral placeholder blocks (default) or a failed request ([directstorage.md](directstorage.md#bcpack-pages)) |
 | `--manual <a.dll,b.dll>`, `--system-crt`, `--search <dir>` | which modules the loader maps itself |
 | `--unresolved stub\|trap\|error`, `--no-shim <module!symbol>` | unresolved-import handling; disable one shim |
 | `--no-entry`, `--no-exports`, `--unload`, `--work-dir <dir>` | skip DllMain; skip the export listing; unload at the end; folder of the TLS host DLLs |

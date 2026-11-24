@@ -14,4 +14,7 @@ internal sealed record PipelineFolders(string? Programs, string? Translated, str
 {
     /// <summary>Gets the index of <see cref="Programs"/> started at loader start; null builds it at device creation.</summary>
     public ProgramIndexLoad? Index { get; init; }
+
+    /// <summary>Every pipeline is built at creation, not only on first use (<c>--eager-pipelines</c>, <see cref="PipelineFactory.Lazy"/>).</summary>
+    public bool EagerBuilds { get; init; }
 }

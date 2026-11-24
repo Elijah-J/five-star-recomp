@@ -3,6 +3,8 @@
 
 using System.Globalization;
 using FiveStar.Cli.Shader;
+using FiveStar.Graphics;
+using FiveStar.Shaders.Cache;
 using FiveStar.Graphics.Programs;
 using FiveStar.Shaders.Compilation;
 using FiveStar.Shaders.Translation;
@@ -11,7 +13,7 @@ namespace FiveStar.Cli.Setup;
 
 /// <summary>
 /// Translates every extracted program to HLSL and compiles it with dxc through the shader cache: runs
-/// <c>fivestar shader translate --mesh-fallbacks</c> into <c>&lt;work&gt;/shaders/hlsl</c> with <c>--cache &lt;work&gt;/shader-cache</c>,
+/// <c>fivestar shader translate</c> (with <c>--mesh-fallbacks</c> where a GPU needs them) into <c>&lt;work&gt;/shaders/hlsl</c> with <c>--cache &lt;work&gt;/shader-cache</c>,
 /// which also writes the variant manifest <c>variants.json</c> there. An
 /// interrupted run keeps every finished translation and compile in the cache, so the next run resumes where it stopped.
 /// </summary>
@@ -36,9 +38,16 @@ internal sealed class ShaderTranslateStep : ISetupStep
 
     private const string ProgramPattern = "*.fssm";
 
+    /// <summary>The setup option that asks for mesh fallbacks whatever the GPUs.</summary>
+    public const string MeshFallbacksFlag = "mesh-fallbacks";
+
+    /// <summary>The setup option that compiles every form of every program, whatever the GPUs (for another machine).</summary>
+    public const string AllFormsFlag = "all-forms";
+
     private static readonly string[] ToolOptions = ["llvm", "dxc"];
 
     private string? _tool;
+    private List<AdapterInfo>? _gpus;
 
     public string Name => StepName;
 
@@ -62,7 +71,7 @@ internal sealed class ShaderTranslateStep : ISetupStep
     {
         _tool ??= Identity(context.Arguments);
 
-        return new StepFingerprint(Fingerprints.Combine(Fingerprints.OfContent(context.ManifestPath), context.Sample), _tool);
+        return new StepFingerprint(Fingerprints.Combine(Fingerprints.OfContent(context.ManifestPath), context.Sample, Fallbacks(context).ToString(), Waves(context) ?? AllFormsFlag), _tool);
     }
 
     public bool HasOutputs(SetupContext context) =>
@@ -124,15 +133,70 @@ internal sealed class ShaderTranslateStep : ISetupStep
         return StepResult.Done(summary);
     }
 
+    /// <summary>
+    /// Whether every mesh program also gets its compute + vertex-pulling fallback: with <c>--mesh-fallbacks</c>, or when
+    /// an adapter of this machine has no mesh shaders. Mesh-shader GPUs never load them, and they double the mesh
+    /// programs' dxc work; a program dxc rejects as a mesh shader gets its fallback either way.
+    /// </summary>
+    private bool Fallbacks(SetupContext context)
+    {
+        return context.Arguments.Flag(MeshFallbacksFlag) || Gpus().Any(adapter => !adapter.MeshShaders);
+    }
+
+    /// <summary>
+    /// The wave sizes of this machine's GPUs for <c>--waves</c>, so only the forms they pick are compiled (a NVIDIA GPU
+    /// never runs the native form of a mesh program whose floor is above 32 lanes); null with <c>--all-forms</c> or
+    /// without a GPU, which compiles every form.
+    /// </summary>
+    private string? Waves(SetupContext context)
+    {
+        var gpus = Gpus();
+
+        if (context.Arguments.Flag(AllFormsFlag) || gpus.Count == 0)
+        {
+            return null;
+        }
+
+        return string.Join(",", gpus.Select(adapter => new WaveRange(adapter.WaveLaneCountMin, adapter.WaveLaneCountMax).ToString()).Distinct());
+    }
+
+    /// <summary>The hardware adapters with a D3D12 device.</summary>
+    private List<AdapterInfo> Gpus()
+    {
+        _gpus ??= AdapterCatalog.List().Where(adapter => !adapter.Software && adapter.ShaderModel is not null).ToList();
+
+        return _gpus;
+    }
+
     private static string ResultsPath(SetupContext context)
     {
         return Path.Combine(context.TranslationFolder, CorpusTranslator.ResultsName);
     }
 
-    private static List<string> Arguments(SetupContext context)
+    private List<string> Arguments(SetupContext context)
     {
         var jobs = context.Jobs.ToString(CultureInfo.InvariantCulture);
-        var arguments = new List<string> { context.ProgramFolder, context.TranslationFolder, "--cache", context.CacheFolder, "--jobs", jobs, "--mesh-fallbacks" };
+        var arguments = new List<string> { context.ProgramFolder, context.TranslationFolder, "--cache", context.CacheFolder, "--jobs", jobs };
+
+        if (Fallbacks(context))
+        {
+            arguments.Add("--" + MeshFallbacksFlag);
+        }
+
+        var waves = Waves(context);
+
+        if (waves is not null)
+        {
+            arguments.AddRange(["--waves", waves]);
+        }
+
+        // The programs earlier boots used go first (the loader's journal beside its pipeline cache).
+        var journal = Path.Combine(context.PipelineLibraryFolder, PipelineJournalFile.FileName);
+
+        if (File.Exists(journal))
+        {
+            arguments.AddRange(["--first-used", journal]);
+        }
 
         if (context.Limit is not null)
         {

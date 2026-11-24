@@ -80,6 +80,12 @@ internal sealed record HostOptions
     /// <summary>The warm-up builds only pipelines with a program whose name contains one of these.</summary>
     public List<string> WarmMatches { get; } = [];
 
+    /// <summary>The warm-up builds only the pipelines earlier boots asked for (<c>pipelines-used.bin</c>).</summary>
+    public bool WarmUsedOnly { get; set; }
+
+    /// <summary>Every pipeline the cache lacks is built at creation, not on first use.</summary>
+    public bool EagerPipelines { get; set; }
+
     /// <summary>The PC FidelityFX API DLL the console FidelityFX calls are forwarded to; null leaves FidelityFX off.</summary>
     public string? FidelityFxLibrary { get; set; }
 
@@ -148,6 +154,9 @@ internal sealed record HostOptions
 
     /// <summary>Fail DirectStorage BCPack pages that have no block decoder instead of writing placeholder blocks (<c>--bcpack-missing fail</c>).</summary>
     public bool FailMissingBcPack { get; set; }
+
+    /// <summary>The user's BCPack table file (<c>--bcpack-tables</c>), with which every BCPack codec decodes exactly.</summary>
+    public string? BcPackTables { get; set; }
 
     /// <summary>What XNetworking reports (<c>--network</c>); outbound traffic is sealed in every mode.</summary>
     public NetworkMode NetworkMode { get; set; }

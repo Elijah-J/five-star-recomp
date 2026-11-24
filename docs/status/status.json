@@ -147,30 +147,32 @@
       "unit": " textures",
       "groups": [
         {
-          "name": "Exact",
+          "name": "zlib and stored",
           "done": 354998,
           "partial": 0,
           "todo": 0,
-          "note": "zlib, stored and BCPack BC1"
+          "note": "BC1 pages included"
         },
         {
           "name": "BCPack BC4/BC5",
-          "done": 0,
-          "partial": 132,
+          "done": 132,
+          "partial": 0,
           "todo": 0,
-          "note": "approximate, fitted tables"
+          "note": "with the user\u0027s tables"
         },
         {
           "name": "BCPack BC7",
-          "done": 0,
+          "done": 1870,
           "partial": 0,
-          "todo": 1870
+          "todo": 0,
+          "note": "with the user\u0027s tables"
         },
         {
           "name": "BCPack BC6H/BC3",
-          "done": 0,
+          "done": 115,
           "partial": 0,
-          "todo": 115
+          "todo": 0,
+          "note": "with the user\u0027s tables"
         }
       ]
     },
@@ -220,7 +222,7 @@
         },
         {
           "name": "Pipeline warm-up",
-          "note": "about 9 hours for the full set; the cache makes later boots warm"
+          "note": "built on first use; the warm-up builds what earlier boots used"
         }
       ]
     },
@@ -228,8 +230,8 @@
       "area": "Research",
       "items": [
         {
-          "name": "BCPack BC7, BC6H, BC3",
-          "note": "endpoint and preset tables"
+          "name": "BCPack speed",
+          "note": "table decoding is about 3x slower than the old BC1 path"
         },
         {
           "name": "Ray tracing",

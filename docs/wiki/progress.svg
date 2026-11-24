@@ -2600,7 +2600,7 @@ svg { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
 <rect class="pill" x="700.2" y="367.0" width="96.2" height="16.0" rx="3.0"/>
 <text class="ink" x="704.2" y="379.0" font-size="11.0">GDK calls 100%</text>
 <rect class="hit" x="698.2" y="365.0" width="184.8" height="118.0"><title>GDK calls: 100.0% — 161 functions done, 0 functions not yet</title></rect>
-<text class="ink" x="16.0" y="517.0" font-size="15.0" font-weight="600">Textures: 99.4% (355,130/357,115 textures), 132 textures through a fallback or stand-in</text>
+<text class="ink" x="16.0" y="517.0" font-size="15.0" font-weight="600">Textures: 100% (357,115/357,115 textures)</text>
 <rect class="d" x="17.0" y="527.0" width="9.5" height="9.2" rx="1.0"/>
 <rect class="d" x="28.0" y="527.0" width="9.5" height="9.2" rx="1.0"/>
 <rect class="d" x="39.1" y="527.0" width="9.5" height="9.2" rx="1.0"/>
@@ -3459,23 +3459,23 @@ svg { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
 <rect class="d" x="844.7" y="634.3" width="9.5" height="9.2" rx="1.0"/>
 <rect class="d" x="855.8" y="634.3" width="9.5" height="9.2" rx="1.0"/>
 <rect class="d" x="866.8" y="634.3" width="9.5" height="9.2" rx="1.0"/>
-<rect class="pill" x="19.0" y="529.0" width="71.0" height="16.0" rx="3.0"/>
-<text class="ink" x="23.0" y="541.0" font-size="11.0">Exact 100%</text>
-<rect class="hit" x="17.0" y="527.0" width="860.9" height="118.0"><title>Exact: 100.0% — 354,998 textures done, 0 textures not yet. zlib, stored and BCPack BC1</title></rect>
-<rect class="t" x="879.9" y="527.0" width="1.6" height="10.1" rx="1.0"/>
-<rect class="t" x="879.9" y="538.6" width="1.6" height="10.1" rx="1.0"/>
-<rect class="t" x="879.9" y="550.1" width="1.6" height="10.1" rx="1.0"/>
-<rect class="t" x="879.9" y="561.7" width="1.6" height="10.1" rx="1.0"/>
-<rect class="t" x="879.9" y="573.2" width="1.6" height="10.1" rx="1.0"/>
-<rect class="t" x="879.9" y="584.8" width="1.6" height="10.1" rx="1.0"/>
-<rect class="t" x="879.9" y="596.3" width="1.6" height="10.1" rx="1.0"/>
-<rect class="t" x="879.9" y="607.9" width="1.6" height="10.1" rx="1.0"/>
-<rect class="t" x="879.9" y="619.4" width="1.6" height="10.1" rx="1.0"/>
-<rect class="hit" x="879.9" y="527.0" width="3.1" height="104.0"><title>BCPack BC7: 0.0% — 0 textures done, 1,870 textures not yet</title></rect>
-<rect class="p" x="879.9" y="633.0" width="1.6" height="4.0" rx="1.0"/>
-<rect class="hit" x="879.9" y="633.0" width="3.1" height="5.5"><title>BCPack BC4/BC5: 100.0% — 0 textures done, 132 textures through a fallback or stand-in, 0 textures not yet. approximate, fitted tables</title></rect>
-<rect class="t" x="879.9" y="640.5" width="1.6" height="3.0" rx="1.0"/>
-<rect class="hit" x="879.9" y="640.5" width="3.1" height="4.5"><title>BCPack BC6H/BC3: 0.0% — 0 textures done, 115 textures not yet</title></rect>
+<rect class="pill" x="19.0" y="529.0" width="134.0" height="16.0" rx="3.0"/>
+<text class="ink" x="23.0" y="541.0" font-size="11.0">zlib and stored 100%</text>
+<rect class="hit" x="17.0" y="527.0" width="860.9" height="118.0"><title>zlib and stored: 100.0% — 354,998 textures done, 0 textures not yet. BC1 pages included</title></rect>
+<rect class="d" x="879.9" y="527.0" width="1.6" height="10.1" rx="1.0"/>
+<rect class="d" x="879.9" y="538.6" width="1.6" height="10.1" rx="1.0"/>
+<rect class="d" x="879.9" y="550.1" width="1.6" height="10.1" rx="1.0"/>
+<rect class="d" x="879.9" y="561.7" width="1.6" height="10.1" rx="1.0"/>
+<rect class="d" x="879.9" y="573.2" width="1.6" height="10.1" rx="1.0"/>
+<rect class="d" x="879.9" y="584.8" width="1.6" height="10.1" rx="1.0"/>
+<rect class="d" x="879.9" y="596.3" width="1.6" height="10.1" rx="1.0"/>
+<rect class="d" x="879.9" y="607.9" width="1.6" height="10.1" rx="1.0"/>
+<rect class="d" x="879.9" y="619.4" width="1.6" height="10.1" rx="1.0"/>
+<rect class="hit" x="879.9" y="527.0" width="3.1" height="104.0"><title>BCPack BC7: 100.0% — 1,870 textures done, 0 textures not yet. with the user&apos;s tables</title></rect>
+<rect class="d" x="879.9" y="633.0" width="1.6" height="4.0" rx="1.0"/>
+<rect class="hit" x="879.9" y="633.0" width="3.1" height="5.5"><title>BCPack BC4/BC5: 100.0% — 132 textures done, 0 textures not yet. with the user&apos;s tables</title></rect>
+<rect class="d" x="879.9" y="640.5" width="1.6" height="3.0" rx="1.0"/>
+<rect class="hit" x="879.9" y="640.5" width="3.1" height="4.5"><title>BCPack BC6H/BC3: 100.0% — 115 textures done, 0 textures not yet. with the user&apos;s tables</title></rect>
 <text class="ink" x="16.0" y="679.0" font-size="15.0" font-weight="600">Models: 99.93% (4,304,343/4,306,994 geometries)</text>
 <rect class="d" x="17.0" y="689.0" width="9.5" height="9.2" rx="1.0"/>
 <rect class="d" x="28.0" y="689.0" width="9.5" height="9.2" rx="1.0"/>
@@ -5233,15 +5233,16 @@ svg { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
 <text class="ink2" x="16.0" y="1143.0" font-size="11.0">the story load reaches 62 to 65 GB;</text>
 <text class="ink2" x="16.0" y="1157.0" font-size="11.0">allocator of the large blocks unknown</text>
 <text class="ink" x="16.0" y="1177.0" font-size="12.0">Pipeline warm-up</text>
-<text class="ink2" x="16.0" y="1192.0" font-size="11.0">about 9 hours for the full set; the cache</text>
-<text class="ink2" x="16.0" y="1206.0" font-size="11.0">makes later boots warm</text>
+<text class="ink2" x="16.0" y="1192.0" font-size="11.0">built on first use; the warm-up builds what</text>
+<text class="ink2" x="16.0" y="1206.0" font-size="11.0">earlier boots used</text>
 <text class="ink" x="305.3" y="1026.0" font-size="13.0" font-weight="600">Research</text>
-<text class="ink" x="305.3" y="1044.0" font-size="12.0">BCPack BC7, BC6H, BC3</text>
-<text class="ink2" x="305.3" y="1059.0" font-size="11.0">endpoint and preset tables</text>
-<text class="ink" x="305.3" y="1079.0" font-size="12.0">Ray tracing</text>
-<text class="ink2" x="305.3" y="1094.0" font-size="11.0">instance node fields 0x00 and 0x70</text>
-<text class="ink" x="305.3" y="1114.0" font-size="12.0">Audio DSP impulse responses</text>
-<text class="ink2" x="305.3" y="1129.0" font-size="11.0">format not confirmed</text>
+<text class="ink" x="305.3" y="1044.0" font-size="12.0">BCPack speed</text>
+<text class="ink2" x="305.3" y="1059.0" font-size="11.0">table decoding is about 3x slower than the</text>
+<text class="ink2" x="305.3" y="1073.0" font-size="11.0">old BC1 path</text>
+<text class="ink" x="305.3" y="1093.0" font-size="12.0">Ray tracing</text>
+<text class="ink2" x="305.3" y="1108.0" font-size="11.0">instance node fields 0x00 and 0x70</text>
+<text class="ink" x="305.3" y="1128.0" font-size="12.0">Audio DSP impulse responses</text>
+<text class="ink2" x="305.3" y="1143.0" font-size="11.0">format not confirmed</text>
 <text class="ink" x="594.7" y="1026.0" font-size="13.0" font-weight="600">Engineering</text>
 <text class="ink" x="594.7" y="1044.0" font-size="12.0">Intel CPUs</text>
 <text class="ink2" x="594.7" y="1059.0" font-size="11.0">emulation not yet run on Intel hardware</text>

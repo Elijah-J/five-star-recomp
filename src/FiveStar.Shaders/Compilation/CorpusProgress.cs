@@ -3,5 +3,8 @@
 
 namespace FiveStar.Shaders.Compilation;
 
-/// <summary>How far a corpus run is: programs finished out of the programs it runs.</summary>
-public readonly record struct CorpusProgress(int Done, int Total);
+/// <summary>
+/// How far a corpus run is: programs finished out of the programs it runs, and the expected cost of the finished ones
+/// out of the whole (<see cref="ExpectedCosts"/>; both 0 when the run does not weigh its items).
+/// </summary>
+public readonly record struct CorpusProgress(int Done, int Total, double WorkDone = 0, double WorkTotal = 0);

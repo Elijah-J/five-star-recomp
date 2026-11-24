@@ -64,6 +64,34 @@ public sealed unsafe class D3D12XStandInPipelineTests
         Assert.Equal((0u, 1L), (left, *(long*)(pipeline + sizeof(nint))));
     }
 
+    [Fact]
+    public void A_deferred_creation_builds_only_when_a_command_list_first_sets_it()
+    {
+        using var memory = new NativeBlocks();
+        nint pipeline = FakePipeline(memory);
+        var standIns = StandIns(TimeSpan.Zero);
+        var builds = 0;
+        var uses = 0;
+        nint result = 0;
+
+        Func<PipelineResult> build = () =>
+        {
+            Interlocked.Increment(ref builds);
+
+            return new PipelineResult(HResult.Ok, pipeline);
+        };
+
+        standIns.Deferred(build, &result, "lazy", null, heavy: false, () => uses++);
+        Thread.Sleep(100);
+        Assert.Equal(0, Volatile.Read(ref builds));
+
+        nint standIn = result;
+        Assert.Equal(0, standIns.Desktop(standIn, out bool pending));
+        Assert.True(pending);
+        Assert.True(SpinWait.SpinUntil(() => standIns.Desktop(standIn, out _) != 0, BuildLimit));
+        Assert.Equal((1, 1), (Volatile.Read(ref builds), uses));
+    }
+
     private static StandInPipelines StandIns(TimeSpan budget)
     {
         var builds = new PipelineBuildQueue(1, PipelineBuildQueue.AnyTime);

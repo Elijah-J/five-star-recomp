@@ -37,8 +37,10 @@ public sealed class VariantSelectionTests
         Assert.Equal(ChoiceOutcome.Incorrect, VariantSelector.Choose(Nvidia, WidePixel).Outcome);
         Assert.Equal(ChoiceOutcome.Incorrect, VariantSelector.Choose(Amd, WidePixel).Outcome);
 
-        // A mesh program that needs its whole console wave runs its superstep form on 32-lane waves.
+        // A mesh program that needs its whole console wave runs its superstep form on 32-lane waves, also from a
+        // translation for 32-lane GPUs only, which did not compile the native form.
         Assert.Equal((ChoiceOutcome.Variant, "wm.w32.dxil"), Pick(Nvidia, WideMesh));
+        Assert.Equal((ChoiceOutcome.Variant, "wm.w32.dxil"), Pick(Nvidia, WideMesh with { Dxil = null }));
 
         // A fallback below its floor runs pinned where 64-lane waves exist, else in supersteps.
         Assert.Equal((ChoiceOutcome.Fallback, "wf.msfb_cs.w64.dxil"), Pick(Amd, WideFallback));

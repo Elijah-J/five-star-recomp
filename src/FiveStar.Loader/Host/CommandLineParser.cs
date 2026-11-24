@@ -163,6 +163,8 @@ internal sealed class CommandLineParser
                 return SetWatchTransient();
             case "--bcpack-missing":
                 return SetBcPackMissing();
+            case "--bcpack-tables":
+                return SetBcPackTables();
             case "--pipeline-cache":
                 return SetPipelineCache();
             case "--no-pipeline-cache":
@@ -175,6 +177,14 @@ internal sealed class CommandLineParser
                 return SetWarmStep();
             case "--warm-match":
                 return Add(_options.WarmMatches);
+            case "--eager-pipelines":
+                _options.EagerPipelines = true;
+
+                return true;
+            case "--warm-used-only":
+                _options.WarmUsedOnly = true;
+
+                return true;
             default:
                 throw new CommandLineException($"unknown argument {option}");
         }
@@ -545,6 +555,13 @@ internal sealed class CommandLineParser
             "fail" => true,
             _ => throw new CommandLineException($"--bcpack-missing {value}: expected placeholder or fail"),
         };
+
+        return true;
+    }
+
+    private bool SetBcPackTables()
+    {
+        _options.BcPackTables = Path.GetFullPath(Next());
 
         return true;
     }

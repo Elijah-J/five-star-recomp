@@ -92,9 +92,12 @@ virtual size 0x10000.
 The worker decodes with `FiveStar.Formats`' BCPack decoder into a block buffer it reuses, then writes the destination
 as for any request.
 
+With the user's BCPack tables (`--bcpack-tables <file>`, which `fivestar run` passes from the work folder; see
+[textures.md](textures.md#bcpack-tables)) every codec decodes to its exact blocks. Without them:
+
 | Codec | Output |
 |---|---|
-| BC1 | exact blocks |
+| BC1 | blocks from our fitted BC1 tables |
 | BC4, BC5 | approximate blocks (fitted tables; logged once per codec) |
 | BC3, BC6H, BC7 | placeholder blocks: BC3 and BC7 opaque mid grey, BC6H black |
 
@@ -122,10 +125,12 @@ exactly, approximately, as placeholders and failed.
 ## GPU destinations
 
 Requests whose options set a bit other than the compression and the memory-source bit go to an
-`IStorageDestinationSink` after reading and inflating: `Write(in StorageRequest request, ReadOnlySpan<byte> data)`
-gets the final bytes in staging memory (valid during the call) and the request's raw 0x48 bytes to decode the
-destination. Its HRESULT goes to the status array. Until the D3D12.X layer provides one, the loader's sink fails such
-requests with E_NOTIMPL and logs the first.
+`IStorageDestinationSink` after reading, inflating or BCPack decoding: `Write(in StorageRequest request,
+ReadOnlySpan<byte> data)` gets the final bytes in staging memory (valid during the call) and the request's raw 0x48
+bytes to decode the destination. Its HRESULT goes to the status array. The game's streaming heap uses option bit
+0x200000: the destination is a list of physical frame numbers, one per 64 KiB page, with the byte offset into the
+first page in the 16-bit field at 0x10, and `PhysicalPageSink` writes the data into those frames, so every mapping of
+them sees it. Any other destination fails with E_NOTIMPL; the first is logged.
 
 ## Unknown
 

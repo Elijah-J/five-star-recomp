@@ -64,6 +64,12 @@ public static class VariantSelector
     {
         var fallback = program.MeshFallback;
 
+        // A translation made for GPUs whose waves are all below the floor has only the superstep form.
+        if (adapter.MeshShaders && program.Dxil is null && program.GroupWave is not null && BelowFloor(adapter, program))
+        {
+            return new ProgramChoice(program, ChoiceOutcome.Variant, [program.GroupWave], $"floor {program.Floor} above {adapter.WaveLaneCountMin}-lane waves");
+        }
+
         if (adapter.MeshShaders && program.Dxil is not null)
         {
             var native = FloorChecked(adapter, new ProgramChoice(program, ChoiceOutcome.Native, [program.Dxil], null));

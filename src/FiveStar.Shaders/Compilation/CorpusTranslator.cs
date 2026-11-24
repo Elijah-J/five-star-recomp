@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 using FiveStar.Shaders.Translation;
 
@@ -27,6 +28,9 @@ public sealed partial class CorpusTranslator
 
     /// <summary>The note of a mesh program whose superstep form also compiled as a fallback.</summary>
     public const string SuperstepFallbackReady = SuperstepFallbackNote + ReadySuffix;
+
+    /// <summary>The note of a program whose native form no GPU of the run picks (<see cref="CorpusOptions.Waves"/>).</summary>
+    public const string NativeSkipped = "native form not compiled";
 
     /// <summary>What a note of a form that compiled ends with.</summary>
     public const string ReadySuffix = " ok";
@@ -88,19 +92,48 @@ public sealed partial class CorpusTranslator
             paths = programPaths.Where(path => !final.Contains(Path.GetFileNameWithoutExtension(path))).ToList();
         }
 
-        var results = new ProgramResult[paths.Count];
-        var parallel = new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, options.Parallelism) };
-        var done = 0;
-        Parallel.For(0, paths.Count, parallel, index =>
-        {
-            results[index] = Work(paths[index], options);
-            _progress?.Report(new CorpusProgress(Interlocked.Increment(ref done), paths.Count));
-        });
-
-        var merged = Merge(prior, results);
+        var merged = Merge(prior, RunAll(paths, options));
         ResultsFile.Write(Path.Combine(options.OutputFolder, ResultsName), merged);
 
         return merged;
+    }
+
+    /// <summary>Runs the programs on the parallel jobs, the costliest first, and reports progress in expected cost.</summary>
+    private ProgramResult[] RunAll(IReadOnlyList<string> paths, CorpusOptions options)
+    {
+        var results = new ProgramResult[paths.Count];
+        var parallel = new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, options.Parallelism) };
+        var costs = ExpectedCosts.Of(paths, options.OutputFolder);
+        var total = costs.Sum();
+
+        var done = 0;
+        var finished = 0.0;
+        var gate = new Lock();
+
+        Parallel.ForEach(Partitioner.Create(CostliestFirst(costs), EnumerablePartitionerOptions.NoBuffering), parallel, index =>
+        {
+            results[index] = Work(paths[index], options);
+            double work;
+
+            lock (gate)
+            {
+                finished += costs[index];
+                work = finished;
+            }
+
+            _progress?.Report(new CorpusProgress(Interlocked.Increment(ref done), paths.Count, work, total));
+        });
+
+        return results;
+    }
+
+    /// <summary>
+    /// The indices of the programs, the costliest first (<see cref="ExpectedCosts"/>): dxc needs minutes for the largest
+    /// few, so started last they would run on alone at the end of the run while the other jobs idle.
+    /// </summary>
+    private static int[] CostliestFirst(double[] costs)
+    {
+        return Enumerable.Range(0, costs.Length).OrderByDescending(index => costs[index]).ThenBy(index => index).ToArray();
     }
 
     /// <summary>Earlier results in their order with re-run programs replaced; new programs at the end.</summary>
@@ -153,13 +186,38 @@ public sealed partial class CorpusTranslator
             return new ProgramResult(translated.Name, stageName, ProgramStatus.Ok, null);
         }
 
-        var (status, reason) = Compile(_compiler, hlslPath, translated.Hlsl, translated);
+        return CompileForms(_compiler, translated, stageName, hlslPath, options);
+    }
+
+    /// <summary>Compiles the forms of a translated program the run needs and its mesh fallbacks.</summary>
+    private ProgramResult CompileForms(IShaderCompiler compiler, TranslatedProgram translated, string? stageName, string hlslPath, CorpusOptions options)
+    {
+        var (native, variant) = Forms(translated, options.Waves);
+        var status = ProgramStatus.Ok;
+        string? reason = null;
         var notes = new List<string>();
 
-        if (status == ProgramStatus.Ok && translated.GroupWave is not null)
+        if (native)
+        {
+            (status, reason) = Compile(compiler, hlslPath, translated.Hlsl!, translated);
+        }
+        else
+        {
+            // No GPU of the run picks it: an older run's DXIL of it must not stay behind.
+            File.Delete(Path.ChangeExtension(hlslPath, ".dxil"));
+            notes.Add(NativeSkipped);
+        }
+
+        if (status == ProgramStatus.Ok && translated.GroupWave is not null && variant)
         {
             var variantPath = Path.Combine(options.OutputFolder, translated.Name + GroupWaveSuffix);
-            notes.Add(CompileGroupWave(_compiler, variantPath, translated, translated.GroupWave));
+            var note = CompileGroupWave(compiler, variantPath, translated, translated.GroupWave);
+            notes.Add(note);
+
+            if (!native && note != GroupWaveReady)
+            {
+                return new ProgramResult(translated.Name, stageName, ProgramStatus.CompileFailure, note);
+            }
         }
 
         if (translated.Stage == ShaderStage.Mesh && _fallback is not null && status is ProgramStatus.Ok or ProgramStatus.OkMeshFallback)
@@ -219,6 +277,36 @@ public sealed partial class CorpusTranslator
         }
 
         return notes;
+    }
+
+    /// <summary>
+    /// Which of a program's native form and wave variant the run's GPUs (<see cref="CorpusOptions.Waves"/>) pick: a
+    /// mesh program runs natively where the narrowest wave reaches its floor and as its superstep form elsewhere; a
+    /// pinned compute program natively where the pin is a hardware wave size and as its wave32 variant elsewhere. Both
+    /// without GPUs, for other programs and when the variant did not translate.
+    /// </summary>
+    private static (bool Native, bool Variant) Forms(TranslatedProgram program, IReadOnlyList<WaveRange>? waves)
+    {
+        if (waves is null || waves.Count == 0 || program.GroupWave?.Hlsl is null)
+        {
+            return (true, true);
+        }
+
+        var facts = Analysis.WaveFacts.Read(program.Hlsl!);
+        var floor = facts.Floor;
+        var pin = facts.WavePin;
+
+        if (program.Stage == ShaderStage.Mesh && floor is not null)
+        {
+            return (waves.Any(wave => floor <= wave.Min), waves.Any(wave => floor > wave.Min));
+        }
+
+        if (program.Stage == ShaderStage.Compute && pin is not null)
+        {
+            return (waves.Any(wave => wave.Offers(pin.Value)), waves.Any(wave => !wave.Offers(pin.Value)));
+        }
+
+        return (true, true);
     }
 
     /// <summary>The note of a mesh fallback that was compiled: <c>&lt;note&gt; ok</c> or why it failed.</summary>

@@ -24,6 +24,10 @@ internal static class SetupCommand
         "  --only <a,b>         run only these steps; --force redoes them even when up to date",
         "  --limit N --step K   a sample: the first N programs of every K-th, N textures per page file",
         "  --jobs N             programs translated at once (default: every processor)",
+        "  --mesh-fallbacks     compile the mesh fallbacks even when every GPU here has mesh shaders",
+        "  --all-forms          compile every wave form of every program, not only those the GPUs here pick",
+        "  --warm-all           pipeline-warm builds every console pipeline, not only those earlier boots used",
+        "  --bcpack-tables <file>  import the BCPack tables (bcpack-tables.bin, not shipped) into the work folder",
         "  --dxc <dxc.exe> --gdk-lib <xgameruntime.lib> --loader <fivestar-loader.exe>   tool locations",
     ];
 
@@ -31,7 +35,7 @@ internal static class SetupCommand
     {
         try
         {
-            return Start(new CommandArguments(args, new HashSet<string> { StatusFlag, CleanCacheFlag, ForceFlag }));
+            return Start(new CommandArguments(args, new HashSet<string> { StatusFlag, CleanCacheFlag, ForceFlag, ShaderTranslateStep.MeshFallbacksFlag, ShaderTranslateStep.AllFormsFlag, PipelineWarmStep.WarmAllFlag }));
         }
         catch (ArgumentException exception)
         {
@@ -44,7 +48,7 @@ internal static class SetupCommand
     /// <summary>The steps in dependency order.</summary>
     public static IReadOnlyList<ISetupStep> Steps()
     {
-        return [new VerifyStep(), new ShaderExtractStep(), new ShaderTranslateStep(), new RectangleShaderStep(), new PipelineCacheStep(), new TextureStep(), new GdkAbiStep(), new PipelineWarmStep()];
+        return [new VerifyStep(), new BcPackTablesStep(), new ShaderExtractStep(), new ShaderTranslateStep(), new RectangleShaderStep(), new PipelineCacheStep(), new TextureStep(), new GdkAbiStep(), new PipelineWarmStep()];
     }
 
     private static int Start(CommandArguments arguments)

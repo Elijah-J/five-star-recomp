@@ -33,8 +33,12 @@ internal static class HostUsage
           --translated-dir <dir> translated DXIL programs (fivestar shader translate)
           --pipeline-cache <dir> disk cache of built pipelines (default: <work-dir>\pipeline-cache)
           --no-pipeline-cache    build every pipeline anew and store none
-          --warm-pipelines <shaders.rpf|blob>  no game: build every pipeline of the console pipeline cache into
-                                 the disk cache (with --shader-dir, --translated-dir), resuming where a run stopped
+          --eager-pipelines      build every pipeline the cache lacks at creation; default: those earlier boots
+                                 used (pipelines-used.bin) at creation, the others when first set
+          --warm-pipelines <shaders.rpf|blob>  no game: build the pipelines earlier boots asked for (first-use order),
+                                 then every pipeline of the console pipeline cache, into the disk cache (with
+                                 --shader-dir, --translated-dir), resuming where a run stopped
+          --warm-used-only       warm-up: only the pipelines earlier boots asked for
           --warm-jobs <n>        pipelines the warm-up builds at once (default 4)
           --warm-step <k>        warm-up: every k-th pipeline only
           --warm-match <text>    warm-up: only pipelines with a program whose name contains text (repeatable)
@@ -58,7 +62,10 @@ internal static class HostUsage
           --raytracing          XboxBvhBuilder.dll's CPU paths: console acceleration-structure sizes and BLAS
                                  rehydration into game memory (off: desktop sizes, nothing written)
           --xdsp-convolution     run the XDsp convolution effects on the CPU (default: silence; response format inferred)
-          --bcpack-missing <m>   DirectStorage BCPack pages without exact or approximate blocks (BC3, BC6H, BC7):
+          --bcpack-tables <file> the BCPack tables (bcpack-tables.bin, not shipped; fivestar setup imports them):
+                                 every BCPack codec decodes exactly; without them BC3, BC6H and BC7 have no
+                                 decoder and BC4 and BC5 decode approximately
+          --bcpack-missing <m>   DirectStorage BCPack pages without exact or approximate blocks:
                                  placeholder (default: neutral blocks of the page's format) | fail (E_NOTIMPL)
           --package-root <dir>  package root for XPackage / MicrosoftGame.config (default: main image directory)
           --device-type <n>      XSystemGetDeviceType result (default 7 = XboxScarlettAnaconda)

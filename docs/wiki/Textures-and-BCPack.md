@@ -5,22 +5,53 @@ texture descriptors and name hashes. Pages are stored raw, zlib-compressed, or B
 the console's 4 KiB and 64 KiB tiled layouts; the exporter undoes the tiling and writes DDS. Layout details:
 `docs/textures.md` in the repository.
 
-| Result | Textures |
-|---|---|
-| Export cleanly | 354,520 of 357,115 (99.3%), over all 57 `.ttpf` files |
-| Blocked by BCPack pages of codecs 3 to 7 | 2,112 (1,867 of them BC7) |
-| Blocked by an unknown layout | 483 (280 with layout mode 12, 203 cube maps with mips) |
+| Result (all 57 `.ttpf` files) | With the BCPack tables | Without |
+|---|---|---|
+| Mip 0 decodes exactly | 357,115 of 357,115 | 354,998 |
+| Decodes approximately (BC4, BC5) | 0 | 132 |
+| Blocked by BCPack pages of BC3, BC6H, BC7 | 0 | 1,985 (1,870 BC7, 98 BC6H, 17 BC3) |
+
+The BCPack tables are not part of the project: you supply `bcpack-tables.bin` yourself (see
+[The BCPack tables](#the-bcpack-tables)).
 
 ## BCPack
 
 BCPack is the Xbox Series hardware texture codec: an entropy coder for BCn data that separates colour endpoints from
 indices and codes them with rANS. The page codec number equals `DSTORAGE_BCPACK_MODE` (1 = BC1 ... 7 = BC7).
 
-| Codec | Pages | Stored | State |
-|---|---|---|---|
-| 1 (BC1) | 102,725 | 10.42 GB | decodes |
-| 7 (BC7) | 5,167 | 1.07 GB | open |
-| 3, 4, 5, 6 (BC3, BC4, BC5, BC6H) | 35, 77, 333, 268 | 0.14 GB | open |
+| Codec | Pages | Stored | With the tables | Without |
+|---|---|---|---|---|
+| 1 (BC1) | 102,725 | 10.42 GB | exact | fitted tables (below) |
+| 7 (BC7) | 5,167 | 1.07 GB | exact | no decoder |
+| 6 (BC6H) | 268 | 0.07 GB | exact | no decoder |
+| 3 (BC3) | 35 | 0.01 GB | exact | no decoder |
+| 4, 5 (BC4, BC5) | 77, 333 | 0.06 GB | exact | approximate (fitted tables) |
+
+### The BCPack tables
+
+Above the entropy layer, every codec's block layer needs constant tables: a 255-entry dictionary per codec that back
+references before the first block read, index rank tables, and the BC7 control words. They are Microsoft's format
+data and cannot be derived from the dump, so Five Star Recomp does not ship them in any form. The mechanism follows
+[VIctory](https://github.com/marvisak/victory) (GPL-3.0), whose repository carries the file; its licence does not cover
+the tables.
+
+```
+fivestar setup <dump> --bcpack-tables <path to bcpack-tables.bin>
+```
+
+checks the file (77,982 bytes and a SHA-256) and copies it into the work folder; `fivestar run` passes it to the loader
+and the `textures` step uses it. The `fivestar texture` commands take `--bcpack-tables <file>` or
+`FIVESTAR_BCPACK_TABLES`. Without the file everything works as before: BC1 with our fitted tables, BC4 and BC5
+approximately, BC3, BC6H and BC7 as placeholder blocks in the loader and skipped in the export.
+
+With the tables all 108,605 BCPack pages of the dump decode with valid blocks (`fivestar texture bcpack-scan --codec
+N`), and exported BC3, BC6H and BC7 textures look right. Speed per core is lower than the BC1-only path: about 37
+MB/s for BC1, 25 for BC7.
+
+The tables also settle the BC1 fits below: the rANS models and the 2x2 codebook equal ours, but the dictionary differs
+from our preset window in 54 of 255 slots (by up to 3 in a field). 13,426 BC1 pages decode differently; in the first
+3,000 of them the changed blocks hold 489,862 3-colour blocks with a transparent pixel under our window and 1,671
+under the tables, so the table output is the right one.
 
 ### The BC1 decoder
 
@@ -60,7 +91,7 @@ MB/s per core.
 
 ### Table corrections
 
-The entropy tables are exact; the BC1 preset window and codebook are fits. Ours differ from bcpack-rs in 26 window
+The entropy tables are exact; the BC1 preset window and codebook are fits, used only without the user's BCPack tables. Ours differ from bcpack-rs in 26 window
 slots and two codebook pairs. They change only block colours, never convergence.
 
 **Cause.** Some upstream window values are off by one. Many pages are one long reference chain from a single window
@@ -113,7 +144,6 @@ Before the decoder, the start of a page was read as a fixed header. The decoder 
 
 ### Open
 
-- BC7 (5,167 pages, 1,867 textures): bcpack-rs reports the entropy layer (16 lanes) solved; the block mapping is open.
-- BC3, BC4, BC5 and BC6H (713 pages, 245 textures).
-- Window and codebook values that no texture of the three sets tests, and fits that rest on one texture, keep the
-  upstream values; the search looked only at ±1 per field.
+- The table-driven block layer is about 5 times slower than the BC1-only path; it is not vectorised.
+- Without the user's tables BC3, BC6H and BC7 stay undecoded, and the fitted BC1, BC4 and BC5 tables are
+  approximations.

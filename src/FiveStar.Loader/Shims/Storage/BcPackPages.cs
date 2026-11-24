@@ -10,8 +10,9 @@ namespace FiveStar.Loader.Shims.Storage;
 /// <summary>
 /// The CPU stand-in for the console's BCPack decoder: a request whose compression names a BCPack codec
 /// (<see cref="StorageCompression"/>) carries one stored <c>.ttpf</c> page, and its destination gets the page's BC
-/// blocks in stored order, the texture's memory layout. BC1 decodes exactly, BC4 and BC5 approximately (fitted tables).
-/// BC3, BC6H and BC7 have no block decoder: their pages, and pages that do not decode, get neutral placeholder blocks
+/// blocks in stored order, the texture's memory layout. With the user's tables (<see cref="LoadTables"/>) every codec
+/// decodes exactly. Without them BC1 decodes with our fitted tables, BC4 and BC5 approximately, and BC3, BC6H and BC7
+/// have no block decoder: their pages, and pages that do not decode, get neutral placeholder blocks
 /// (<see cref="BcPackPlaceholder"/>), or fail with E_NOTIMPL / ERROR_INVALID_DATA when <see cref="FailMissing"/> is set.
 /// Shared by every queue's worker; each logs once per codec.
 /// </summary>
@@ -35,6 +36,27 @@ internal sealed class BcPackPages
 
     /// <summary>Gets or sets whether pages without exact or approximate blocks fail instead of getting placeholders (<c>--bcpack-missing fail</c>).</summary>
     public bool FailMissing { get; set; }
+
+    /// <summary>Installs the tables of <paramref name="path"/> (<c>--bcpack-tables</c>) for every decode; null or a bad file logs what decodes without them.</summary>
+    public void LoadTables(string? path)
+    {
+        if (path is null)
+        {
+            _log.Warn("  [xcrdapi] no --bcpack-tables: BCPack BC3, BC6H and BC7 pages get placeholder blocks, BC4 and BC5 decode approximately");
+
+            return;
+        }
+
+        try
+        {
+            BcPackPageDecoder.Install(BcPackTables.Load(path));
+            _log.Info($"  [xcrdapi] BCPack tables {path}: every codec decodes exactly");
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            _log.Warn($"  [xcrdapi] --bcpack-tables {path} not used ({exception.Message}): BC3, BC6H and BC7 pages get placeholder blocks");
+        }
+    }
 
     /// <summary>One line of totals: pages decoded exactly, approximately, as placeholders, and failed.</summary>
     public string Summary() =>
