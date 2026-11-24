@@ -348,9 +348,16 @@ internal sealed unsafe class PipelineFactory
         var onDemand = OnDemand!;
         Func<bool, Task> programs = urgent => Task.WhenAll(lacking.Select(names => onDemand.Request(names, urgent)));
 
+        Func<bool>? programsNow = null;
+
+        if (small)
+        {
+            programsNow = () => lacking.All(onDemand.MakeNow);
+        }
+
         var what = string.Join(" + ", lacking.Select(names => names[0]));
 
-        return StandIns.Waiting(programs, () => Prepared(prepare(), wanted), result, deferral, what, small);
+        return StandIns.Waiting(programs, () => Prepared(prepare(), wanted), result, deferral, what, programsNow);
     }
 
     /// <summary>The build of a recipe whose programs are ready; null when a program could not be made.</summary>

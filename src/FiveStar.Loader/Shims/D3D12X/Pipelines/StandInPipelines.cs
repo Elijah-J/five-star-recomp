@@ -36,6 +36,7 @@ internal sealed unsafe class StandInPipelines
     private readonly HashSet<nint> _small = [];
     private int _smallMade;
     private int _smallNotReady;
+    private int _smallProgramsInline;
 
     private readonly object _gate = new();
     private readonly HashSet<nint> _live = [];
@@ -70,7 +71,7 @@ internal sealed unsafe class StandInPipelines
     }
 
     /// <summary>Stand-ins handed out, how many have their pipeline, the work skipped meanwhile and the work recorded.</summary>
-    public string Summary => $"{Volatile.Read(ref _created)} stand-in pipelines ({Volatile.Read(ref _deferred)} built on first use, {Volatile.Read(ref _used)} of them used, {Volatile.Read(ref _onDemand)} with programs made on demand, {Volatile.Read(ref _ready)} built since, {Count(queue => queue.Backlog)} queued, {Count(queue => queue.WaitingForMemory)} build threads waiting for memory), {Interlocked.Read(ref _skipped)} draws and dispatches skipped, {Interlocked.Read(ref _recorded)} recorded, {SkippedBeforeSummary()}, {Volatile.Read(ref _smallMade)} small compute pipelines made at first use ({Volatile.Read(ref _smallNotReady)} not waited for: programs not ready)";
+    public string Summary => $"{Volatile.Read(ref _created)} stand-in pipelines ({Volatile.Read(ref _deferred)} built on first use, {Volatile.Read(ref _used)} of them used, {Volatile.Read(ref _onDemand)} with programs made on demand, {Volatile.Read(ref _ready)} built since, {Count(queue => queue.Backlog)} queued, {Count(queue => queue.WaitingForMemory)} build threads waiting for memory), {Interlocked.Read(ref _skipped)} draws and dispatches skipped, {Interlocked.Read(ref _recorded)} recorded, {SkippedBeforeSummary()}, {Volatile.Read(ref _smallMade)} small compute pipelines made at first use ({Volatile.Read(ref _smallProgramsInline)} with programs made inline or found ready,{Volatile.Read(ref _smallNotReady)} not waited for: programs not made)";
 
     /// <summary>
     /// Runs <paramref name="create"/> and writes its pipeline to <paramref name="result"/>; when it takes longer than
@@ -158,12 +159,13 @@ internal sealed unsafe class StandInPipelines
     /// Writes a stand-in whose programs are made on demand (<see cref="OnDemandPrograms"/>): <paramref name="programs"/>
     /// starts making them (told whether a command list waits) and, once they are ready, <paramref name="prepare"/> gives
     /// the build, queued as in <see cref="Create"/>; null leaves the stand-in unbuilt. With <paramref name="used"/> this
-    /// starts when a command list first sets the stand-in (as <see cref="Deferred"/>), else now.
+    /// starts when a command list first sets the stand-in (as <see cref="Deferred"/>), else now. A small compute
+    /// stand-in has <paramref name="programsNow"/>, which makes its programs on the thread of its first use.
     /// </summary>
-    public int Waiting(Func<bool, Task> programs, Func<PendingBuild?> prepare, nint* result, Action? used, string what = "", bool small = false)
+    public int Waiting(Func<bool, Task> programs, Func<PendingBuild?> prepare, nint* result, Action? used, string what = "", Func<bool>? programsNow = null)
     {
-        nint standIn = NewStandIn(what, small);
-        Track(standIn, new StandInWork { Programs = programs });
+        nint standIn = NewStandIn(what, programsNow is not null);
+        Track(standIn, new StandInWork { Programs = programs, ProgramsNow = programsNow });
         Interlocked.Increment(ref _created);
         Interlocked.Increment(ref _onDemand);
 
@@ -421,14 +423,15 @@ internal sealed unsafe class StandInPipelines
     }
 
     /// <summary>
-    /// The first use of a small compute stand-in: when its programs are ready, its creation runs on this thread
-    /// (claimed from the queue) within <see cref="SmallBudget"/>; the desktop pipeline, or 0 when the programs are not
-    /// ready or the budget ran out, and the stand-in stays as before.
+    /// The first use of a small compute stand-in: its programs, when not ready, are made on this thread, and its
+    /// creation runs on this thread (claimed from the queue) within <see cref="SmallBudget"/>; the desktop pipeline, or
+    /// 0 when the programs cannot be made here or the budget ran out, and the stand-in stays as before.
     /// </summary>
     private nint MakeNow(nint pipeline)
     {
         var standIn = (StandInPipelineObject*)pipeline;
         var deadline = Stopwatch.GetTimestamp() + (long)(SmallBudget.TotalSeconds * Stopwatch.Frequency);
+        bool madeHere = false;
         using var wait = BlockingWaits.Enter("small compute pipeline at first use");
 
         while (Stopwatch.GetTimestamp() < deadline)
@@ -442,24 +445,30 @@ internal sealed unsafe class StandInPipelines
                 return desktop;
             }
 
-            (PipelineBuild Build, PipelineBuildQueue Queue)? creation = null;
+            StandInWork? work;
 
             lock (_gate)
             {
-                if (_work.TryGetValue(pipeline, out var work))
-                {
-                    creation = work.Creation;
-                }
+                _work.TryGetValue(pipeline, out work);
             }
 
-            // Programs still being made: they take seconds to minutes, so waiting only holds up the game's thread. The
-            // Subrender workers of a loading-screen frame meeting hundreds of such stand-ins slept 250 ms on each, and
-            // the game's hang watchdog ended the story load (docs/debugging.md#hang-watchdog).
+            var creation = work?.Creation;
+
+            // Programs not ready: made here once (a small program takes milliseconds, the workers' queue a minute or
+            // more while loading), then the creation is queued within moments. Never slept on: the Subrender workers
+            // of a loading-screen frame meeting hundreds of such stand-ins slept 250 ms on each, and the game's hang
+            // watchdog ended the story load (docs/debugging.md#hang-watchdog).
             if (!creation.HasValue)
             {
-                Interlocked.Increment(ref _smallNotReady);
+                if (!madeHere && !MakePrograms(work, ref deadline))
+                {
+                    break;
+                }
 
-                break;
+                madeHere = true;
+                Thread.Sleep(1);
+
+                continue;
             }
 
             // Never on this thread while the build would wait for memory (Build waits without a limit).
@@ -472,6 +481,39 @@ internal sealed unsafe class StandInPipelines
         }
 
         return Volatile.Read(ref standIn->Desktop);
+    }
+
+    /// <summary>
+    /// Makes a small stand-in's programs on this thread; true when they are ready, and the budget for its creation
+    /// starts again (<paramref name="deadline"/>).
+    /// </summary>
+    private bool MakePrograms(StandInWork? work, ref long deadline)
+    {
+        if (work?.ProgramsNow is null)
+        {
+            Interlocked.Increment(ref _smallNotReady);
+
+            return false;
+        }
+
+        bool ready;
+
+        using (BlockingWaits.Enter("small compute programs made inline"))
+        {
+            ready = work.ProgramsNow();
+        }
+
+        if (!ready)
+        {
+            Interlocked.Increment(ref _smallNotReady);
+
+            return false;
+        }
+
+        Interlocked.Increment(ref _smallProgramsInline);
+        deadline = Stopwatch.GetTimestamp() + (long)(SmallBudget.TotalSeconds * Stopwatch.Frequency);
+
+        return true;
     }
 
     /// <summary>A count over the build queues (one when the heavy pipelines share the others' threads).</summary>

@@ -112,6 +112,36 @@ internal sealed class OnDemandPrograms : IProgramLibrary
         return false;
     }
 
+    /// <summary>
+    /// Makes the first of <paramref name="names"/> that can be made on this thread, for a small program a command list
+    /// waits for: a worker would take it only after the queue (a minute or more while loading). A job a worker already
+    /// runs, or a heavy one, is left to the workers. True when one is ready.
+    /// </summary>
+    public bool MakeNow(IReadOnlyList<string> names)
+    {
+        foreach (var name in names)
+        {
+            var job = _jobs.GetOrAdd(name, static key => new ProgramJob(key, Stopwatch.GetTimestamp()));
+
+            if (!job.Done.IsCompleted)
+            {
+                Run(job);
+            }
+
+            if (job.Done.IsCompletedSuccessfully && job.Done.Result)
+            {
+                return true;
+            }
+
+            if (!job.Done.IsCompleted)
+            {
+                return false;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>Queues the programs of the shader prefixes in their order (the pipeline journal's first-use order).</summary>
     public int Prefetch(IEnumerable<byte[]> prefixes)
     {
