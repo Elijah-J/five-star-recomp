@@ -99,12 +99,23 @@ internal static unsafe class QueueProgress
     /// <summary>Logs every queue with the values seen before the removal; once.</summary>
     public static void ReportRemoval()
     {
-        if (Interlocked.Exchange(ref _removed, 1) != 0 || _log is null)
+        if (Interlocked.Exchange(ref _removed, 1) != 0)
         {
             return;
         }
 
-        _log.Error($"[gpu] device removed ({MemorySnapshot.Summary()}); the queues as last seen:");
+        Report("device removed");
+    }
+
+    /// <summary>Logs every queue as last seen, after <paramref name="reason"/>.</summary>
+    public static void Report(string reason)
+    {
+        if (_log is null)
+        {
+            return;
+        }
+
+        _log.Error($"[gpu] {reason} ({MemorySnapshot.Summary()}); the queues as last seen:");
 
         for (int i = 0; i < Volatile.Read(ref _count); i++)
         {
@@ -279,7 +290,7 @@ internal static unsafe class QueueProgress
     }
 
     /// <summary>A desktop pipeline by the programs it was built from, or its address.</summary>
-    private static string PipelineName(nint pipeline)
+    public static string PipelineName(nint pipeline)
     {
         if (pipeline == 0)
         {

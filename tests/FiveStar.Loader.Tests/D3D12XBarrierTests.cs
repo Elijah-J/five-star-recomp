@@ -22,6 +22,7 @@ public sealed unsafe class D3D12XBarrierTests
     private const int CreateRenderTargetViewSlot = 20;
     private const int HeapCpuStartSlot = 9;
     private const int CloseSlot = 9;
+    private const int ResetSlot = 10;
     private const int CopyResourceSlot = 17;
     private const int ResourceBarrierSlot = 26;
     private const int ClearRenderTargetViewSlot = 52;
@@ -38,6 +39,8 @@ public sealed unsafe class D3D12XBarrierTests
     private const int RtvHeapType = 2;
     private const int UnorderedAccess = 0x8;
     private const int RenderTarget = 0x4;
+    private const int NonPixelShaderResource = 0x40;
+    private const int PixelShaderResource = 0x80;
     private const int CopySource = 0x800;
     private const int CopyDest = 0x400;
     private const uint AllSubresources = 0xFFFFFFFF;
@@ -88,6 +91,22 @@ public sealed unsafe class D3D12XBarrierTests
         Assert.Equal(2ul, ((delegate* unmanaged<nint, ulong>)XboxDevice.Vtable(fence)[FenceValueSlot])(fence));
         Assert.DoesNotContain("[d3d12-debug] error", log.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("[d3d12-debug] corruption", log.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_compute_list_that_moves_a_render_target_still_closes_and_resets()
+    {
+        using var test = TestRuntime.Create();
+        var device = new XboxDevice(test);
+        nint target = Texture(device, RenderTargetAndUav, UnorderedAccess);
+        nint list = device.ComputeList();
+
+        // RENDER_TARGET (its home) and PIXEL_SHADER_RESOURCE are graphics states: the desktop Close would fail.
+        Barrier(list, target, RenderTarget, NonPixelShaderResource | PixelShaderResource);
+        Assert.Equal(0, ((delegate* unmanaged<nint, int>)XboxDevice.Vtable(list)[CloseSlot])(list));
+
+        nint allocator = device.Allocator(XboxDevice.ComputeType);
+        Assert.Equal(0, ((delegate* unmanaged<nint, nint, nint, int>)XboxDevice.Vtable(list)[ResetSlot])(list, allocator, 0));
     }
 
     [Theory]

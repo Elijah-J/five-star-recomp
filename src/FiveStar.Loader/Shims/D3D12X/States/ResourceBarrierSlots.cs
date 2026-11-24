@@ -66,7 +66,20 @@ internal static unsafe class ResourceBarrierSlots
 
         GpuBreadcrumbs.Close(self);
 
-        return ((delegate* unmanaged<nint, int>)ComObject.Slot(inner, CloseSlot))(inner);
+        int hr = ((delegate* unmanaged<nint, int>)ComObject.Slot(inner, CloseSlot))(inner);
+
+        // An invalid call recorded on the list: its next Reset fails on any allocator (SpareAllocators replaces it).
+        if (HResult.Failed(hr))
+        {
+            WarnCloseFailed(hr);
+        }
+
+        return hr;
+    }
+
+    private static void WarnCloseFailed(int hr)
+    {
+        D3D12X.Warnings.Warn("close", $"[d3d12_xs] command list Close failed: {HResult.Format(hr)} (an invalid call was recorded; the list is replaced at its next Reset)");
     }
 
     [HotPath]
@@ -110,6 +123,11 @@ internal static unsafe class ResourceBarrierSlots
 
         if (wrapper == null || wrapper->Dimension == ResourceStates.UnknownDimension)
         {
+            if (!IsLegal(states, before, after))
+            {
+                return;
+            }
+
             var copy = TransitionBarrier.Of(resource, before, after);
             copy.Subresource = subresource;
             BarrierWriter.Write(list, &copy);
@@ -133,12 +151,37 @@ internal static unsafe class ResourceBarrierSlots
             return;
         }
 
-        BarrierWriter.Transition(list, resource, current, after);
-
-        if (!states.Set(resource, home, after))
+        // A compute or copy list cannot name a graphics state: such a texture is moved by the direct lists only and
+        // keeps its state here.
+        if (!IsLegal(states, current, after))
         {
-            D3D12X.Warnings.Warn("barrier-table", "[d3d12_xs] ResourceBarrier: a list moved more textures than its table holds; the rest stay where the game left them");
+            return;
         }
+
+        BarrierWriter.Transition(list, resource, current, after);
+        states.Set(resource, home, after);
+    }
+
+    /// <summary>
+    /// True when a transition from <paramref name="before"/> to <paramref name="after"/> names only states the list's
+    /// type allows; else false, warned once (the desktop Close would fail and the list never reset again).
+    /// </summary>
+    [HotPath]
+    private static bool IsLegal(ListResourceStates states, int before, int after)
+    {
+        if (((before | after) & ~states.LegalStates) == 0)
+        {
+            return true;
+        }
+
+        WarnIllegal(before, after);
+
+        return false;
+    }
+
+    private static void WarnIllegal(int before, int after)
+    {
+        D3D12X.Warnings.Warn("barrier-list-type", $"[d3d12_xs] ResourceBarrier: a compute or copy list moved a texture from 0x{before:x} to 0x{after:x}, states its list type cannot name; left to the direct lists");
     }
 
     [HotPath]

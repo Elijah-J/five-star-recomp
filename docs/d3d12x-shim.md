@@ -160,8 +160,9 @@ method follows from the arguments and from the inline packet written instead:
 | 61 | 59 | ExecuteIndirect | (signature, 1, argument buffer, offset, null, 0); 8 sites |
 | 62 | | X | (pointer, pointer, dword, 0) |
 | 70 | 62 | OMSetDepthBounds | floats in xmm1, xmm2 |
-| 71 | | X: PIX marker (*inferred*) | (pointer, dword, 0, 0) (0x144ed46a3) |
-| 72, 74 | | X | (pointer into a record array, 0, 0, 1) (0x142482b31); (pointer, 7, pointer, 1) (0x142484b0c) |
+| 71 | | X: bottom-of-pipe dword (*inferred*) | (address, dword, 0, 0) (0x144ed46a3): a per-frame array of 18 dwords at [0x1475DF268] |
+| 72 | | X: bottom-of-pipe timestamp (*inferred*) | (address in a type-2 query record's result array, 0, 0, 1) (0x142482b31) |
+| 74 | | X: bottom-of-pipe qword (*inferred*) | (address, 7, qword, 1) (0x142484b0c): the frame number into a pending record's +0x50 address (0x144e39e77), a counter at [0x1475E75D0] that the CPU otherwise writes itself (0x14044b6c3) |
 | 75, 126, 142 | | X: state writes (*inferred*) | one byte (0x14003281a); (byte, packed dword pair) (0x140032638); one qword (0x1400329e3) |
 | 146 | | X: Barrier (ID3D12GraphicsCommandList7) | (group count, D3D12_BARRIER_GROUP*) (0x14003210d, 0x144da61d1), below |
 | 148 | | X: upload allocation | (size, alignment) returns a pointer the caller also uses as a GPU address; XboxBvhBuilder.dll only (0x180020ed6), no call in the exe |
@@ -332,8 +333,21 @@ chunk is read whole.
 **Spare allocators.** The game takes a list and an allocator from separate pools (0x140188430) and resets the list on
 an allocator that may back another recording list, which the console allows; the desktop answers E_INVALIDARG and the
 game breaks at 0x142474ce1. The list then records on a spare allocator kept for that game allocator and reset with it
-(allocator slot 8; SpareAllocators). Barriers leave out write states the desktop resource has no flag for
-(ResourceStates.Allowed; error #523 on a depth texture moved to UNORDERED_ACCESS).
+(allocator slot 8; SpareAllocators). A list whose Close failed (an invalid call was recorded) is refused by every
+later Reset, on any allocator, with E_INVALIDARG; such a list gets a new desktop list behind the same wrapper (the old
+one is kept, as the GPU may still run it), and the failed Close is warned once. Barriers leave out write states the
+desktop resource has no flag for (ResourceStates.Allowed; error #523 on a depth texture moved to UNORDERED_ACCESS).
+**Bottom-of-pipe writes (list slots 71, 72, 74; `BottomOfPipeWrites`).** Each is a desktop WriteBufferImmediate in
+MARKER_OUT mode (after the list's earlier work) at the desktop address of the game address: 71 one dword, 74 a
+qword, 72 a timestamp taken from the CPU clock at recording, in the console's 100 MHz units. They were E_NOTIMPL
+stubs before, so those values never reached memory. None of them feeds the transient pool's retire tokens, which
+complete through the queue fences (0x144dad000, 0x142474880).
+A compute list names only compute states (VERTEX_AND_CONSTANT_BUFFER, UNORDERED_ACCESS, NON_PIXEL_SHADER_RESOURCE,
+INDIRECT_ARGUMENT, COPY_DEST, COPY_SOURCE, acceleration structure) and a copy list only the copy ones
+(`ResourceStates.Legal`): any other bit fails the desktop Close. Render targets rest in RENDER_TARGET, so a compute
+list's transition of one (or to PIXEL_SHADER_RESOURCE) is left out and the texture keeps its state on that list
+(warned once). The per-list table of moved textures grows as needed; at 64 entries it used to stop tracking, and the
+untracked textures were never moved home at Close.
 **Buffer views on split buffers.** A slot-133 buffer over pages in two sections is two desktop buffers, and the
 game's object is the first. A slot 18/19 buffer view goes to the run that holds its first element and is cut at the
 run's end (BufferViewRanges); a view past the first run's end removed the device (error #31). 16 of 3,388 buffers
@@ -610,16 +624,22 @@ commit). With breadcrumbs, compute queue #2's first list stopped at operation 12
 operation, so its arguments, built for the X-only argument type 0x69 that becomes DISPATCH, are the open question);
 every other list had not started. The buffer-stride fix in descriptor records did not change it. With markers per
 recording (four boots, also with the 24 programs the scanner had skipped), that list finished and queues #2 and #4
-stopped in their second execution at a plain dispatch (45 to 80 groups) of `InstanceCulling~CS_Prop_BatchCull`; queues
-#3 and #5 finished the same list shape. No boot stopped at an ExecuteIndirect. Broadcasting every scalar branch
+stopped in their second execution at a plain dispatch (45 to 80 groups) of `InstanceCulling~CS_Prop_BatchCull`;
+queues #3 and #5 finished the same list shape. No boot stopped at an ExecuteIndirect. Broadcasting every scalar branch
 condition from lane 0 in that program's wave32 variant did not help; bounding its loops did, and the next stop was a
 direct-queue dispatch of `scattering_transmittance_system~CS_DensityShadowMapCheckerboard`, a ray march whose float
 step counter cannot reach its bound. With every loop bounded ([shader-translation.md](shader-translation.md#loop-guard))
 three boots passed that point without a GPU stall and ended on the CPU: once list slot 139's Reset refused with
-E_INVALIDARG on a compute list even on a fresh allocator (the game then breaks at 0x142474ce1), once a silent end at
-115 of 123 GB of commit (debug layer on, cold pipeline cache), once an access violation at 0x144e9b4b2: the game's
+E_INVALIDARG on a compute list even on a fresh allocator (the game then breaks at 0x142474ce1; the list's last Close
+had failed on a graphics state in a compute-list barrier, see Spare allocators under
+[Game memory on the GPU](#game-memory-on-the-gpu); now avoided), once a silent end at 115 of 123 GB of commit (debug layer on, cold pipeline cache), once an access violation at 0x144e9b4b2: the game's
 transient-memory allocator (0x140188430 on context +0x12780, block from 0x14005c280) walks a list at block +0x48 whose
-nodes hold garbage (0xa, 0x200000009). Boot 2 had the same fault after its GPU hang. The loops' inputs are wrong on
+nodes hold garbage (0xa, 0x200000009). Boot 2 had the same fault after its GPU hang. The nodes live inside the
+pool's blocks, which the GPU can also write through the address map; `fivestar-loader --watch-transient`
+([debugging.md](debugging.md#transient-pool-watch)) logs the first bad node and the root descriptors that pointed
+into its block. VIctory (a GPL-3.0 port) met a crash in the same function (0x144e9b54a) from copying shader-written
+buffers back over the game's newer CPU writes; the shim makes no such copy (game memory is the desktop buffer), and
+fence cells follow the desktop completed value, so neither cause applies here as such. The loops' inputs are wrong on
 the PC, and something writes over CPU data in title memory; both were before the root-descriptor address map.
 
 The game's five command signatures are DRAW (stride 16), DRAW_INDEXED (20), 0x69, DISPATCH and DISPATCH_MESH (12

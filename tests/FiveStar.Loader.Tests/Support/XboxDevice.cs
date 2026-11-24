@@ -13,6 +13,7 @@ namespace FiveStar.Loader.Tests.Support;
 internal sealed unsafe class XboxDevice
 {
     public const int DirectType = 0;
+    public const int ComputeType = 2;
     public const int UploadHeap = 2;
     public const int ReadbackHeap = 3;
     public const int GenericRead = 0xAC3;
@@ -55,11 +56,29 @@ internal sealed unsafe class XboxDevice
     /// <summary>Device slot 9 for the allocator, then X slot 73 with the game's desc and list IID.</summary>
     public nint DirectList()
     {
+        return List(DirectType);
+    }
+
+    /// <summary>A compute list, made as <see cref="DirectList"/>.</summary>
+    public nint ComputeList()
+    {
+        return List(ComputeType);
+    }
+
+    /// <summary>Device slot 9: a command allocator of <paramref name="type"/>.</summary>
+    public nint Allocator(int type)
+    {
         Guid allocatorIid = AllocatorIid;
         nint allocator = 0;
-        Assert.Equal(0, ((delegate* unmanaged<nint, int, Guid*, nint*, int>)Vtable(Device)[9])(Device, DirectType, &allocatorIid, &allocator));
+        Assert.Equal(0, ((delegate* unmanaged<nint, int, Guid*, nint*, int>)Vtable(Device)[9])(Device, type, &allocatorIid, &allocator));
 
-        int* desc = stackalloc int[] { DirectType, 6, 1, 0 };
+        return allocator;
+    }
+
+    private nint List(int type)
+    {
+        nint allocator = Allocator(type);
+        int* desc = stackalloc int[] { type, 6, 1, 0 };
         Guid listIid = ListIid;
         nint list = 0;
         var create = (delegate* unmanaged<nint, int*, nint, nint, Guid*, nint*, int>)Vtable(Device)[73];

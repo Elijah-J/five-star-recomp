@@ -316,6 +316,12 @@ internal sealed class LoaderHost
         }
 
         GpuBreadcrumbs.Enable(_options.D3D12Breadcrumbs);
+
+        if (_options.WatchTransient)
+        {
+            TransientPoolWatch.Start(_log);
+        }
+
         _runtime.D3D12X.WaitForProgramIndex();
 
         return new ExecutableRunner(_runtime.Faults, _log).Run(main, _options.RunTimeout);

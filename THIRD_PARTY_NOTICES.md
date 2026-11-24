@@ -31,7 +31,11 @@ their dictionary; our fitted tables remain the fallback without them.
 
 Its pipeline handling (a host pipeline made on the first draw rather than at creation, and a list of the last run's
 pipelines started during loading) was the idea behind building pipelines on first use and the pipeline journal
-(docs/d3d12x-pipelines.md). The design and code are our own; no code was copied.
+(docs/d3d12x-pipelines.md). The design and code are our own.
+
+Its crash in the transient-pool walk (0x144e9b54a, from stale copy-backs of shader-written memory) and its command-list
+object layout (state written up to +0x564) were leads for docs/d3d12x-shim.md, checked against our shim and the
+executable. No code was copied.
 
 ## GTA6-Asset-Info
 

@@ -74,6 +74,22 @@ Tests (`tests/FiveStar.Debugger.Tests`, Windows): the test assembly is also the 
 is reported with module, symbolised frame and a minidump; a one-byte heap overrun passes unnoticed on the normal heap
 and faults on the write under `--debug-heap`.
 
+## Transient pool watch
+
+`fivestar-loader --watch-transient` follows the game's transient-memory pool, the per-frame memory its command-list
+contexts take constants and small objects from (set up at 0x14247ac20; globals pool base 0x1475DF1B8, block records
+0x1475DF1C0, count 0x1475DF1C8, block size 0x1475DF1CC). Each 0x58-byte block record holds the block's address
+(+0x10), its retire token (+0x18) and a list (+0x48) of 0x18-byte nodes {next, pooled allocator or list, token}
+stored inside the blocks: 0x140188430 links one when a context takes a pooled allocator, and 0x144e9b480 (or
+0x1450b8970) walks the list when the block is taken again, then starts a new one in the block's last 0x18 bytes. The
+story-load faults at 0x144e9b4b2 read such a list with garbage nodes (0x2, 0x200000001).
+
+Every 5 ms a thread walks every list; a next pointer outside the pool or an object pointer outside user space, seen
+on three polls in a row, is logged once with the block, the node and the 0x60 bytes around it, followed by every
+queue as last seen ([queue progress](d3d12x-shim.md#queue-progress)). Root CBV, SRV and UAV addresses (list slots 41
+to 46) that fall in the pool are kept in a ring of 4,096 with the list's pipeline; the report lists the newest 24 in
+the corrupted block, which names the GPU work that used it. The game's code is read, never changed.
+
 ## Unknown
 
 - Whether ntdll keeps honouring `PEB.NtGlobalFlag` set at the create-process event in later Windows releases (checked
