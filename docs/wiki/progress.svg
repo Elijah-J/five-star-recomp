@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="900" height="1260" viewBox="0 0 900 1260" role="img" aria-label="Five Star Recomp progress">
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="1274" viewBox="0 0 900 1274" role="img" aria-label="Five Star Recomp progress">
 <title>Five Star Recomp progress</title>
 <style>
 svg { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
@@ -11,7 +11,7 @@ svg { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
   .t { fill: #4a4945; } .pill { fill: #1a1a19; } .hit:hover { fill: #ffffff; }
 }
 </style>
-<rect class="bg" width="900" height="1260"/>
+<rect class="bg" width="900" height="1274"/>
 <text class="ink" x="16.0" y="31.0" font-size="15.0" font-weight="600">Booting the game: 81.8% (9/11 stages), 1 stages through a fallback or stand-in</text>
 <rect class="d" x="17.0" y="41.0" width="9.5" height="9.2" rx="1.0"/>
 <rect class="d" x="28.0" y="41.0" width="9.5" height="9.2" rx="1.0"/>
@@ -5280,8 +5280,9 @@ svg { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
 <text class="ink2" x="16.0" y="1059.0" font-size="11.0">a game assert after the pad pairs</text>
 <text class="ink" x="16.0" y="1079.0" font-size="12.0">First image</text>
 <text class="ink2" x="16.0" y="1094.0" font-size="11.0">frames are still black</text>
-<text class="ink" x="16.0" y="1114.0" font-size="12.0">Pipeline disk cache</text>
-<text class="ink2" x="16.0" y="1129.0" font-size="11.0">cold driver compiles take minutes</text>
+<text class="ink" x="16.0" y="1114.0" font-size="12.0">Pipeline warm-up</text>
+<text class="ink2" x="16.0" y="1129.0" font-size="11.0">about 9 hours for the full set; the cache</text>
+<text class="ink2" x="16.0" y="1143.0" font-size="11.0">makes later boots warm</text>
 <text class="ink" x="305.3" y="1026.0" font-size="13.0" font-weight="600">Research</text>
 <text class="ink" x="305.3" y="1044.0" font-size="12.0">BCPack BC7, BC6H, BC3</text>
 <text class="ink2" x="305.3" y="1059.0" font-size="11.0">endpoint and preset tables</text>
@@ -5296,14 +5297,14 @@ svg { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
 <text class="ink2" x="594.7" y="1094.0" font-size="11.0">glTF</text>
 <text class="ink" x="594.7" y="1114.0" font-size="12.0">Linux and Steam Deck</text>
 <text class="ink2" x="594.7" y="1129.0" font-size="11.0">Proton test</text>
-<rect class="d" x="16.0" y="1157.0" width="12.0" height="12.0" rx="2.0"/>
-<text class="ink" x="34.0" y="1167.5" font-size="12.0">done</text>
-<rect class="p" x="72.4" y="1157.0" width="12.0" height="12.0" rx="2.0"/>
-<text class="ink" x="90.4" y="1167.5" font-size="12.0">done through a fallback or stand-in</text>
-<rect class="t" x="333.4" y="1157.0" width="12.0" height="12.0" rx="2.0"/>
-<text class="ink" x="351.4" y="1167.5" font-size="12.0">not yet</text>
-<text class="mute" x="16.0" y="1189.0" font-size="11.0">Shaders count as compiled when dxc accepts the translated HLSL; the WARP tests check that they compute the right values.</text>
-<text class="mute" x="16.0" y="1204.0" font-size="11.0">One cell stands for several items in large groups; hover a group for its exact numbers.</text>
-<text class="mute" x="16.0" y="1219.0" font-size="11.0">Regenerate: fivestar progress collect --shaders &lt;results.json&gt; --dump &lt;dump&gt; --manual &lt;manual.json&gt; status.json,</text>
-<text class="mute" x="16.0" y="1234.0" font-size="11.0">then fivestar progress status.json progress.svg.</text>
+<rect class="d" x="16.0" y="1171.0" width="12.0" height="12.0" rx="2.0"/>
+<text class="ink" x="34.0" y="1181.5" font-size="12.0">done</text>
+<rect class="p" x="72.4" y="1171.0" width="12.0" height="12.0" rx="2.0"/>
+<text class="ink" x="90.4" y="1181.5" font-size="12.0">done through a fallback or stand-in</text>
+<rect class="t" x="333.4" y="1171.0" width="12.0" height="12.0" rx="2.0"/>
+<text class="ink" x="351.4" y="1181.5" font-size="12.0">not yet</text>
+<text class="mute" x="16.0" y="1203.0" font-size="11.0">Shaders count as compiled when dxc accepts the translated HLSL; the WARP tests check that they compute the right values.</text>
+<text class="mute" x="16.0" y="1218.0" font-size="11.0">One cell stands for several items in large groups; hover a group for its exact numbers.</text>
+<text class="mute" x="16.0" y="1233.0" font-size="11.0">Regenerate: fivestar progress collect --shaders &lt;results.json&gt; --dump &lt;dump&gt; --manual &lt;manual.json&gt; status.json,</text>
+<text class="mute" x="16.0" y="1248.0" font-size="11.0">then fivestar progress status.json progress.svg.</text>
 </svg>

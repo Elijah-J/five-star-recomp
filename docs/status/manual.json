@@ -75,7 +75,7 @@
       "items": [
         { "name": "Physical page bookkeeping", "note": "a game assert after the pad pairs" },
         { "name": "First image", "note": "frames are still black" },
-        { "name": "Pipeline disk cache", "note": "cold driver compiles take minutes" }
+        { "name": "Pipeline warm-up", "note": "about 9 hours for the full set; the cache makes later boots warm" }
       ]
     },
     {
