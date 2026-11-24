@@ -14,7 +14,7 @@
         { "name": "Frame loop and present", "done": 1, "partial": 0, "todo": 0 },
         { "name": "Pipelines", "done": 1, "partial": 0, "todo": 0, "note": "stand-ins while the driver compiles" },
         { "name": "User, saves, pad pairing", "done": 1, "partial": 0, "todo": 0 },
-        { "name": "Next stage streaming", "done": 0, "partial": 1, "todo": 0, "note": "one more XG texture method next" },
+        { "name": "Next stage streaming", "done": 1, "partial": 0, "todo": 0, "note": "three-minute boots run without a crash" },
         { "name": "First image", "done": 1, "partial": 0, "todo": 0, "note": "the intro video" },
         { "name": "Menus", "done": 0, "partial": 0, "todo": 1 },
         { "name": "In game", "done": 0, "partial": 0, "todo": 1 }
@@ -73,7 +73,7 @@
     {
       "area": "Running the game",
       "items": [
-        { "name": "XG texture method", "note": "an element-offset query the game uses after streaming" },
+        { "name": "Menus", "note": "the game is still loading after three minutes; longer runs next" },
         { "name": "First image", "note": "frames are still black" },
         { "name": "Pipeline warm-up", "note": "about 9 hours for the full set; the cache makes later boots warm" }
       ]
