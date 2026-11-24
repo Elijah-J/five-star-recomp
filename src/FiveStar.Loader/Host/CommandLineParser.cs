@@ -154,13 +154,23 @@ internal sealed class CommandLineParser
         }
     }
 
-    /// <summary>The pipeline-cache, warm-up and DirectStorage options, and <c>--watch-transient</c>.</summary>
+    /// <summary>The pipeline-cache, warm-up and DirectStorage options, <c>--watch-transient</c> and the audio capture.</summary>
     private bool ApplyCacheAndStorage(string option)
     {
         switch (option)
         {
             case "--watch-transient":
                 return SetWatchTransient();
+            case "--audio-capture":
+                _options.AudioCapture = Path.GetFullPath(Next());
+
+                return true;
+            case "--record-audio":
+                return SetRecordAudio();
+            case "--desktop-timers":
+                _options.DesktopTimers = true;
+
+                return true;
             case "--bcpack-missing":
                 return SetBcPackMissing();
             case "--bcpack-tables":
@@ -590,6 +600,14 @@ internal sealed class CommandLineParser
     private bool SetXDspConvolution()
     {
         _options.XDspConvolution = true;
+
+        return true;
+    }
+
+    private bool SetRecordAudio()
+    {
+        _options.RecordAudioProcess = int.Parse(Next(), CultureInfo.InvariantCulture);
+        _options.AudioCapture = Path.GetFullPath(Next());
 
         return true;
     }

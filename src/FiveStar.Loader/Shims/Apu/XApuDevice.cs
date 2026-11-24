@@ -19,15 +19,21 @@ internal sealed unsafe class XApuDevice : IDisposable
     /// <summary>The connection handle; any nonzero value, the game only passes it back.</summary>
     public const nint ConnectionHandle = 0x58415055;
 
+    /// <summary>Distinct pitch and first-sample pairs logged.</summary>
+    private const int LoggedFieldValues = 8;
+
     private readonly object _gate = new();
     private readonly Queue<byte[]> _results = new();
     private readonly Dictionary<uint, OpusVoice> _voices = [];
+    private readonly HashSet<(float Pitch, uint First)> _loggedFields = [];
+    private readonly AudioCounters _counters;
     private readonly LoaderLog _log;
     private nint _memory;
     private bool _decodeFailureLogged;
 
-    public XApuDevice(LoaderLog log)
+    public XApuDevice(AudioCounters counters, LoaderLog log)
     {
+        _counters = counters;
         _log = log;
     }
 
@@ -65,10 +71,10 @@ internal sealed unsafe class XApuDevice : IDisposable
             return HResult.InvalidArgument;
         }
 
-        var command = XApuCommand.Read(new ReadOnlySpan<byte>(record, XApuLayout.RecordSize));
-        var result = new byte[XApuLayout.RecordSize];
-        BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(XApuLayout.KindOffset), (uint)command.Kind);
-        BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(XApuLayout.StreamOffset), command.Stream);
+        var source = new ReadOnlySpan<byte>(record, XApuLayout.RecordSize);
+        var command = XApuCommand.Read(source);
+        var result = new byte[XApuLayout.ResultSize];
+        source[..XApuLayout.IdentityBytes].CopyTo(result);
 
         lock (_gate)
         {
@@ -111,7 +117,8 @@ internal sealed unsafe class XApuDevice : IDisposable
             }
         }
 
-        result.CopyTo(new Span<byte>(record, XApuLayout.RecordSize));
+        result.CopyTo(new Span<byte>(record, XApuLayout.ResultSize));
+        _counters.OpusResultTaken();
 
         return HResult.Ok;
     }
@@ -138,16 +145,17 @@ internal sealed unsafe class XApuDevice : IDisposable
         {
             case XApuCommandKind.Create:
                 _voices[command.Stream] = new OpusVoice();
+                _counters.OpusCreated();
                 break;
             case XApuCommandKind.Destroy:
                 _voices.Remove(command.Stream);
+                _counters.OpusDestroyed();
                 break;
             case XApuCommandKind.Reset:
                 Voice(command.Stream).Reset();
                 break;
             case XApuCommandKind.Decode:
-                int bytes = Decode(command);
-                BinaryPrimitives.WriteInt32LittleEndian(result.AsSpan(XApuLayout.ResultBytesOffset), bytes);
+                WriteDecodeResult(command, Decode(command), result);
                 break;
             default:
                 _log.Warn($"[xapu] unknown command {(uint)command.Kind} for stream {command.Stream}");
@@ -155,17 +163,33 @@ internal sealed unsafe class XApuDevice : IDisposable
         }
     }
 
-    /// <summary>Decodes one packet; the bytes of float PCM written, 0 for an empty or broken packet.</summary>
-    private int Decode(in XApuCommand command)
+    /// <summary>The result of a decode: samples per channel and bytes written, the output, pitch and packet echoed.</summary>
+    private static void WriteDecodeResult(in XApuCommand command, (int Samples, int Channels) decoded, byte[] result)
+    {
+        var span = result.AsSpan();
+        BinaryPrimitives.WriteInt32LittleEndian(span[XApuLayout.ResultSamplesOffset..], decoded.Samples);
+        BinaryPrimitives.WriteInt32LittleEndian(span[XApuLayout.ResultBytesOffset..], decoded.Samples * decoded.Channels * sizeof(float));
+        BinaryPrimitives.WriteInt64LittleEndian(span[XApuLayout.ResultOutputAddressOffset..], command.OutputAddress);
+
+        BinaryPrimitives.WriteSingleLittleEndian(span[XApuLayout.ResultPitchOffset..], 1f);
+        BinaryPrimitives.WriteUInt32LittleEndian(span[XApuLayout.ResultInputBytesOffset..], command.InputBytes);
+        BinaryPrimitives.WriteInt64LittleEndian(span[XApuLayout.ResultInputAddressOffset..], command.InputAddress);
+    }
+
+    /// <summary>Decodes one packet; the samples per channel written (0 for an empty or broken packet) and the channels.</summary>
+    private (int Samples, int Channels) Decode(in XApuCommand command)
     {
         uint frame = command.FrameSamples == 0 ? XApuLayout.DefaultFrameSamples : command.FrameSamples;
-        int channels = (int)Math.Clamp(command.OutputBytes / (frame * sizeof(float)), 1, XApuLayout.MaxChannels);
+        int channels = (int)Math.Clamp(command.OutputBytes / (XApuLayout.DefaultFrameSamples * sizeof(float)), 1, XApuLayout.MaxChannels);
         int inputBytes = (int)Math.Min(command.InputBytes, (uint)XApuLayout.InputSlotBytes);
         int outputFloats = (int)Math.Min(command.OutputBytes, (uint)XApuLayout.OutputSlotBytes) / sizeof(float);
+        LogFields(command);
 
         if (command.InputAddress == 0 || command.OutputAddress == 0 || inputBytes == 0)
         {
-            return 0;
+            _counters.OpusDecoded(0, true);
+
+            return (0, channels);
         }
 
         var packet = new ReadOnlySpan<byte>((void*)command.InputAddress, inputBytes);
@@ -173,7 +197,10 @@ internal sealed unsafe class XApuDevice : IDisposable
 
         try
         {
-            return Voice(command.Stream).Decode(packet, output, channels) * sizeof(float);
+            int samples = Voice(command.Stream).Decode(packet, output, channels, (int)Math.Min(command.FirstSample, XApuLayout.MaxPacketSamples), (int)frame);
+            _counters.OpusDecoded(samples, false);
+
+            return (samples, channels);
         }
         catch (OpusException e)
         {
@@ -183,7 +210,18 @@ internal sealed unsafe class XApuDevice : IDisposable
                 _log.Warn($"[xapu] Opus packet of stream {command.Stream} did not decode ({e.Message}); logged once");
             }
 
-            return 0;
+            _counters.OpusDecoded(0, true);
+
+            return (0, channels);
+        }
+    }
+
+    /// <summary>Logs the first few distinct pitch and first-sample values the game sends.</summary>
+    private void LogFields(in XApuCommand command)
+    {
+        if (_loggedFields.Count < LoggedFieldValues && _loggedFields.Add((command.Pitch, command.FirstSample)))
+        {
+            _log.Info($"  [xapu] decode of stream {command.Stream}: pitch field {command.Pitch}, first sample {command.FirstSample}, keep {command.FrameSamples}");
         }
     }
 

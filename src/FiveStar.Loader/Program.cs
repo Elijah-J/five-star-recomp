@@ -45,6 +45,11 @@ public static class Program
             return ClassifyCommand.Run(options);
         }
 
+        if (options.RecordAudioProcess is int process && options.AudioCapture is not null)
+        {
+            return AudioRecorder.Run(process, options.AudioCapture, Console.Out);
+        }
+
         if (options.WarmSource is not null)
         {
             return Warm(options);

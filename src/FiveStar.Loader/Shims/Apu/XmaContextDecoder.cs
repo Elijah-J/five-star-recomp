@@ -72,25 +72,31 @@ internal sealed unsafe class XmaContextDecoder
 
     /// <summary>
     /// Decodes into <paramref name="output"/> (the context's ring) until it is full or both input buffers are used up.
-    /// <paramref name="input0"/> and <paramref name="input1"/> are the input buffers, their packet counts long.
+    /// <paramref name="input0"/> and <paramref name="input1"/> are the input buffers, their packet counts long. Returns
+    /// the blocks written, negative (minus one, minus the blocks) when the input ran out.
     /// </summary>
     [HotPath]
-    public void Service(uint* context, ReadOnlySpan<byte> input0, ReadOnlySpan<byte> input1, Span<byte> output)
+    public int Service(uint* context, ReadOnlySpan<byte> input0, ReadOnlySpan<byte> input1, Span<byte> output)
     {
+        int written = 0;
+
         if (!Enabled || _decoder is null)
         {
-            return;
+            return written;
         }
 
         while (FreeBlocks(context) > 0)
         {
             if (_pendingStart == _pendingEnd && !DecodeNext(context, input0, input1))
             {
-                return;
+                return -1 - written;
             }
 
             WriteBlock(context, output);
+            written++;
         }
+
+        return written;
     }
 
     /// <summary>Blocks the ring can take: none while the output is not valid (full), all of them when it is empty.</summary>

@@ -76,6 +76,30 @@ public sealed unsafe class AudioHardwareTests : IDisposable
     }
 
     [Fact]
+    public void An_opus_decode_drops_the_samples_its_first_sample_field_names_and_echoes_the_command()
+    {
+        var encoder = OpusCodecFactory.CreateEncoder(Rate, 1, OpusApplication.OPUS_APPLICATION_AUDIO);
+        var whole = new XApuDriver(_test, 3, 1);
+        var trimmed = new XApuDriver(_test, 4, 1);
+        var pcm = new float[Frame];
+        var packet = new byte[1275];
+
+        for (int frame = 0; frame < 3; frame++)
+        {
+            for (int sample = 0; sample < Frame; sample++)
+            {
+                pcm[sample] = 0.5f * MathF.Sin(2 * MathF.PI * 440 * ((frame * Frame) + sample) / Rate);
+            }
+
+            int length = encoder.Encode(pcm, Frame, packet, packet.Length);
+            float[] expected = whole.Decode(packet.AsSpan(0, length));
+            float[] decoded = trimmed.Decode(packet.AsSpan(0, length), 312);
+
+            Assert.Equal(expected.AsSpan(312).ToArray(), decoded);
+        }
+    }
+
+    [Fact]
     public void An_xdsp_convolution_stream_completes_each_command_where_the_game_polls_and_returns_silence()
     {
         var connect = (delegate* unmanaged<nint, uint, uint, uint, uint, nint*, int>)_test.Shim("chad.dll", "XDspConnectWithMaximumStreamLimit");

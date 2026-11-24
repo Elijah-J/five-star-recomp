@@ -392,6 +392,8 @@ fivestar-loader --load $dump\XboxBvhBuilder.dll --load $dump\Bink2Scarlett.dll -
 | `--present-test` | present moving color bars instead of the game's frame, to check the swap chain on its own ([d3d12x-shim.md](d3d12x-shim.md#present)) |
 | `--raytracing` | XboxBvhBuilder.dll's CPU paths: console acceleration-structure sizes and BLAS rehydration into game memory ([raytracing.md](raytracing.md)) |
 | `--xdsp-convolution` | run the XDsp convolution effects on the CPU instead of returning silence ([audio-runtime.md](audio-runtime.md#xdsp-protocol)) |
+| `--audio-capture <wav>` | record what the game plays (process loopback, 48 kHz stereo 16-bit) from a child recorder and print the seconds with sound ([audio-runtime.md](audio-runtime.md#diagnostics)) |
+| `--desktop-timers` | keep the desktop's 15.6 ms timer ticks; by default a run takes 1 ms ones, which the game's audio mixer needs ([audio-runtime.md](audio-runtime.md#pacing)) |
 | `--bcpack-tables <file>` | the user's BCPack tables (not shipped; `fivestar setup --bcpack-tables` imports them): every BCPack codec decodes exactly ([textures.md](textures.md#bcpack-tables)) |
 | `--bcpack-missing placeholder\|fail` | DirectStorage BCPack pages without a block decoder (BC3, BC6H, BC7 without tables) or that do not decode: neutral placeholder blocks (default) or a failed request ([directstorage.md](directstorage.md#bcpack-pages)) |
 | `--manual <a.dll,b.dll>`, `--system-crt`, `--search <dir>` | which modules the loader maps itself |
