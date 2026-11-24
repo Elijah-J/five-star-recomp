@@ -92,19 +92,26 @@ With an empty save folder the game shows a black screen that waits for a press (
 policy and terms of service screen, before it loads story mode (a spinner on dark blue). Keys of the
 keyboard-and-mouse gamepad: A (Space) confirms, a short press too; arrows move the focus. The photosensitivity item
 keeps the focus for 4 s. The two terms items are check boxes that A toggles (scrolling their text with the right
-stick, the mouse, is not required); with both checked Confirm is enabled. The terms screen drops the first press it gets. While pipelines compile the game can miss a
+stick, the mouse, is not required); with both checked Confirm is enabled. The first press after Next gets the focus on the legal screen can be dropped. While pipelines compile the game can miss a
 0.2 s press, and an arrow held 0.5 s or longer repeats. With the input script followed while
 running ([loader.md](loader.md#running-the-executable)) these can be answered from a second shell;
 `-- --input-script docs/first-run.input` answers them unattended: it taps Space until the legal screen shows, then
 waits for each screen it needs rather than for a time. It recognises screens it learned from your own frames
 (`%LOCALAPPDATA%\FiveStar\screens.txt`); the first time, press F8 when the legal screen, the terms screen and the story
-load show, and later runs need no help. The game writes these settings to its save, so with the same save folder the
-screens show only once. B
+load show (and the legal screen once Next has the focus), and later runs need no help. B
 (C) goes back to the previous screen. The screens' text, headings and logos render in full; the brightness-calibration
 symbol is still missing (every pixel right of the panel is 0 at level 15). It is not the frame's first draw: that is
 the executable's `VS_Clear` + `PS_Clear` ([shader-containers.md](shader-containers.md#executable)), which now runs but
 changes no pixel, since it reads its rectangle through a root SRV whose GPU address translated programs take as a heap
 index. The next draw (`PS_BlitColour` with a zero colour) fills the target black, and the UI is drawn over it.
+
+**The screens come back every boot (open).** The game saves `Player` at the terms screen and
+`SettingsProfileSettings` (settings and the first-run choices) on a later run, and the next boot lists both and
+reads their headers, but never reads the settings data, so the screens show again. In the executable the settings load
+(0x142245090) is queued only by a presence sign-in event (handler 0x142246740: state 0, signed in, with byte +0x105 set
+when the user is the active user, global 0x146c31b50) or a blocking load (vtable slot 0x146194cf0), and not while the
+settings object's state at +0x840 is 0. The local gamer record (0x1498489c8) is valid: our XUID, type 1, index 0.
+Calling the XUser change callback (SignedInAgain, Gamertag) once after the add did not start the load.
 
 ## Work folder
 
