@@ -232,7 +232,7 @@ internal static unsafe class CommandListBindingMethods
     [UnmanagedCallersOnly]
     public static void Dispatch(XboxObject* self, uint x, uint y, uint z)
     {
-        if (PipelinePending(self))
+        if (ComputeChainBroken(self))
         {
             return;
         }
@@ -249,7 +249,7 @@ internal static unsafe class CommandListBindingMethods
     [UnmanagedCallersOnly]
     public static void ExecuteIndirect(XboxObject* self, nint signature, uint maxCount, nint arguments, ulong argumentOffset, nint count, ulong countOffset)
     {
-        if (PipelinePending(self))
+        if (ComputeChainBroken(self))
         {
             return;
         }
@@ -302,6 +302,34 @@ internal static unsafe class CommandListBindingMethods
 
         standIns?.Skipped(activity->StandIn);
         activity->Skipped = activity->StandIn;
+
+        return true;
+    }
+
+    /// <summary>
+    /// Whether a dispatch or ExecuteIndirect is skipped: its pipeline is a stand-in, or an earlier one of the recording
+    /// was. The game's compute chains (culling, argument building) prepare counters and arguments for the passes after
+    /// them, and the whole 174 MB transient pool is one raw UAV, so a pass that runs after a skipped initialiser can
+    /// write records anywhere in it; skipping the rest of the chain for a frame is harmless.
+    /// </summary>
+    [HotPath]
+    private static bool ComputeChainBroken(XboxObject* self)
+    {
+        var bindings = CommandListBindings.Of(self);
+
+        if (bindings->ComputeSkipped != 0)
+        {
+            ShimContext.Runtime.D3D12X.Pipelines?.StandIns.SkippedAfterChain();
+
+            return true;
+        }
+
+        if (!PipelinePending(self))
+        {
+            return false;
+        }
+
+        bindings->ComputeSkipped = 1;
 
         return true;
     }

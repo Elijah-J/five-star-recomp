@@ -30,6 +30,9 @@ internal unsafe struct CommandListBindings
 
     /// <summary>1 while the pipeline last set is a stand-in the driver has not built: draws and dispatches are skipped.</summary>
     public int PipelinePending;
+
+    /// <summary>1 once a dispatch or ExecuteIndirect of this recording was skipped: every later one is skipped too.</summary>
+    public int ComputeSkipped;
     public fixed uint Graphics[UserDataDwords];
     public fixed uint Compute[UserDataDwords];
 
