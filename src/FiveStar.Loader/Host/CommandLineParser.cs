@@ -148,15 +148,17 @@ internal sealed class CommandLineParser
             case "--cpu":
                 return SetCpu();
             default:
-                return ApplyPipelineCache(option);
+                return ApplyCacheAndStorage(option);
         }
     }
 
-    /// <summary>The pipeline-cache and warm-up options.</summary>
-    private bool ApplyPipelineCache(string option)
+    /// <summary>The pipeline-cache, warm-up and DirectStorage options.</summary>
+    private bool ApplyCacheAndStorage(string option)
     {
         switch (option)
         {
+            case "--bcpack-missing":
+                return SetBcPackMissing();
             case "--pipeline-cache":
                 return SetPipelineCache();
             case "--no-pipeline-cache":
@@ -509,6 +511,21 @@ internal sealed class CommandLineParser
             "host" => false,
             "intel" => true,
             _ => throw new CommandLineException($"--cpu {value}: expected host or intel"),
+        };
+
+        return true;
+    }
+
+    /// <summary>--bcpack-missing placeholder | fail.</summary>
+    private bool SetBcPackMissing()
+    {
+        string value = Next();
+
+        _options.FailMissingBcPack = value switch
+        {
+            "placeholder" => false,
+            "fail" => true,
+            _ => throw new CommandLineException($"--bcpack-missing {value}: expected placeholder or fail"),
         };
 
         return true;

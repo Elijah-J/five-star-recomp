@@ -56,6 +56,8 @@ internal static class HostUsage
           --raytracing          XboxBvhBuilder.dll's CPU paths: console acceleration-structure sizes and BLAS
                                  rehydration into game memory (off: desktop sizes, nothing written)
           --xdsp-convolution     run the XDsp convolution effects on the CPU (default: silence; response format inferred)
+          --bcpack-missing <m>   DirectStorage BCPack pages without exact or approximate blocks (BC3, BC6H, BC7):
+                                 placeholder (default: neutral blocks of the page's format) | fail (E_NOTIMPL)
           --package-root <dir>  package root for XPackage / MicrosoftGame.config (default: main image directory)
           --device-type <n>      XSystemGetDeviceType result (default 7 = XboxScarlettAnaconda)
           --network <mode>       offline (default: connectivity level None) | sealed-online (InternetAccess); either
