@@ -42,6 +42,9 @@ internal sealed unsafe class TransientPoolWatch
     private const int DumpRow = 16;
     private const ulong PointerAlignmentMask = 7;
 
+    /// <summary>Pooled objects are 0x30-byte entries of arrays that may start 4 bytes into an 8-byte word.</summary>
+    private const ulong ObjectAlignmentMask = 3;
+
     /// <summary>A node must look corrupted on this many polls in a row (the game may be relinking it).</summary>
     private const int Confirmations = 3;
 
@@ -160,7 +163,7 @@ internal sealed unsafe class TransientPoolWatch
 
         ulong item = *(ulong*)(node + NodeObjectOffset);
 
-        return item == 0 || (item >= LowestUserAddress && item <= HighestUserAddress && (item & PointerAlignmentMask) == 0);
+        return item == 0 || (item >= LowestUserAddress && item <= HighestUserAddress && (item & ObjectAlignmentMask) == 0);
     }
 
     private bool Suspect(uint index, byte* record, ulong holder, ulong node, ulong pool, uint size)
