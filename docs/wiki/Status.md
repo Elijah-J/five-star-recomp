@@ -5,8 +5,10 @@ GTA VI does not run yet. Its main executable (`game_scarlett_master.exe`, built 
 memory set-up, opening its archives through DirectStorage, the whole D3D12.X device set-up, its GPU memory pools,
 descriptor heaps, render targets and pipelines, and into its frame loop: it now presents frames continuously to its own
 window through a swap chain at its own 30 frames per second. Its frame loop advances: it polls input, starts its save
-system, and after a scripted button press pairs a gamepad with the user and streams its next stage. The frames are
-still black, and a game assert in its physical page bookkeeping stops it there (see [Roadmap](Roadmap.md)).
+system, and after a scripted button press pairs a gamepad with the user and streams its next stage. It now draws its
+first real image: its UI layer and the intro video (Bink, decoded on the CPU and drawn with the game's own translated
+shaders), with one input-layout fix still being merged. A game assert in its physical page bookkeeping stops it
+shortly after (see [Roadmap](Roadmap.md)).
 
 ![Progress](progress.svg)
 
