@@ -104,6 +104,41 @@ load that leaves one to a few compiles instead of 16. A pipeline with 4 MiB of D
 that also waits for 40 GB of commit, so it never holds up the others; until then its draws stay skipped. The sample summary counts the
 queued builds and the threads waiting for memory.
 
+### Programs on demand
+
+As console emulators do, the loader translates and compiles a program when a pipeline first needs it, so a boot needs
+no up-front translation (`fivestar shader translate`, about 2 hours and 36 dxc CPU-hours for all 25,908 programs).
+`OnDemandPrograms` is the program library: a program comes from `--translated-dir` when given and there, else from the
+program cache, else it is made. Code: `OnDemandPrograms`, `ProgramProducer`, `ProgramWorkers`, `OnDemandStart`.
+
+```mermaid
+flowchart LR
+  create["creation (any slot)"] --> have{"every program in the translation or the program cache?"}
+  have -->|"yes"| usual["as before: disk cache, or build (stand-in after 1 s)"]
+  have -->|"no"| stand["stand-in; start now (journal pipeline, --eager-pipelines) or on first use"]
+  stand --> make["worker: translate, pick the form, compile in-process"]
+  make --> file["program cache: name.dxil"]
+  file --> build["recipe and build as before"]
+```
+
+| Item | Rule |
+|---|---|
+| Making a program | `CorpusTranslator.TranslateFile` with the default translator choices; the form the adapter runs is picked as with `variants.json` (native, wave32 variant, mesh superstep form) and only that one is compiled. A mesh fallback is not compiled: pipelines cannot run it |
+| Compiler | `DxcLibraryCompiler`: the DXC API of `dxcompiler.dll` (IDxcCompiler3) in the loader process, with `dxil.dll` loaded first so the DXIL is signed, and the arguments of dxc.exe, so the DXIL (and the disk cache key) is the one `translate` writes. Found from `--dxc`, `FIVESTAR_DXC`, beside the loader, then the Windows SDK; without it programs are not made on demand |
+| -Od | for sources over 2,500,000 characters, and for sources whose -O3 compile timed out or took 180 s or more in a `compile-times.tsv` (of `--translated-dir` and the program cache's own); an in-process compile cannot be stopped, so there is no time limit |
+| Threads | `--shader-jobs` (default a quarter of the logical processors) and one more for sources of 2,000,000 characters or more, so a compile of minutes holds up nothing else. Work a command list waits for goes before prefetched work. Work starts only with the memory of a pipeline build (`WarmMemoryGuard.RoomForBuild`; the heavy thread `RoomForHeavyBuild`) |
+| Prefetch | at device creation the programs of the journal's pipelines are queued in first-use order |
+| Program cache | `--program-cache` (default `<work-dir>\program-cache`; `fivestar run` passes `<work>\program-cache`): `<identity>/<adapter>/<name>.dxil`. The identity hashes FiveStar.Shaders (or the loader when published as one file), the translator choices, the DXC files and arguments and the runtime headers, so a new translator starts a new folder. The adapter folder names the shader model, wave lane range and mesh tier. A failure that would repeat (translator refusal, no form for the adapter, a source error from the compiler) is kept as `<name>.fail` and not retried with the same identity |
+| Rectangle lists | a geometry shader missing from `rect-gs/` is compiled into `<program cache>/rect-gs/` on the first rectangle-list draw |
+
+`--no-on-demand` turns this off (only `--translated-dir` provides programs). The sample summary adds
+`programs on demand: N asked for, M translated and compiled, K found compiled, ready after A s on average and B s at
+most, F failed (count cause; ...), Q queued, R running, W waiting for memory`, and the stand-ins count those `with
+programs made on demand`.
+
+Compiling inside the loader means a compiler crash ends the game; `fivestar shader translate` keeps dxc.exe (one
+process per compile, killed at its time limit) for the full run.
+
 ### Disk cache
 
 The driver's own shader cache stores a compile only once it finishes, so a boot that ends before the largest
@@ -280,7 +315,7 @@ flowchart LR
   desc["game description"] --> read["PipelineStreamParser / PipelineDescReader"]
   read --> gd["GraphicsPipelineDescription<br/>(desktop desc bytes, shader sources)"]
   gd --> key["ProgramKeys: 24-byte code prefix"]
-  key --> lib["IProgramLibrary: translated DXIL (ahead of time)"]
+  key --> lib["IProgramLibrary: translated DXIL (ahead of time or on demand)"]
   gd --> map["InputLayoutMapping: ATTR n"]
   lib --> build["DesktopPipelineBuilder: desktop stream"]
   map --> build
@@ -289,7 +324,7 @@ flowchart LR
 
 | Game item | Desktop pipeline |
 |---|---|
-| Shader (DXBC container or cache code block) | the translated program whose code block starts with the same 24 bytes (the FSSM program inside a container and the cache's code block share them); DXIL is read from the ahead-of-time translation, dxc never runs here |
+| Shader (DXBC container or cache code block) | the translated program whose code block starts with the same 24 bytes (the FSSM program inside a container and the cache's code block share them); DXIL is read from the ahead-of-time translation or the program cache, or made on demand |
 | Shader stage | from the program's hardware stage: VS, PS, GS, NGG as mesh shader (no input assembler then, topology type `TRIANGLE`) |
 | Root signature | `BindlessRootSignature`, created once per device; the game's root signature is kept in the description for binding translation |
 | Input layout | an element becomes `ATTR` p, p the position of its semantic name and index among the non-system ISG1 inputs of the VS; elements the VS does not read become `UNUSED` k. A stream VS is its own DXBC container; a cache VS (a bare code block) takes the signature of its program's container, `<shader-dir>/../dxbc/<name>.dxbc` (`ProgramSignatures`), and only without that file element n becomes `ATTR` n |
@@ -298,8 +333,8 @@ flowchart LR
 | Render-target and depth formats, sample mask and count (cache) | the record's 0x0C entry ([pipeline-cache.md](pipeline-cache.md#pipeline-outputs-and-vertex-input-layout)); the console's D16_UNORM_S8_UINT (118) becomes D32_FLOAT_S8X24_UINT (`DepthFormats`). Only without that entry are they guessed from the registers |
 | Derive | the base pipeline's description (kept per created pipeline) with the overrides applied, created anew; the formats are the base's, which the game found by a pipeline hash over them |
 
-`TranslatedProgramLibrary` reads DXIL from the output of `fivestar shader translate`, finding names through a
-`ProgramIndex` of the extracted programs. A description that cannot be read is logged once and answered with
+`TranslatedProgramLibrary` reads DXIL from the output of `fivestar shader translate` (or from the program cache of
+[programs on demand](#programs-on-demand)), finding names through a `ProgramIndex` of the extracted programs. A description that cannot be read is logged once and answered with
 E_NOTIMPL; a shader without a translation with HRESULT_FROM_WIN32(ERROR_NOT_FOUND). The `--sample-threads` summary
 counts failed creations by slot and cause (`no extracted program <key>`, `no loadable form of <program>`, `desktop
 creation <HRESULT> (<programs>)`), names the 8 most frequent, then every key of a program not among the extracted ones
@@ -325,10 +360,11 @@ Without `variants.json` every program loads `<name>.dxil` and a warning says so.
 
 ## Device hookup
 
-When the device is created and the loader has `--shader-dir` and `--translated-dir`, `XboxDeviceFactory` builds the
-`PipelineSlots` (a `PipelineFactory` over the desktop `ID3D12Device2`, `BindlessRoot.Create`, a
-`TranslatedProgramLibrary`, the `StandInPipelines` with their build threads and the disk cache) and `PipelineSlotHandlers.Register` binds slots 55, 57, 62, 67 and 86 through
-`XboxObjects.SetHandler`. Without the folders the slots stay logged E_NOTIMPL stubs. Pipeline states are returned
+When the device is created and the loader has `--shader-dir` and either programs on demand or `--translated-dir`,
+`XboxDeviceFactory` builds the `PipelineSlots` (a `PipelineFactory` over the desktop `ID3D12Device2`,
+`BindlessRoot.Create`, the `OnDemandPrograms` or a `TranslatedProgramLibrary`, the `StandInPipelines` with their build
+threads and the disk cache) and `PipelineSlotHandlers.Register` binds slots 55, 57, 62, 67 and 86 through
+`XboxObjects.SetHandler`. Without them the slots stay logged E_NOTIMPL stubs. Pipeline states are returned
 unwrapped, so slot 55 receives the desktop pointer it registered.
 
 ## Unknown

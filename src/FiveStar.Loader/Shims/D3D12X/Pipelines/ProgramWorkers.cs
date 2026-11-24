@@ -50,10 +50,10 @@ internal sealed class ProgramWorkers
     {
         for (int i = 0; i < Workers; i++)
         {
-            new Thread(RunOrdinary) { IsBackground = true, Name = "fivestar program compile", Priority = ThreadPriority.BelowNormal }.Start();
+            new Thread(RunOrdinary) { IsBackground = true, Name = "fivestar program compile" }.Start();
         }
 
-        new Thread(RunHeavy) { IsBackground = true, Name = "fivestar heavy program compile", Priority = ThreadPriority.BelowNormal }.Start();
+        new Thread(RunHeavy) { IsBackground = true, Name = "fivestar heavy program compile" }.Start();
     }
 
     /// <summary>Queues ordinary work; <paramref name="urgent"/> for work a command list waits for.</summary>
