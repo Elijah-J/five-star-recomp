@@ -100,7 +100,10 @@ at 870 s); 16 build threads compiling them took the loader from 19 to 74 GB priv
 the commit charge reached the commit limit (129.1 of 129.2 GB) and the process ended without a record. So a build
 thread starts a build only while the machine has 8 GB of commit and 4 GB of physical memory available plus 2 GB of
 each for every compile running, the new one included (`WarmMemoryGuard.RoomForBuild`, polled every 2 s): during the
-load that leaves one to a few compiles instead of 16. A pipeline with 4 MiB of DXIL or more goes to a thread of its own
+load that leaves one to a few compiles instead of 16. Commit counts with the growth Windows can still give the page
+files (PageFileGrowth): to the configured maximum, or three times the physical memory for a system-managed page
+file, within the free space of its drive less 16 GB. On a machine whose system-managed page file had shrunk to a
+82.6 GB limit, the limit alone parked 15 build threads while 16 to 28 GB of physical memory was free. A pipeline with 4 MiB of DXIL or more goes to a thread of its own
 that also waits for 40 GB of commit, so it never holds up the others; until then its draws stay skipped. The sample summary counts the
 queued builds and the threads waiting for memory.
 
@@ -126,8 +129,9 @@ flowchart LR
 | Making a program | `CorpusTranslator.TranslateFile` with the default translator choices; the form the adapter runs is picked as with `variants.json` (native, wave32 variant, mesh superstep form) and only that one is compiled. A mesh fallback is not compiled: pipelines cannot run it |
 | Compiler | `DxcLibraryCompiler`: the DXC API of `dxcompiler.dll` (IDxcCompiler3) in the loader process, with `dxil.dll` loaded first so the DXIL is signed, and the arguments of dxc.exe, so the DXIL (and the disk cache key) is the one `translate` writes. Found from `--dxc`, `FIVESTAR_DXC`, beside the loader, then the Windows SDK; without it programs are not made on demand |
 | -Od | for sources over 2,500,000 characters, and for sources whose -O3 compile timed out or took 180 s or more in a `compile-times.tsv` (of `--translated-dir` and the program cache's own); an in-process compile cannot be stopped, so there is no time limit |
-| Threads | `--shader-jobs` (default a quarter of the logical processors) and one more for sources of 2,000,000 characters or more, so a compile of minutes holds up nothing else. Work a command list waits for goes before prefetched work. Work starts only with the memory of a pipeline build (`WarmMemoryGuard.RoomForBuild`; the heavy thread `RoomForHeavyBuild`) |
+| Threads | `--shader-jobs` (default a quarter of the logical processors) and one more for sources of 2,000,000 characters or more, so a compile of minutes holds up nothing else. Work a command list waits for goes before prefetched work. A thread waits for memory before it takes work, so urgent work queued meanwhile is taken first. Work starts only with the memory of a pipeline build (`WarmMemoryGuard.RoomForBuild`; the heavy thread `RoomForHeavyBuild`) |
 | Prefetch | at device creation the programs of the journal's pipelines are queued in first-use order |
+| Priority | the first time a command list sets a stand-in, its programs and its queued creation become urgent (StandInPipelines.Promote, PipelineBuildQueue.Promote): they go before the journal's pipelines and every prefetched program. Before, a journal pipeline's stand-in kept the prefetch priority when the game used it, and at the story load programs were ready after 238 s on average |
 | Program cache | `--program-cache` (default `<work-dir>\program-cache`; `fivestar run` passes `<work>\program-cache`): `<identity>/<adapter>/<name>.dxil`. The identity hashes FiveStar.Shaders (or the loader when published as one file), the translator choices, the DXC files and arguments and the runtime headers, so a new translator starts a new folder. The adapter folder names the shader model, wave lane range and mesh tier. A failure that would repeat (translator refusal, no form for the adapter, a source error from the compiler) is kept as `<name>.fail` and not retried with the same identity |
 | Rectangle lists | a geometry shader missing from `rect-gs/` is compiled into `<program cache>/rect-gs/` on the first rectangle-list draw |
 

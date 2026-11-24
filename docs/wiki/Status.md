@@ -8,11 +8,11 @@ window through a swap chain at its own 30 frames per second. Its frame loop adva
 system, and after a scripted button press pairs a gamepad with the user and streams its next stage. It now draws its
 first real image: its UI layer and the intro video (Bink, decoded on the CPU and drawn with the game's own translated
 shaders) in the right colours. It then shows the Rockstar logo, the intro art and every first-run screen (text size,
-brightness, controls, legal, privacy policy and terms), which scripted input answers, saves its settings and starts
-loads story mode, and has shown the story intro's title card ("Vice City, two years ago") before stopping. The current
-blocker is GPU work writing past its buffers into the game's own memory, which then corrupts the game's transient
-memory pool or hangs the GPU, most likely because the console's buffer bounds checks are not applied yet (see
-[Roadmap](Roadmap.md)).
+brightness, controls, legal, privacy policy and terms), which scripted input answers, saves its settings, loads story
+mode and has shown the story intro's title card ("Vice City, two years ago"). Shaders are translated and compiled when
+the game first uses them, so no preparation step is needed. The memory corruption and GPU hangs of the story load are
+fixed (the console's buffer range checks); the current blocker is the game ending itself late in the story load,
+most likely its hang watchdog while frames wait for shaders still being compiled (see [Roadmap](Roadmap.md)).
 
 ![Progress](progress.svg)
 

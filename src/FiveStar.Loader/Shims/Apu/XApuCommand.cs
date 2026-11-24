@@ -9,6 +9,9 @@ namespace FiveStar.Loader.Shims.Apu;
 internal readonly record struct XApuCommand(
     XApuCommandKind Kind,
     uint Stream,
+    uint Channels,
+    float Pitch,
+    uint FirstSample,
     uint FrameSamples,
     uint InputBytes,
     nint InputAddress,
@@ -20,6 +23,9 @@ internal readonly record struct XApuCommand(
         return new XApuCommand(
             (XApuCommandKind)BinaryPrimitives.ReadUInt32LittleEndian(record[XApuLayout.KindOffset..]),
             BinaryPrimitives.ReadUInt32LittleEndian(record[XApuLayout.StreamOffset..]),
+            BinaryPrimitives.ReadUInt32LittleEndian(record[XApuLayout.CreateChannelsOffset..]),
+            BinaryPrimitives.ReadSingleLittleEndian(record[XApuLayout.PitchOffset..]),
+            BinaryPrimitives.ReadUInt32LittleEndian(record[XApuLayout.FirstSampleOffset..]),
             BinaryPrimitives.ReadUInt32LittleEndian(record[XApuLayout.FrameSamplesOffset..]),
             BinaryPrimitives.ReadUInt32LittleEndian(record[XApuLayout.InputBytesOffset..]),
             (nint)BinaryPrimitives.ReadInt64LittleEndian(record[XApuLayout.InputAddressOffset..]),

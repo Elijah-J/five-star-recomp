@@ -14,6 +14,8 @@ internal sealed unsafe class XApuDriver
 {
     private const int Slot = 5;
     private const int Record = 0x40;
+    private const int Result = 0x50;
+    private const ulong Context = 0x1234_5678_9ABC;
     private const int InputSlot = 0x280;
     private const int OutputBase = 0x14000;
     private const int OutputSlot = 0x1E00;
@@ -43,31 +45,34 @@ internal sealed unsafe class XApuDriver
         _memory = memory;
         _handle = handle;
 
-        Send(1, 0, 0, 0, 0);
+        Send(1, 0, 0, 0, 0, 0);
         Assert.Equal(1u, Receive(out _));
     }
 
-    /// <summary>Decodes one packet; returns the interleaved floats the result reports.</summary>
-    public float[] Decode(ReadOnlySpan<byte> packet)
+    /// <summary>Decodes one packet, dropping its first <paramref name="first"/> samples; returns the interleaved floats the result reports.</summary>
+    public float[] Decode(ReadOnlySpan<byte> packet, uint first = 0)
     {
         nint input = _memory + (Slot * InputSlot);
         nint output = _memory + OutputBase + (Slot * OutputSlot);
         packet.CopyTo(new Span<byte>((void*)input, packet.Length));
 
-        Send(3, packet.Length, input, _channels * ChannelBytes, output);
+        Send(3, first, packet.Length, input, _channels * ChannelBytes, output);
         Assert.Equal(1u, _count(_handle, 0));
         Assert.Equal(3u, Receive(out int bytes));
 
         return new ReadOnlySpan<float>((void*)output, bytes / sizeof(float)).ToArray();
     }
 
-    private void Send(uint kind, int inputBytes, nint input, int outputBytes, nint output)
+    private void Send(uint kind, uint first, int inputBytes, nint input, int outputBytes, nint output)
     {
         var record = stackalloc byte[Record];
         var span = new Span<byte>(record, Record);
         span.Clear();
+
         BinaryPrimitives.WriteUInt32LittleEndian(span, kind);
         BinaryPrimitives.WriteUInt32LittleEndian(span[0x04..], _stream);
+        BinaryPrimitives.WriteUInt64LittleEndian(span[0x10..], Context);
+        BinaryPrimitives.WriteUInt32LittleEndian(span[0x20..], first);
         BinaryPrimitives.WriteUInt32LittleEndian(span[0x24..], Frame);
 
         BinaryPrimitives.WriteInt32LittleEndian(span[0x28..], inputBytes);
@@ -80,11 +85,14 @@ internal sealed unsafe class XApuDriver
 
     private uint Receive(out int bytes)
     {
-        var record = stackalloc byte[Record];
+        var record = stackalloc byte[Result];
         Assert.Equal(0, _dequeueRaw(_handle, record));
-        var span = new ReadOnlySpan<byte>(record, Record);
+        var span = new ReadOnlySpan<byte>(record, Result);
+
         Assert.Equal(_stream, BinaryPrimitives.ReadUInt32LittleEndian(span[0x04..]));
+        Assert.Equal(Context, BinaryPrimitives.ReadUInt64LittleEndian(span[0x10..]));
         bytes = BinaryPrimitives.ReadInt32LittleEndian(span[0x34..]);
+        Assert.Equal(bytes, BinaryPrimitives.ReadInt32LittleEndian(span[0x30..]) * _channels * sizeof(float));
 
         return BinaryPrimitives.ReadUInt32LittleEndian(span);
     }

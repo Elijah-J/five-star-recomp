@@ -19,15 +19,17 @@ internal sealed unsafe class AcpHalDevice : IDisposable
     private readonly object _gate = new();
     private readonly HashSet<uint> _loggedMessages = [];
     private readonly ApuHeap _heap;
+    private readonly AudioCounters _counters;
     private readonly LoaderLog _log;
     private XmaContextDecoder?[] _decoders = [];
     private nint _object;
     private nint _vtable;
     private nint _contexts;
 
-    public AcpHalDevice(ApuHeap heap, LoaderLog log)
+    public AcpHalDevice(ApuHeap heap, AudioCounters counters, LoaderLog log)
     {
         _heap = heap;
+        _counters = counters;
         _log = log;
     }
 
@@ -158,6 +160,8 @@ internal sealed unsafe class AcpHalDevice : IDisposable
         var work = (uint*)_heap.ToVirtualAddress(XmaContextLayout.WorkBuffer.Read(context), XmaContextLayout.WorkBufferBytes);
         decoder.Enable(context, Chained(XmaWorkBufferTag.Read(work), index));
         new XmaWorkBufferTag((uint)index, decoder.Generation).Write(work);
+
+        _counters.XmaEnabled();
         Service(decoder, context);
 
         return HResult.Ok;
@@ -199,6 +203,7 @@ internal sealed unsafe class AcpHalDevice : IDisposable
         }
 
         _decoders[(int)*payload]?.Disable();
+        _counters.XmaDisabled();
 
         return HResult.Ok;
     }
@@ -224,6 +229,7 @@ internal sealed unsafe class AcpHalDevice : IDisposable
         }
 
         var decoder = _decoders[(int)*payload];
+        _counters.XmaTaken();
 
         if (decoder is not null)
         {
@@ -252,12 +258,22 @@ internal sealed unsafe class AcpHalDevice : IDisposable
 
         if (output == 0)
         {
+            _counters.XmaUnmapped();
+
             return;
         }
 
         var input0 = Input(XmaContextLayout.InputBuffer0.Read(context), XmaContextLayout.InputPackets0.Read(context));
         var input1 = Input(XmaContextLayout.InputBuffer1.Read(context), XmaContextLayout.InputPackets1.Read(context));
-        decoder.Service(context, input0, input1, new Span<byte>((void*)output, (int)outputBytes));
+        int written = decoder.Service(context, input0, input1, new Span<byte>((void*)output, (int)outputBytes));
+
+        if (written < 0)
+        {
+            _counters.XmaInputEnded();
+            written = -1 - written;
+        }
+
+        _counters.XmaBlocksWritten(written);
     }
 
     private ReadOnlySpan<byte> Input(uint apuAddress, uint packets)

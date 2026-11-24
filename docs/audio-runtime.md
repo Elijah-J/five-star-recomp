@@ -64,18 +64,19 @@ mixed by the game's engine.
 
 ### XApu protocol
 
-`XApuEnqueueCommand(handle, command*, 0)` takes a 0x40-byte command; each command is answered by one 0x40-byte
-result that the game collects every audio frame with `XApuGetResultCount(handle, 0)` and `XApuDequeueResult`
-(0x144eaa840). Results carry the command's type and stream.
+`XApuEnqueueCommand(handle, command*, 0)` takes a 0x40-byte command; each command is answered by one 0x50-byte
+result (the game zeroes 0x50 bytes for it) that the game collects every audio frame with `XApuGetResultCount(handle,
+0)` and `XApuDequeueResult` (0x144eaa840). The game reads only the result's type, stream and byte count.
 
 | Offset | Size | Command field |
 |---|---|---|
 | 0x00 | 4 | Type: 1 create, 2 destroy, 3 decode, 5 reset |
 | 0x04 | 4 | Stream (the game's numbers, below 0x100) |
-| 0x18 | 4 | Create: a value from the voice; decode: 0 |
-| 0x1C | 4 | Decode: float from the voice, meaning unknown |
-| 0x20 | 4 | Decode: value from the voice, meaning unknown |
-| 0x24 | 4 | Decode: samples per channel of a frame, 960 |
+| 0x08 | 16 | Sequence, options and a u64 context (VIctory's names); the result echoes the first 0x18 bytes |
+| 0x18 | 4 | Create: channels; decode: 0 |
+| 0x1C | 4 | Decode: the voice's rate as a float, 48000 (VIctory: a pitch); not applied |
+| 0x20 | 4 | Decode: samples per channel to drop from the decoded packet: 312 (the Opus pre-skip) on a stream's first packet, else 0 |
+| 0x24 | 4 | Decode: samples per channel to keep at most, 960 |
 | 0x28 | 4 | Decode: packet bytes (the AWC u16 length prefix stripped) |
 | 0x2C | 8 | Decode: packet address (unaligned) |
 | 0x34 | 4 | Decode: output capacity, channels * 0xF00 |
@@ -83,7 +84,9 @@ result that the game collects every audio frame with `XApuGetResultCount(handle,
 
 The shared memory `XApuConnect` returns holds per decode slot (below 0x80) a 0x280-byte packet staging area at
 slot * 0x280 and a 0x1E00-byte output area at 0x14000 + slot * 0x1E00. A decode result's u32 at +0x34 is the bytes of
-32-bit float PCM written, channels interleaved; the game multiplies by 32767 and packs to 16-bit.
+32-bit float PCM written, channels interleaved; the game multiplies by 32767 and packs to 16-bit. The result also
+carries the samples per channel at +0x30, the output address at +0x38, a pitch of 1.0 at +0x40 and the packet bytes
+and address at +0x44 and +0x48 (VIctory's layout).
 
 The game's stream states (table at 0x149ae8c90): 1 creating, 2 resetting, 3 destroying, 4 ready, 5 decoded. A
 create result moves 1 to 4, a decode result 4 to 5, a reset result 2 to 4, a destroy result frees the stream.
@@ -191,6 +194,22 @@ signal. The dry signal is the game's own: before the effect it saves each channe
 Kind 2 (vtable 0x146682400) submits one to four 1024-float mono pages per call and copies each output page into a
 ring of its own (0x1443b3980, 0x1443b3cc0). What it computes is not known.
 
+### Pacing
+
+The engine's mixer thread (0x141e95040) mixes one 256-frame block (5.3 ms at 48 kHz) and then sleeps for what is
+left of the block, about 4 ms (0x1443ae230, `Sleep` through 0x14092eca0). The render thread (0x1443adc40) waits up
+to 100 ms on the endpoint's event and copies the mixed blocks into the endpoint's buffers, through
+`ISpatialAudioObjectRenderStream` (`BeginUpdatingAudioObjects`, one static object per channel,
+`ISpatialAudioObject::GetBuffer`, `EndUpdatingAudioObjects`; 0x1443adf30), not `IAudioRenderClient`.
+
+A desktop process sleeps in 15.6 ms timer ticks unless it asks for finer ones. With them the mixer woke about 64 times
+a second (the boot logs show 65 `XApuGetResultCount` calls a second) instead of 187.5, so it mixed a third of what
+the endpoint plays, and the endpoint played mostly the silence of an empty ring. The loader therefore takes a 1 ms
+timer resolution for the whole run (`timeBeginPeriod(1)`, before mapped code runs; given back at the end) and opts
+out of the Windows 11 throttling that drops it while the window is hidden (`--desktop-timers` keeps the 15.6 ms
+ticks, to compare). It affects every sleep of the game: another thread sleeps in computed steps (0x143da3d60) and one
+sleeps 1 s at a time (0x142215a60).
+
 ## On the PC
 
 | Call | Loader |
@@ -200,7 +219,7 @@ ring of its own (0x1443b3980, 0x1443b3cc0). What it computes is not known.
 | `AcpHalCreate` | an IAcpHal object: slot 0, 1 and 2 return S_OK (messages logged once per type), slots 3 and 4 E_NOTIMPL, slot 5 releases |
 | IAcpHal messages 5, 7, 0x12 | XMA decoding on the CPU, on the caller's thread: message 5 resets the context's decoder and 0x12 moves the read offset and sets output valid; both then decode (XmaStreamDecoder.DecodeFrameAt) from the input read offset into the ring, block by block, until it is full or the input is used up. Each frame gives all 512 samples per channel, as 16-bit little-endian PCM; the start skip, the loop (end subframe, jump, start skip, count) and the input buffer switch follow the fields above. Message 7 stops the context |
 | `AcpHalReleaseShapeContexts` | frees the contexts |
-| `XApuConnect` and the queue | a CPU queue: a command runs when enqueued and its result waits for the poll. Opus decodes with Concentus at 48 kHz, one decoder per stream kept across packets; the channel count comes from the output capacity |
+| `XApuConnect` and the queue | a CPU queue: a command runs when enqueued and its result waits for the poll. Opus decodes with Concentus at 48 kHz, one decoder per stream kept across packets; the channel count comes from the output capacity; the decode drops the command's first samples and keeps at most its frame count |
 | Chained XMA contexts | on enable a context writes a tag (context index and enable count) into its work buffer; a context whose work buffer holds another context's current tag, copied there by the game, takes over that decoder's overlap, so the chain plays as one continuous decode |
 | `XDsp*` | streams on the CPU: a command runs and completes when it is submitted (id = completed count, written to the stream's status record). By default every effect writes a silent output page. With `--xdsp-convolution` a convolution stream convolves each channel of the input page with the response (uniformly partitioned FFT convolution, one block per partition, no added latency) and writes the output page, times the two command floats; kind 2 stays silent |
 
@@ -209,10 +228,19 @@ inferred (the size is counted in 4-byte units and the DSP pages hold channels on
 which is why it is off by default. Still needed: the response format, and a check that WASAPI on the PC accepts the
 format the game asks for.
 
+## Diagnostics
+
+With `--sample-threads`, every sample's counter line has an `audio:` part: Opus streams created and destroyed, packets
+decoded (failed, samples per channel), results taken; XMA enables, disables, takes (message 0x12), blocks written,
+passes that found the input used up, contexts whose ring is not APU memory; XDsp commands. `--audio-capture <wav>`
+records what the process tree plays through WASAPI process loopback (48 kHz stereo 16-bit), from a child copy of the
+loader so the recorder's own audio client does not change the game's process, and prints how many seconds had sound
+(a 0.1 s window whose peak reaches about -54 dBFS), the longest silence and the share with sound per 10 s.
+
 ## Unknown
 
-- The meaning of the create value (+0x18) and the decode fields +0x1C and +0x20 (perhaps pitch and pre-skip);
-  the XApu config struct; other result fields.
+- Whether the APU applies the decode's +0x1C value (48000 for every voice seen); the XApu config struct; the result
+  fields the game does not read.
 - The SHAPE_CONTEXTS layout beyond the XMA count (+0x10) and pointer (+0x38): six u32 counts and one pointer per
   kind are inferred from those two offsets.
 - SHAPE XMA: the context layout and the message meanings are read from how the game fills, reads and sends them;

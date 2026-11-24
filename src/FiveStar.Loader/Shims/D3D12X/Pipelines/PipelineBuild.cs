@@ -3,5 +3,34 @@
 
 namespace FiveStar.Loader.Shims.D3D12X.Pipelines;
 
-/// <summary>One queued desktop pipeline creation (<see cref="PipelineBuildQueue"/>) and where its result goes.</summary>
-internal sealed record PipelineBuild(Func<PipelineResult> Create, TaskCompletionSource<PipelineResult> Done);
+/// <summary>
+/// One queued desktop pipeline creation (<see cref="PipelineBuildQueue"/>) and where its result goes. A build promoted
+/// to urgent sits in both queues; the first thread to claim it runs it.
+/// </summary>
+internal sealed class PipelineBuild
+{
+    private int _claimed;
+    private int _urgent;
+
+    public PipelineBuild(Func<PipelineResult> create, bool urgent)
+    {
+        Create = create;
+        _urgent = urgent ? 1 : 0;
+    }
+
+    public Func<PipelineResult> Create { get; }
+
+    public TaskCompletionSource<PipelineResult> Done { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>True for the one caller that runs the build.</summary>
+    public bool Claim()
+    {
+        return Interlocked.Exchange(ref _claimed, 1) == 0;
+    }
+
+    /// <summary>True for the first call on a build that was not urgent yet: it then needs an urgent queue entry.</summary>
+    public bool MakeUrgent()
+    {
+        return Interlocked.Exchange(ref _urgent, 1) == 0 && Volatile.Read(ref _claimed) == 0;
+    }
+}

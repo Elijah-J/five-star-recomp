@@ -31,6 +31,10 @@ internal static unsafe class Kernel32
     [DllImport(Library)]
     public static extern uint GetCurrentThreadId();
 
+    /// <summary>SetProcessInformation(process, PROCESS_INFORMATION_CLASS, info, size): nonzero on success.</summary>
+    [DllImport(Library)]
+    public static extern int SetProcessInformation(nint process, int informationClass, void* information, uint size);
+
     [DllImport(Library)]
     public static extern int TerminateProcess(nint process, uint exitCode);
 

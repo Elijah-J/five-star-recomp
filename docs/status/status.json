@@ -74,7 +74,7 @@
           "done": 0,
           "partial": 1,
           "todo": 0,
-          "note": "reached the intro title card; GPU writes overrun game memory"
+          "note": "corruption fixed; the game\u0027s watchdog ends the load"
         },
         {
           "name": "In game",
@@ -210,7 +210,7 @@
       "items": [
         {
           "name": "Story load",
-          "note": "buffer bounds checks, so GPU writes stay inside their buffers"
+          "note": "the game ends itself while frames wait for shaders"
         },
         {
           "name": "Brightness symbol",
@@ -218,7 +218,11 @@
         },
         {
           "name": "Memory",
-          "note": "the story load reaches 62 to 65 GB; allocator of the large blocks unknown"
+          "note": "a small commit limit parks shader compiles in the story load"
+        },
+        {
+          "name": "In-game audio",
+          "note": "menus and intro play; XMA voices not yet heard"
         },
         {
           "name": "Pipeline warm-up",
