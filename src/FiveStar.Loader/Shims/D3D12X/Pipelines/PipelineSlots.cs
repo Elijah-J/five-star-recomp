@@ -92,12 +92,23 @@ internal sealed unsafe class PipelineSlots
         get
         {
             var running = _factory.InFlight.Summary();
+            var compiling = _factory.Compiling.Summary();
             var counts = $"{Volatile.Read(ref _requests)} pipelines requested, {Volatile.Read(ref _created)} created, {_factory.ProgramBytes >> MegabyteShift} MB of DXIL held, {_factory.StandIns.Summary}";
 
-            var parts = new[] { counts, _factory.OnDemand?.Summary ?? string.Empty, _failures.Summary(), running, _factory.Cache?.Summary ?? string.Empty }.Where(part => part.Length > 0);
+            var parts = new[] { counts, _factory.OnDemand?.Summary ?? string.Empty, _failures.Summary(), running, Compiles(compiling), _factory.Cache?.Summary ?? string.Empty }.Where(part => part.Length > 0);
 
             return string.Join(", ", parts);
         }
+    }
+
+    private static string Compiles(string summary)
+    {
+        if (summary.Length == 0)
+        {
+            return summary;
+        }
+
+        return $"driver compiles {summary}";
     }
 
     private int Guarded(int slot, nint* result, Func<int> create)

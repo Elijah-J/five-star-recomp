@@ -174,7 +174,7 @@ internal sealed unsafe class PipelineWarmup
     {
         WarmMemoryGuard.WaitForRoom(() => _stopping);
         var started = Stopwatch.GetTimestamp();
-        var result = _factory.Build(recipe.Stream, DesktopDevice.PipelineStateIid);
+        var result = _factory.Build(recipe.Stream, DesktopDevice.PipelineStateIid, recipe.Names);
         var took = Stopwatch.GetElapsedTime(started);
 
         if (took > SlowBuild)

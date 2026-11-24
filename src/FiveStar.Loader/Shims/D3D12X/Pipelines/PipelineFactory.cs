@@ -28,6 +28,8 @@ internal sealed unsafe class PipelineFactory
     /// </summary>
     public const int SmallComputeShaderBytes = 16 << 10;
 
+    private const int MegabyteShift = 20;
+
     private readonly object _gate = new();
     private readonly object _heavy = new();
     private readonly nint _device2;
@@ -73,6 +75,9 @@ internal sealed unsafe class PipelineFactory
 
     /// <summary>The creations running now (<see cref="PipelineSlots"/> marks them).</summary>
     public PipelineCreationsInFlight InFlight { get; } = new();
+
+    /// <summary>The driver compiles running now on build threads, by pipeline, with their age and DXIL size.</summary>
+    public PipelineCreationsInFlight Compiling { get; } = new();
 
     /// <summary>
     /// Where the pipelines the game uses are recorded, for the warm-up and the next boot; null for none. A pipeline is
@@ -269,10 +274,10 @@ internal sealed unsafe class PipelineFactory
 
         if (deferral is not null)
         {
-            return StandIns.Deferred(() => Build(stream, wanted), result, names, named, heavy, deferral, small);
+            return StandIns.Deferred(() => Build(stream, wanted, names), result, names, named, heavy, deferral, small);
         }
 
-        return StandIns.Create(() => Build(stream, wanted), result, names, named, heavy, small);
+        return StandIns.Create(() => Build(stream, wanted, names), result, names, named, heavy, small);
     }
 
     /// <summary>
@@ -369,7 +374,7 @@ internal sealed unsafe class PipelineFactory
             }
         };
 
-        return new PendingBuild(() => Build(stream, iid), stream.ShaderBytes >= HeavyShaderBytes, recipe.Names, built);
+        return new PendingBuild(() => Build(stream, iid, recipe.Names), stream.ShaderBytes >= HeavyShaderBytes, recipe.Names, built);
     }
 
     /// <summary>
@@ -378,7 +383,7 @@ internal sealed unsafe class PipelineFactory
     /// Pipelines with <see cref="HeavyShaderBytes"/> of DXIL or more are built one at a time, and no build starts while
     /// the machine is short of commit (<see cref="WarmMemoryGuard"/>), since one driver compile can take gigabytes.
     /// </summary>
-    public PipelineResult Build(DesktopStream stream, Guid iid)
+    public PipelineResult Build(DesktopStream stream, Guid iid, string what)
     {
         using (stream)
         {
@@ -393,14 +398,24 @@ internal sealed unsafe class PipelineFactory
 
             WarmMemoryGuard.WaitForRoom(static () => false);
 
-            if (stream.ShaderBytes < HeavyShaderBytes)
-            {
-                return BuildNow(stream, iid);
-            }
+            Compiling.Begin(PipelineCreationsInFlight.NoSlot);
+            Compiling.Describe($"{what} ({stream.ShaderBytes >> MegabyteShift} MB of DXIL)");
 
-            lock (_heavy)
+            try
             {
-                return BuildNow(stream, iid);
+                if (stream.ShaderBytes < HeavyShaderBytes)
+                {
+                    return BuildNow(stream, iid);
+                }
+
+                lock (_heavy)
+                {
+                    return BuildNow(stream, iid);
+                }
+            }
+            finally
+            {
+                Compiling.End();
             }
         }
     }
