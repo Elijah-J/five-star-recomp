@@ -9,4 +9,8 @@ namespace FiveStar.Loader.Shims.D3D12X.Pipelines;
 /// </summary>
 /// <param name="Programs">Folder of <c>fivestar shader extract</c> output (--shader-dir).</param>
 /// <param name="Translated">Folder of <c>fivestar shader translate</c> output (--translated-dir).</param>
-internal sealed record PipelineFolders(string? Programs, string? Translated);
+internal sealed record PipelineFolders(string? Programs, string? Translated)
+{
+    /// <summary>Gets the index of <see cref="Programs"/> started at loader start; null builds it at device creation.</summary>
+    public ProgramIndexLoad? Index { get; init; }
+}

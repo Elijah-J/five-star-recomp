@@ -48,7 +48,14 @@ internal static class HostComposition
 
     public static PipelineFolders CreatePipelineFolders(HostOptions options)
     {
-        return new PipelineFolders(options.ShaderDirectory, options.TranslatedDirectory);
+        var folders = new PipelineFolders(options.ShaderDirectory, options.TranslatedDirectory);
+
+        if (folders.Programs is null || folders.Translated is null)
+        {
+            return folders;
+        }
+
+        return folders with { Index = ProgramIndexLoad.Start(folders.Programs) };
     }
 
     public static LoaderEnvironment CreateEnvironment()

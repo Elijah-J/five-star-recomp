@@ -42,6 +42,7 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
     private readonly UnresolvedStubs _stubs;
     private readonly PipelineFolders _pipelineFolders;
     private readonly LoaderLog _log;
+    private ProgramIndex? _programIndex;
 
     public XboxDeviceFactory(D3D12Forwarder d3d12, UnresolvedStubs stubs, CodeHeap heap, XMemPhysicalMemory memory, ImageTable images, PipelineFolders pipelines, LoaderLog log)
     {
@@ -226,7 +227,8 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         }
 
         var warnings = new OnceLog(_log);
-        var library = TranslatedProgramLibrary.Open(ProgramIndex.Load(programs), translated, device2, warnings, _log);
+        WaitForProgramIndex();
+        var library = TranslatedProgramLibrary.Open(_programIndex!, translated, device2, warnings, _log);
         var rectangles = new RectanglePipelines(device2, root, Path.Combine(translated, RectangleGeometryShader.Folder), warnings);
         Rectangles.Attach(rectangles);
 
@@ -236,6 +238,36 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         Pipelines = new PipelineSlots(new PipelineFactory(device2, root, library, new ProgramSignatures(programs), warnings, rectangles, standIns), warnings);
         PipelineSlotHandlers.Register(Objects);
         _log.Detail($"  [d3d12_xs] pipeline slots on: programs {programs}, translated {translated}");
+    }
+
+    /// <summary>
+    /// Takes the program index of --shader-dir: the one started at loader start (<see cref="PipelineFolders.Index"/>),
+    /// else one built now. The loader calls it before the game starts, because the game's hang watchdog also counts
+    /// the time its device creation spends (docs/loader.md); device creation then finds the index ready.
+    /// </summary>
+    public void WaitForProgramIndex()
+    {
+        string? programs = _pipelineFolders.Programs;
+
+        if (_programIndex is not null || programs is null || _pipelineFolders.Translated is null)
+        {
+            return;
+        }
+
+        var load = _pipelineFolders.Index;
+        var waited = TimeSpan.Zero;
+
+        if (load is null)
+        {
+            _programIndex = ProgramIndex.Load(programs);
+        }
+        else
+        {
+            _programIndex = load.Wait(out waited);
+        }
+
+        string source = _programIndex.Saved ? "saved index" : "read from the programs";
+        _log.Info($"  [d3d12_xs] program index: {_programIndex.Count} programs ({source}), waited {waited.TotalMilliseconds:F0} ms for it");
     }
 
     /// <summary>Reads back the presents <paramref name="capture"/> names; with <paramref name="traceDraws"/> also traces draws.</summary>
