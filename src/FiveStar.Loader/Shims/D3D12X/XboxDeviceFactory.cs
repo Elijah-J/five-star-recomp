@@ -523,6 +523,7 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
 
         delegate* unmanaged<XboxObject*, nint, ulong, int> wait = &FenceValueMirror.QueueWait;
         Objects.SetHandler(XboxInterfaceKind.CommandQueue, FenceValueMirror.QueueWaitSlot, (nint)wait);
+        QueuePageMappings.Bind(Objects);
         Objects.SetHandler(XboxInterfaceKind.Fence, FenceValueMirror.CompletedValueAddressSlot, (nint)fenceValue);
         Objects.SetHandler(XboxInterfaceKind.Fence, ComObject.ReleaseSlot, (nint)releaseFence);
 

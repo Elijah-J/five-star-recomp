@@ -187,6 +187,36 @@ public sealed unsafe class PhysicalMemoryTests : IDisposable
         Assert.Equal(2, *(byte*)range);
     }
 
+    [Fact]
+    public void Copied_page_mappings_alias_the_pool_pages_and_unmap_the_rest()
+    {
+        var pages = stackalloc ulong[2];
+        AllocatePages(pages, 2);
+        nint pool = Reserve(2);
+        Assert.Equal(pool, _map(pool, 2, pages));
+        nint destination = Reserve(5);
+        Assert.Equal(destination, _map(destination, 2, pages));
+
+        // Pool pages 0 and 1 in order, one page unmapped, pool page 1 twice.
+        var ranges = stackalloc Shims.PageRange[]
+        {
+            new() { Kind = Shims.PageRange.PoolPages, Start = 0, Count = 2 },
+            new() { Kind = Shims.PageRange.Unmapped, Count = 1 },
+            new() { Kind = Shims.PageRange.OnePoolPage, Start = 1, Count = 2 },
+        };
+        var batch = new Shims.PageBatch { Destination = (ulong)destination, Count = 3, Ranges = ranges };
+        Assert.True(_test.Runtime.XMemPhysical.CopyPageMappings(1, &batch, pool, 2));
+
+        *(long*)destination = 11;
+        *(long*)(destination + (nint)(4 * Page)) = 12;
+
+        Assert.Equal(11, *(long*)pool);
+        Assert.Equal(12, *(long*)(pool + (nint)Page));
+        Assert.Equal(12, *(long*)(destination + (nint)Page));
+        Assert.Equal(12, *(long*)(destination + (nint)(3 * Page)));
+        Assert.Equal(MemReserveState, StateOf(destination + (nint)(2 * Page)));
+    }
+
     public void Dispose()
     {
         _test.Dispose();

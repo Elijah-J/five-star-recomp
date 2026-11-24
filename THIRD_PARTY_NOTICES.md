@@ -36,7 +36,8 @@ pipelines started during loading) was the idea behind building pipelines on firs
 
 Its crash in the transient-pool walk (0x144e9b54a, from stale copy-backs of shader-written memory) and its command-list
 object layout (state written up to +0x564) were leads for docs/d3d12x-shim.md, checked against our shim and the
-executable. No code was copied.
+executable. Its CopyPageMappingsBatchX (`crates/victory-gpu/src/queue.rs`) gave the name and argument layouts of
+queue slot 31 (docs/physical-memory.md); the implementation is our own. No code was copied.
 
 Its audio modules were leads for the loader's audio (docs/audio-runtime.md): the xapu.dll command and 0x50-byte result
 layout (identity echo, samples written, the first-frame and frame-count fields), the note that the game's mixer sleeps
