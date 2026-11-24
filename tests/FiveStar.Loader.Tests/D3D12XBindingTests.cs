@@ -43,6 +43,16 @@ public sealed unsafe class D3D12XBindingTests
     private const uint TableSize = 2;
     private const uint StructureStride = 16;
 
+    /// <summary>DXGI_FORMAT_R16G16B16A16_FLOAT and R8G8B8A8_UNORM.</summary>
+    private const int HalfFloat4 = 10;
+    private const int Byte4Unorm = 28;
+
+    /// <summary>Format codes: GCN layouts 16_16_16_16 and 8_8_8_8, numeric type FLOAT, and 32 UINT.</summary>
+    private const uint Layout16x4 = 12;
+    private const uint Layout8x4 = 10;
+    private const uint FloatType = 7;
+    private const uint Dword = (4 * 8) + 4;
+
     /// <summary>Reads table entry 0 (an SRV) and 1 (a UAV) through the window and stores the SRV's first dword + 1.</summary>
     private const string Program = """
         cbuffer UserData : register(b0) { uint4 g_user4[32]; };
@@ -92,23 +102,32 @@ public sealed unsafe class D3D12XBindingTests
     }
 
     [Fact]
-    public void A_buffer_view_record_carries_its_element_stride_into_the_window()
+    public void A_buffer_view_record_carries_stride_count_and_format_into_the_window()
     {
         using var test = TestRuntime.Create();
         var device = new XboxDevice(test);
         var heap = ViewHeap(device, SmallHeap);
         nint buffer = Buffer(test.Runtime.D3D12X.Objects.DesktopDevice, new HeapProperties { Type = HeapProperties.Upload }, 0, GenericRead);
+        nint writable = Buffer(test.Runtime.D3D12X.Objects.DesktopDevice, new HeapProperties { Type = HeapProperties.Custom, CpuPageProperty = WriteBack, MemoryPool = HeapProperties.SystemPool }, DesktopCalls.UnorderedAccessFlag, 0);
+
         var structured = new BufferViewDescription { Dimension = BufferViewDescription.BufferDimension, SrvMapping = BufferViewDescription.DefaultMapping, SrvElements = 4, SrvStride = StructureStride };
-        var raw = BufferViewDescription.RawShaderResource(1);
+        var raw = BufferViewDescription.RawShaderResource(2);
+        var typed = new BufferViewDescription { Format = HalfFloat4, Dimension = BufferViewDescription.BufferDimension, SrvMapping = BufferViewDescription.DefaultMapping, SrvElements = 8 };
+        var typedUav = new BufferViewDescription { Format = Byte4Unorm, Dimension = BufferViewDescription.BufferDimension, UavElements = 16 };
 
-        var create = (delegate* unmanaged<nint, nint, BufferViewDescription*, nint, void>)XboxDevice.Vtable(device.Device)[CreateShaderResourceViewSlot];
-        create(device.Device, buffer, &structured, heap.Cpu);
-        create(device.Device, buffer, &raw, heap.Cpu + (nint)heap.Increment);
+        var srv = (delegate* unmanaged<nint, nint, BufferViewDescription*, nint, void>)XboxDevice.Vtable(device.Device)[CreateShaderResourceViewSlot];
+        var uav = (delegate* unmanaged<nint, nint, nint, BufferViewDescription*, nint, void>)XboxDevice.Vtable(device.Device)[CreateUnorderedAccessViewSlot];
+        srv(device.Device, buffer, &structured, heap.Cpu);
+        srv(device.Device, buffer, &raw, heap.Cpu + (nint)heap.Increment);
+        srv(device.Device, buffer, &typed, heap.Cpu + (nint)(2 * heap.Increment));
+        uav(device.Device, writable, 0, &typedUav, heap.Cpu + (nint)(3 * heap.Increment));
 
-        // V# dword 1: what translated programs multiply an indexed (idxen) access by.
-        uint* window = (uint*)(test.Runtime.D3D12X.Bindings.Window.Data + DescriptorWindow.ViewBase);
-        Assert.Equal(StructureStride, window[1]);
-        Assert.Equal(0u, window[(DescriptorWindow.ViewRecordBytes / sizeof(uint)) + 1]);
+        // V# dwords 1 to 3: the idxen stride, num_records (elements of the stride, bytes without one) and the format
+        // code FmtLoad decodes (layout * 8 + numeric type).
+        Assert.Equal([StructureStride, 4u, Dword], Fields(test, 0));
+        Assert.Equal([0u, 8u, Dword], Fields(test, 1));
+        Assert.Equal([8u, 8u, (Layout16x4 * 8) + FloatType], Fields(test, 2));
+        Assert.Equal([4u, 16u, Layout8x4 * 8], Fields(test, 3));
     }
 
     [DxcFact]
@@ -251,6 +270,14 @@ public sealed unsafe class D3D12XBindingTests
         {
             return blob!.AsBytes();
         }
+    }
+
+    /// <summary>Dwords 1 to 3 of the window record of view-heap descriptor <paramref name="index"/>.</summary>
+    private static uint[] Fields(TestRuntime test, int index)
+    {
+        uint* record = (uint*)(test.Runtime.D3D12X.Bindings.Window.Data + DescriptorWindow.ViewBase + (index * DescriptorWindow.ViewRecordBytes));
+
+        return [record[1], record[2], record[3]];
     }
 
     private static nint Buffer(nint device, HeapProperties properties, int flags, int state)

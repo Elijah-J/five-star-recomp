@@ -73,12 +73,12 @@ internal sealed unsafe class XboxDescriptorHeaps
     [HotPath]
     public nint Destination(nint handle)
     {
-        return Destination(handle, 0);
+        return Destination(handle, BufferRecord.None);
     }
 
-    /// <summary>As <see cref="Destination(nint)"/> for a buffer view, whose record keeps its element stride (<see cref="BufferRecordStrides"/>).</summary>
+    /// <summary>As <see cref="Destination(nint)"/> for a buffer view, whose record keeps its V# fields (<see cref="BufferRecords"/>).</summary>
     [HotPath]
-    public nint Destination(nint handle, uint stride)
+    public nint Destination(nint handle, BufferRecord buffer)
     {
         var heap = Find(handle, out uint index);
 
@@ -87,7 +87,7 @@ internal sealed unsafe class XboxDescriptorHeaps
             return handle;
         }
 
-        nint desktop = heap.Destination(index, 1, stride);
+        nint desktop = heap.Destination(index, 1, buffer);
 
         if (desktop == 0)
         {

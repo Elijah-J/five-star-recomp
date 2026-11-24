@@ -407,22 +407,35 @@ flowchart LR
   unwraps its signature and buffers. Reset (10, 139) clears the list's binding state.
 - **Descriptor window.** A buffer (custom heap, write-combined system memory, UAV; 0x2610000 bytes for the game):
   one 16-byte record per sampler, a 1024-record null table at 0x8000, then from 0x10000 one 32-byte record per game
-  view descriptor in game order (a T#; buffers and CBVs use the first 16 bytes). Dwords 0 and 1 of each mirror those
-  of the title record: the desktop index (a record naming no desktop descriptor reads 5) and a buffer view's element
-  stride (below). A table's user SGPR is the window offset of its
+  view descriptor in game order (a T#; buffers and CBVs use the first 16 bytes). Dwords 0 to 3 of each mirror those
+  of the title record: the desktop index (a record naming no desktop descriptor reads 5) and a buffer view's stride,
+  record count and format code (below). A table's user SGPR is the window offset of its
   first record (base + (handle - title start) / increment × record size), so a program's `MemLoad(table + k * 32)`
   reads the heap index of the table's k-th descriptor wherever the game put the table. Records are mirrored when the
   shim writes them and, for a table, at SetRootDescriptorTable: as many as the root signature's table spans (end of
-  its last range, at most 1024, unbounded ranges 1024) and at least 16, skipping records whose dword 0 did not change
-  (a shadow array). The game places a table's descriptors at the offsets of its own binding entries, not where the
+  its last range, at most 1024, unbounded ranges 1024) and at least 16, skipping records whose dwords 0 to 3 did not
+  change (a shadow array). The game places a table's descriptors at the offsets of its own binding entries, not where the
   root signature's ranges say: `default_ps_tex` reads its T# at record 1 of a table whose root signature spans one. A handle outside both heaps reads the null table (warned once).
 
 The window covers only descriptors of the console's 32-bit pointer space: pointers into game memory (root
 descriptors, constants loaded through pointers) read the window, not game memory. Buffer views stay typed or
-structured desktop views, while programs read every V# as a `ByteAddressBuffer`; V# dword 3 (format code) stays 0.
-Dword 1 is the stride an indexed access (`idxen`) multiplies its index by (`BufferRecordStrides`): 16 for a CBV, whose
-rows programs index in float4s, the structure for a structured view, the format's element for a typed one, 0 for a
-raw one. Before, it was 0 for every view: the Scaleform batch programs (`VBatch*`, which read row batch × 4 + k of
+structured desktop views, while programs read every V# as a `ByteAddressBuffer`. A buffer view's record carries the
+V# fields translated programs read in dwords 1 to 3 (`BufferRecords`), in the translator's encoding:
+
+| Dword | Read by | CBV | Structured | Typed | Raw |
+|---|---|---|---|---|---|
+| 1 | `idxen` accesses: index × stride | 16 (float4 rows) | structure | format's element | 0 |
+| 2 | program code only (num_records: size and empty-buffer checks) | rows | elements | elements | bytes |
+| 3 | `buffer_load/store_format`: the code FmtLoad decodes, layout × 8 + numeric type in GCN numbering (`BufferFormatCodes`) | 32_32_32_32 FLOAT | 32 UINT | the view's format | 32 UINT |
+
+Counts are the game's, before the view is fitted to the desktop buffer. Dword 3 is not the hardware dword: FmtLoad
+reads all of it as the code, so no destination swizzle is carried (a B8G8R8A8 view reads in memory order), and the
+prelude still decodes 10_11_11 and 11_11_10 to 0. Texture records keep dwords 1 to 3 at 0. V#s a program builds
+itself from a root descriptor carry the hardware dword 3 (`VS_Clear`: 0x11014fac), which FmtLoad cannot decode. In a
+tenth of the programs (2,591), 1,121 use `buffer_load_format` with the V#'s format and 1,669 an `idxen` stride; with
+dword 3 at 0 every such load of a typed buffer read (0, 0, 0, 1).
+
+Before dword 1 was filled it was 0 for every view: the Scaleform batch programs (`VBatch*`, which read row batch × 4 + k of
 their CBV for each vertex's matrix) read row 0 for every row, so both screen coordinates got the same value and every
 vector shape of the UI collapsed onto the line x = y: the diagonal across the first-run screens, the letters drawn as
 shapes rather than from the glyph cache (in the boot's text, those with ascenders or descenders) and the
