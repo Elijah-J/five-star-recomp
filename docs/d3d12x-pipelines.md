@@ -111,7 +111,7 @@ loads the driver refused.
 [--pipeline-cache <dir>] [--warm-jobs N] [--warm-step K] [--warm-match text]` runs no game. On the default adapter it
 reads the console pipeline cache ([pipeline-cache.md](pipeline-cache.md)), turns every compute and graphics record
 into the description slots 67 and 57 would get, and builds each through the same factory as the game, on
-`--warm-jobs` threads (default half the logical processors), without a time limit. Compute pipelines go first, the
+`--warm-jobs` threads (default 4), without a time limit. No build starts while less than 8 GB of commit is available; a pipeline with 4 MiB of DXIL or more is built alone on its own thread and only with 48 GB available, else it is left out (logged) for a later run or the game: one ray-traced shadow program passed 30 GB in the NVIDIA driver. Compute pipelines go first, the
 largest code first. A pipeline whose key is cached is skipped, so a stopped run (Ctrl+C finishes the running builds
 and writes the cache) resumes; pipelines the driver refuses are listed in `warm-failures.txt` in the cache folder
 and not retried while their key stays the same. Builds over 20 s are named in the log; every 30 s it prints the

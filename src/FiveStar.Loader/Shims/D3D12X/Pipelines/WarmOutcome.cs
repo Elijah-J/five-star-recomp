@@ -17,4 +17,7 @@ internal enum WarmOutcome
 
     /// <summary>The driver refused it.</summary>
     Refused,
+
+    /// <summary>A heavy pipeline left out for lack of memory; the next run tries again.</summary>
+    Deferred,
 }

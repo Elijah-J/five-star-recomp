@@ -35,7 +35,7 @@ internal static class HostUsage
           --no-pipeline-cache    build every pipeline anew and store none
           --warm-pipelines <shaders.rpf|blob>  no game: build every pipeline of the console pipeline cache into
                                  the disk cache (with --shader-dir, --translated-dir), resuming where a run stopped
-          --warm-jobs <n>        pipelines the warm-up builds at once (default: half the logical processors)
+          --warm-jobs <n>        pipelines the warm-up builds at once (default 4)
           --warm-step <k>        warm-up: every k-th pipeline only
           --warm-match <text>    warm-up: only pipelines with a program whose name contains text (repeatable)
           --gdk-abi <file>       XGameRuntime thunk ABI table: "clsid iid slot FunctionName" per line;

@@ -73,7 +73,6 @@ internal sealed class PipelineWarmStep : ISetupStep
             "--shader-dir", context.ProgramFolder,
             "--translated-dir", context.TranslationFolder,
             "--pipeline-cache", context.PipelineLibraryFolder,
-            "--warm-jobs", context.Jobs.ToString(CultureInfo.InvariantCulture),
             "--warm-step", context.Every.ToString(CultureInfo.InvariantCulture),
             "--log", log,
         ];

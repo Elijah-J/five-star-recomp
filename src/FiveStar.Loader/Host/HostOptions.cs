@@ -71,7 +71,7 @@ internal sealed record HostOptions
     /// <summary>The console pipeline cache (shaders.rpf or the blob) whose pipelines <c>--warm-pipelines</c> builds.</summary>
     public string? WarmSource { get; set; }
 
-    /// <summary>Pipelines the warm-up builds at once; null for half the logical processors.</summary>
+    /// <summary>Pipelines the warm-up builds at once; null for the default (4).</summary>
     public int? WarmJobs { get; set; }
 
     /// <summary>The warm-up builds every n-th pipeline only (a sample).</summary>

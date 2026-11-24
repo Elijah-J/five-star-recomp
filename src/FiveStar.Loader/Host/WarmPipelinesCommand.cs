@@ -21,6 +21,9 @@ internal static unsafe class WarmPipelinesCommand
     /// <summary>The exit code of a run stopped by Ctrl+C; a new run resumes.</summary>
     private const int Stopped = 4;
 
+    /// <summary>The most builds at once by default: each driver compile can take gigabytes.</summary>
+    private const int DefaultJobs = 4;
+
     public static int Run(HostOptions options, LoaderLog log)
     {
         var folders = HostComposition.CreatePipelineFolders(options);
@@ -70,7 +73,7 @@ internal static unsafe class WarmPipelinesCommand
 
         var targets = WarmTargets.Read(ConsolePipelineSource.Load(options.WarmSource!), Math.Max(1, options.WarmStep));
         targets = Matching(targets, options.WarmMatches, index);
-        var jobs = options.WarmJobs ?? Math.Max(1, Environment.ProcessorCount / PipelineSlots.CoresPerBuildThread);
+        var jobs = options.WarmJobs ?? Math.Clamp(Environment.ProcessorCount / PipelineSlots.CoresPerBuildThread, 1, DefaultJobs);
         log.Info($"warm-up: {targets.Count} pipelines on {jobs} threads into {folders.Cache}");
 
         ConsoleCancelEventHandler stop = (_, args) =>

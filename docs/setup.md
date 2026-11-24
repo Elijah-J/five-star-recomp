@@ -35,7 +35,7 @@ flowchart LR
 | `pipeline-cache` | `fivestar shader psocache` of the console pipeline cache, matched to the programs | `pipelines` (`pipelines.json`, `code/`) |
 | `textures` | `fivestar texture extract` of every page file | `textures/<page file path>/*.dds` |
 | `gdk-abi` | `fivestar platform gdk-abi` from the PC GDK's `xgameruntime.lib`, for `fivestar-loader --gdk-abi`. Without a GDK it finishes with a note | `loader/gdk-abi.txt` |
-| `pipeline-warm` | `fivestar-loader --warm-pipelines` of `shaders.rpf` with `--warm-jobs` = `--jobs` and `--warm-step` = `--step`: builds every pipeline of the console pipeline cache with the desktop driver ([d3d12x-pipelines.md](d3d12x-pipelines.md#warm-up)), so the first boot loads them. `fivestar run` does not wait for it | `pipeline-cache` |
+| `pipeline-warm` | `fivestar-loader --warm-pipelines` of `shaders.rpf` with `--warm-step` = `--step`: builds every pipeline of the console pipeline cache with the desktop driver ([d3d12x-pipelines.md](d3d12x-pipelines.md#warm-up)), so the first boot loads them. `fivestar run` does not wait for it | `pipeline-cache` |
 
 `variants.json` lists every compiled program with its DXIL forms (native, wave32 variant or mesh superstep form, mesh fallback) and wave
 floor, so the runtime picks the form for the GPU without reading HLSL (see

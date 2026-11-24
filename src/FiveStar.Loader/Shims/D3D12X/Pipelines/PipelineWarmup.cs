@@ -94,15 +94,27 @@ internal sealed unsafe class PipelineWarmup
     {
         foreach (var (recipe, key) in _heavy.GetConsumingEnumerable())
         {
-            if (_stopping)
+            if (_stopping || !WarmMemoryGuard.RoomForHeavy())
             {
-                recipe.Stream.Dispose();
+                Defer(recipe);
 
                 continue;
             }
 
             Build(recipe, key);
         }
+    }
+
+    /// <summary>A heavy pipeline left to the game: the machine lacks the memory to build it now.</summary>
+    private void Defer(PipelineRecipe recipe)
+    {
+        if (!_stopping)
+        {
+            _log.Warn($"warm-up: {recipe.Names} ({recipe.Stream.ShaderBytes >> 20} MiB of DXIL) left out: less than {WarmMemoryGuard.HeavyBytes >> 30} GB of commit available");
+            _tally.Count(WarmOutcome.Deferred);
+        }
+
+        recipe.Stream.Dispose();
     }
 
     private void Warm(WarmTarget target)
@@ -157,6 +169,7 @@ internal sealed unsafe class PipelineWarmup
 
     private void Build(PipelineRecipe recipe, string key)
     {
+        WarmMemoryGuard.WaitForRoom(() => _stopping);
         var started = Stopwatch.GetTimestamp();
         var result = _factory.Build(recipe.Stream, DesktopDevice.PipelineStateIid);
         var took = Stopwatch.GetElapsedTime(started);
