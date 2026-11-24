@@ -390,6 +390,7 @@ fivestar-loader --load $dump\XboxBvhBuilder.dll --load $dump\Bink2Scarlett.dll -
 | `--watch-transient` | checks the game's transient-memory pool every 5 ms and logs the first corrupted node list with the memory around it and the queues ([debugging.md](debugging.md#transient-pool-watch)) |
 | `--watch-hang` | logs the game's main state, loading-screen flags and watchdog handler as they change, and every thread's stack while the heartbeat its 30 s hang watchdog checks stands still ([debugging.md](debugging.md#hang-watchdog)) |
 | `--skip-compute-chains` | skips the rest of a command list's dispatches and ExecuteIndirects after one skipped for a stand-in (off by default; [d3d12x-pipelines.md](d3d12x-pipelines.md#stand-ins)) |
+| `--retire-waits-all-queues` | a test: a submission holding the game's retire write (slot 74, the value it recycles transient memory by) first waits on the GPU for every other queue's submitted work; each 64th such write is logged with every queue's signalled and completed values ([debugging.md](debugging.md#transient-pool-watch)) |
 | `--d3d12-trace-queues` | the first queue submissions, queue signals and waits and CPU fence signals in the log |
 | `--present-test` | present moving color bars instead of the game's frame, to check the swap chain on its own ([d3d12x-shim.md](d3d12x-shim.md#present)) |
 | `--raytracing` | XboxBvhBuilder.dll's CPU paths: console acceleration-structure sizes and BLAS rehydration into game memory ([raytracing.md](raytracing.md)) |

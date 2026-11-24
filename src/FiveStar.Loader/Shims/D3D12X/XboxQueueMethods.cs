@@ -88,6 +88,7 @@ internal static unsafe class XboxQueueMethods
                 }
             }
 
+            RetireWaits.BeforeExecute((XboxQueueObject*)self, lists + first, size);
             execute(inner, size, desktop);
             ListSubmissions.Submitted((XboxQueueObject*)self, lists + first, size, objects);
         }
