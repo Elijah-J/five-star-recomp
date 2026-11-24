@@ -212,7 +212,7 @@ public static class ComputeMemoryCases
         };
     }
 
-    // RDNA range checking: a raw V# of 32 bytes (OOB_SELECT 3) reads 0 past its end, by MUBUF and s_buffer_load; a
+    // RDNA range checking: a raw V# of 32 bytes (OOB_SELECT 3) reads 0 past its end, by MUBUF (soffset counts) and s_buffer_load; a
     // structured V# of 8 records drops the stores of indices 8 and up, which land in the buffer beyond it otherwise.
     private static ComputeCase BufferBounds()
     {
@@ -222,11 +222,14 @@ public static class ComputeMemoryCases
             s_buffer_load_dword s24, s[4:7], 0x40
             s_buffer_load_dword s25, s[4:7], 0x4
             buffer_store_dword v41, v41, s[8:11], 0 idxen
+            s_mov_b32 s26, 16
+            buffer_load_dword v23, v1, s[4:7], s26 offen
             s_waitcnt vmcnt(0) lgkmcnt(0)
             v_mov_b32_e32 v21, s24
             v_mov_b32_e32 v22, s25
             """;
         const int RawBytes = 32;
+        const int SOffset = 16;
         const int Records = 8;
         const uint RawSelect = 3u << 28;
         var stored = new uint[Threads];
@@ -236,11 +239,12 @@ public static class ComputeMemoryCases
             stored[index] = (uint)index;
         }
 
-        return new ComputeCase("cs_buffer_bounds", Program, 3, thread =>
+        return new ComputeCase("cs_buffer_bounds", Program, 4, thread =>
         {
             var load = thread.Id < RawBytes / 4 ? Input[thread.Id] : 0u;
+            var shifted = (thread.Id * 4) + SOffset + 4 <= RawBytes ? Input[thread.Id + (SOffset / 4)] : 0u;
 
-            return [Expected.Exact(load), Expected.Exact(0), Expected.Exact(Input[1])];
+            return [Expected.Exact(load), Expected.Exact(0), Expected.Exact(Input[1]), Expected.Exact(shifted)];
         })
         {
             SecondDescriptor = [3, 0, RawBytes, RawSelect],

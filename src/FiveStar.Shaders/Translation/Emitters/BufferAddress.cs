@@ -52,10 +52,10 @@ internal static class BufferAddress
     }
 
     /// <summary>
-    /// The checked offset (VGPR offset + instruction offset, not soffset) of a MUBUF/MTBUF access and its limit, the
-    /// first offset out of range (prelude buf_limit of the index), as snapped temporaries for <see cref="InRange"/>.
+    /// The checked offset of a MUBUF/MTBUF access (VGPR offset + instruction offset, plus soffset for a raw V#; prelude
+    /// buf_offset) and the end its dwords must fit under (buf_limit), as snapped temporaries for <see cref="InRange"/>.
     /// </summary>
-    public static (string Offset, string Limit) Range(OperandAccess operands, Operand vaddr, Operand resource, InstructionModifiers modifiers)
+    public static (string Offset, string Limit) Range(OperandAccess operands, Operand vaddr, Operand resource, Operand soffset, InstructionModifiers modifiers)
     {
         var indexed = modifiers.Has("idxen");
         var offset = modifiers.Has("offen");
@@ -77,7 +77,8 @@ internal static class BufferAddress
         }
 
         var limit = $"buf_limit({operands.Read(resource, StrideDword)}, {operands.Read(resource, RecordsDword)}, {operands.Read(resource, FormatDword)}, {index})";
-        var values = operands.Snap(bytes, limit);
+        var checkedOffset = $"buf_offset({operands.Read(resource, FormatDword)}, {bytes}, {operands.Read(soffset)})";
+        var values = operands.Snap(checkedOffset, limit);
 
         return (values[0], values[1]);
     }
@@ -87,10 +88,10 @@ internal static class BufferAddress
     {
         if (extraBytes == 0)
         {
-            return $"({range.Offset} < {range.Limit})";
+            return $"buf_fits({range.Offset}, {range.Limit})";
         }
 
-        return $"({range.Offset} + {extraBytes}u < {range.Limit})";
+        return $"buf_fits({range.Offset} + {extraBytes}u, {range.Limit})";
     }
 
     private static string Stride(OperandAccess operands, Operand resource)

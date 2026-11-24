@@ -16,6 +16,8 @@ public sealed record ComputeCase(string Name, string Program, int Outputs, Func<
 {
     public const int OutputHeap = 2;
     public const int UserSgprCount = 12;
+    public const uint RawBounds = 3u << 28;
+    public const uint IndexBounds = 1u << 28;
 
     public int Wave { get; init; } = 32;
 
@@ -52,9 +54,14 @@ public sealed record ComputeCase(string Name, string Program, int Outputs, Func<
 
     public int TotalThreads => ThreadsPerGroup * Groups.X * Groups.Y * Groups.Z;
 
-    /// <summary>A raw-buffer V# as the D3D12.X shim writes it: base = heap index (base_hi 0), stride in dword 1 bits 16-29, record count.</summary>
+    /// <summary>
+    /// A buffer V# as the D3D12.X shim writes it: base = heap index (base_hi 0), stride in dword 1 bits 16-29, record
+    /// count, OOB_SELECT 3 (raw) without a stride and 1 (index only) with one.
+    /// </summary>
     public static uint[] Descriptor(int heap, int stride = 0)
     {
-        return [(uint)heap, (uint)stride << 16, 0x10000, 0];
+        uint bounds = stride == 0 ? RawBounds : IndexBounds;
+
+        return [(uint)heap, (uint)stride << 16, 0x10000, bounds];
     }
 }

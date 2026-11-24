@@ -451,7 +451,7 @@ V# as a `ByteAddressBuffer`. A buffer view's record is a hardware V# whose base 
 |---|---|---|---|---|---|
 | 1 bits 16-29 | `idxen` accesses: index × stride | 16 (float4 rows) | structure | format's element | 0 |
 | 2 | program code only (num_records: size and empty-buffer checks) | rows | elements | elements | bytes |
-| 3 | `buffer_load/store_format`: the gfx10 unified format (bits 12-18) and DST_SEL (bits 0-11), RESOURCE_LEVEL 1 (`BufferFormatCodes`) | 32_32_32_32 FLOAT | 32 UINT | the view's format; B8G8R8A8 and B8G8R8X8 select z, y, x | 32 UINT |
+| 3 | `buffer_load/store_format`: the gfx10 unified format (bits 12-18) and DST_SEL (bits 0-11), RESOURCE_LEVEL 1 (`BufferFormatCodes`); range checks: OOB_SELECT (bits 28-29) | 32_32_32_32 FLOAT, OOB_SELECT 1 | 32 UINT, OOB_SELECT 0 | the view's format; B8G8R8A8 and B8G8R8X8 select z, y, x; OOB_SELECT 1 | 32 UINT, OOB_SELECT 3 |
 
 Counts are the game's, before the view is fitted to the desktop buffer. V#s a program builds itself carry the same
 words (`VS_Clear`: 0x11014fac, 32_UINT, x y z w), so one decoder serves both. Texture records keep dwords 1 to 3 at

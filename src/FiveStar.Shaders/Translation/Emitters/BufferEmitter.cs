@@ -91,7 +91,7 @@ internal sealed partial class BufferEmitter
 
         var resource = a[Resource];
         var address = BufferAddress.Build(_operands, a[Address], resource, a[SOffset], modifiers);
-        var range = BufferAddress.Range(_operands, a[Address], resource, modifiers);
+        var range = BufferAddress.Range(_operands, a[Address], resource, a[SOffset], modifiers);
 
         if (op.StartsWith("buffer_load", StringComparison.Ordinal))
         {
@@ -132,7 +132,7 @@ internal sealed partial class BufferEmitter
         var store = op.Contains("store", StringComparison.Ordinal);
 
         var address = BufferAddress.Build(_operands, a[Address], resource, a[SOffset], modifiers);
-        var inRange = BufferAddress.InRange(BufferAddress.Range(_operands, a[Address], resource, modifiers), 0);
+        var inRange = BufferAddress.InRange(BufferAddress.Range(_operands, a[Address], resource, a[SOffset], modifiers), 0);
         var view = BufferAddress.View(_operands, resource, store);
         var byteAddress = _operands.SnapOne($"{view}.y + {address}");
         var format = _operands.SnapOne(code);

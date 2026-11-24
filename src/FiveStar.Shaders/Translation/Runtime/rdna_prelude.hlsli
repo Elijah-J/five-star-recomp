@@ -64,21 +64,22 @@ uint2 buf_view(uint d0, uint d1, bool rw) {
 uint buf_stride(uint d1) { return (d1 >> 16) & 0x3fffu; }
 
 // RDNA range checking: an out-of-range buffer load reads 0, and an out-of-range store or atomic is dropped. Programs
-// rely on it (append and argument writers run past their allocation, loops read zeros past an end). OOB_SELECT (V#
-// dword3 bits 28-29): 2 checks nothing; 3 (raw) checks index * stride + offset against num_records (dword2); 0 and 1
-// (structured) check the index (0 also the offset against the stride, left out: the shim's own records leave the field
-// at 0). A V# with stride 0 is raw. The offset is the VGPR offset plus the instruction offset; soffset is not checked.
-// buf_limit gives, once per access, the first offset out of range, so each dword (raw buffers check every dword)
-// costs one compare.
+// rely on it (append and argument writers run past their allocation, loops read zeros past an end). By OOB_SELECT (V#
+// dword3 bits 28-29), as measured on RDNA1 and RDNA2 hardware (Mesa's GFX11 column):
+//   0 structured: index >= num_records, or offset + 4 > stride;  1 structured: index >= num_records;
+//   2: num_records == 0;  3 raw: offset + soffset + 4 > num_records (index * stride moves the address, unchecked).
+// num_records is dword2; the offset is the VGPR offset plus the instruction offset. Once per access buf_limit gives
+// the end the dwords must fit under and buf_offset the checked offset; each dword then costs one compare (buf_fits).
 uint buf_limit(uint d1, uint d2, uint d3, uint index) {
     uint sel = (d3 >> 28) & 3u;
-    uint stride = buf_stride(d1);
-    uint base = index * stride;
-    uint raw = select(base < d2, d2 - base, 0u);
-    uint structured = select(index < d2, 0xffffffffu, 0u);
-    return select(sel == 2u, 0xffffffffu, select(sel == 3u || stride == 0u, raw, structured));
+    uint structured = select(index < d2, select(sel == 0u, buf_stride(d1), 0xffffffffu), 0u);
+    uint unchecked = select(d2 == 0u, 0u, 0xffffffffu);
+    return select(sel == 3u, d2, select(sel == 2u, unchecked, structured));
 }
-// s_buffer_load: the whole offset against num_records, counted in bytes (stride 0) or in strides.
+uint buf_offset(uint d3, uint offset, uint soffset) {
+    return select(((d3 >> 28) & 3u) == 3u, offset + soffset, offset);
+}
+bool buf_fits(uint start, uint limit) { return limit >= 4u && start <= limit - 4u; }// s_buffer_load: the whole offset against num_records, counted in bytes (stride 0) or in strides.
 uint sbuf_limit(uint d1, uint d2) {
     uint stride = max(buf_stride(d1), 1u);
     return select(d2 > 0xffffffffu / stride, 0xffffffffu, d2 * stride);
