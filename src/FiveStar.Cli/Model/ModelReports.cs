@@ -31,7 +31,7 @@ internal sealed class ModelReports
     /// <summary>Counts drawables and geometries that decode, per level of detail, and the reasons the rest do not.</summary>
     public void Scan(string path, CommandArguments arguments)
     {
-        using var source = new MappedFileSource(path);
+        using var source = new WindowedFileSource(path, WindowedFileSource.DefaultWindowBytes);
         var tally = new ModelTally();
         var list = arguments.HasFlag("--list");
 
@@ -52,7 +52,7 @@ internal sealed class ModelReports
     /// <summary>Writes one OBJ per drawable (one level of detail) whose name contains the --name text.</summary>
     public void Export(string path, string outputDirectory, CommandArguments arguments)
     {
-        using var source = new MappedFileSource(path);
+        using var source = new WindowedFileSource(path, WindowedFileSource.DefaultWindowBytes);
         var filter = arguments.Option("--name") ?? string.Empty;
         var lod = (int)arguments.LongOption("--lod", 0);
         var written = 0;
@@ -77,7 +77,10 @@ internal sealed class ModelReports
         _output.WriteLine($"{written} OBJ files");
     }
 
-    /// <summary>The drawables of the archive from --from (hex offset of an entry) up to --limit-mb.</summary>
+    /// <summary>
+    /// The drawables of the archive from --from (hex offset of an entry) up to --limit-mb, carved one at a time: the
+    /// source may be a <see cref="WindowedFileSource"/>, whose spans last only until its next read.
+    /// </summary>
     public static IEnumerable<CarvedDrawable> Drawables(IByteSource source, CommandArguments arguments)
     {
         var carver = new ZlibEntryCarver(source, new ZlibStreamProbe(source, new ZlibInflater()));

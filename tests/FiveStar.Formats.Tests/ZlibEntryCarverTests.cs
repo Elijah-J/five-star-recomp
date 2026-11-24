@@ -17,7 +17,43 @@ public sealed class ZlibEntryCarverTests
     [Fact]
     public void An_archive_carves_into_its_entries_with_raw_pso_tails_cut_at_the_declared_size()
     {
-        // A text entry of two zlib chunks, a PSO file whose incompressible tail is stored raw, an XML entry.
+        var (archive, text, pso, xml, offsets) = Archive();
+        using var source = new MemoryByteSource(archive);
+        var carver = new ZlibEntryCarver(source, new ZlibStreamProbe(source, new ZlibInflater()));
+
+        var blobs = carver.Carve(0).ToList();
+
+        Assert.Equal(offsets, blobs.Select(blob => blob.Offset));
+        Assert.Equal([BlobKind.Txt, BlobKind.Psin, BlobKind.Xml], blobs.Select(blob => blob.Kind));
+        Assert.Equal(text, blobs[0].Data);
+        Assert.Equal(pso, blobs[1].Data);
+        Assert.Equal(1, blobs[1].RawChunks);
+        Assert.Equal(xml, blobs[2].Data);
+    }
+
+    [Fact]
+    public void A_file_mapped_in_windows_smaller_than_its_entries_carves_the_same()
+    {
+        var (archive, text, pso, xml, _) = Archive();
+        var file = Path.GetTempFileName();
+
+        try
+        {
+            File.WriteAllBytes(file, archive);
+            using var source = new WindowedFileSource(file, Chunk);
+            var carver = new ZlibEntryCarver(source, new ZlibStreamProbe(source, new ZlibInflater()));
+
+            Assert.Equal([text, pso, xml], carver.Carve(0).Select(blob => blob.Data));
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
+    // A text entry of two zlib chunks, a PSO file whose incompressible tail is stored raw, an XML entry.
+    private static (byte[] Archive, byte[] Text, byte[] Pso, byte[] Xml, long[] Offsets) Archive()
+    {
         var text = Deflate.Pattern(Chunk + 1000);
         var pso = PsoFile(Chunk + 0x300);
         var xml = "<?xml version=\"1.0\"?><a/>"u8.ToArray();
@@ -29,17 +65,7 @@ public sealed class ZlibEntryCarverTests
         var xmlAt = AddEntry(archive, xml);
         archive.PadTo(archive.Position + Chunk);
 
-        using var source = new MemoryByteSource(archive.ToArray());
-        var carver = new ZlibEntryCarver(source, new ZlibStreamProbe(source, new ZlibInflater()));
-
-        var blobs = carver.Carve(0).ToList();
-
-        Assert.Equal([textAt, psoAt, xmlAt], blobs.Select(blob => blob.Offset));
-        Assert.Equal([BlobKind.Txt, BlobKind.Psin, BlobKind.Xml], blobs.Select(blob => blob.Kind));
-        Assert.Equal(text, blobs[0].Data);
-        Assert.Equal(pso, blobs[1].Data);
-        Assert.Equal(1, blobs[1].RawChunks);
-        Assert.Equal(xml, blobs[2].Data);
+        return (archive.ToArray(), text, pso, xml, [textAt, psoAt, xmlAt]);
     }
 
     private static long AddEntry(ByteWriter archive, byte[] data)
