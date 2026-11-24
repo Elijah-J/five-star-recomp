@@ -133,6 +133,9 @@ order. In the sampled banks, dividing the two counts by the Opus packet channel 
   from the interleaved skip converted to frames. This recovery rule accepts a nonnegative result on a whole
   packet boundary.
 
+When comparing against untrimmed decoded blocks, use `skip_frames - (prev_budget_frames - prev_decoded_frames)`.
+The difference in parentheses is signed, so a prior overrun increases the adjustment.
+
 ### Block count verification
 
 On Xbox Series 1.0.2.1, a separate reader using the budget and skip checks above exported four banks an earlier
@@ -150,6 +153,10 @@ The carry-over branch ran on three block transitions in the second bank. In each
 deficit consumed the entire skip. A positive remainder was tested with synthetic packets.
 These counts check export length. Five Star's reader uses the page seek positions to place packets on the
 stream timeline. Packet-by-packet equivalence with that reader is unconfirmed.
+
+Five Star's [dump check](https://github.com/ThatRecompDev/five-star-recomp/pull/6#issuecomment-7139960297)
+covered 3,008 multichannel streams and 15,940 blocks. The signed adjustment matched all 12,824 joins,
+including 33 joins in two containers where the previous block exceeded its budget.
 
 All 3,116 channels are Opus.
 
@@ -173,7 +180,7 @@ The field offsets, type IDs and flags were checked against Xbox Series 1.0.2.1 m
 lookup code. The object tables contain 86,715 entries in `GAME.DAT` and 241,999 in `SOUNDS.DAT`.
 `RADIO_STATIONS_01` resolves to 141 settings objects, including 23 wheel stations and 118 static emitters.
 The descriptive radio type names have precedent in GTA V tooling, where the radio IDs differ.
-The two sound names and IDs match the earlier tooling.
+The two sound names and IDs match the earlier tooling. `ObjectList` describes the observed counted array of refs.
 [CodeWalker radio types](https://github.com/dexyfex/CodeWalker/blob/485d56bec00262ed7fa472261cce7bbc6202b96e/CodeWalker.Core/GameFiles/FileTypes/RelFile.cs#L5084-L5086)
 · [Track settings](https://github.com/dexyfex/CodeWalker/blob/485d56bec00262ed7fa472261cce7bbc6202b96e/CodeWalker.Core/GameFiles/FileTypes/RelFile.cs#L5149)
 · [Sound types](https://github.com/dexyfex/CodeWalker/blob/485d56bec00262ed7fa472261cce7bbc6202b96e/CodeWalker.Core/GameFiles/FileTypes/RelFile.cs#L2241-L2245)
