@@ -79,14 +79,22 @@ it is not built the list sets nothing and drops its draws, dispatches and Execut
 SetPipelineState (counted in the sample summary). A derive (slot 55) from a stand-in uses the description kept
 under the stand-in's address; the rectangle-list variant is made from the built pipeline.
 
+Memory while builds wait (a cold story load queues thousands):
+
+| Item | Rule |
+|---|---|
+| Queued stream | keeps its subobjects and references the programs' DXIL; the native copy the driver reads is made for the cache lookup and again for the build, and freed while the stream waits in the queue (`DesktopStream.Release`) |
+| DXIL | `TranslatedProgramLibrary` keeps the most recently used programs up to 1 GiB and reads older ones again; rectangle-list recipes keep program names, not DXIL |
+| Build start | waits while less than 8 GB of commit is available (`WarmMemoryGuard`, as in the warm-up), since one driver compile can take gigabytes; also the concurrency rule below |
+
 **Memory.** The story load asks for about 29,000 pipelines the warm cache did not hold (15,000 by 210 s, 14,000 more
 at 870 s); 16 build threads compiling them took the loader from 19 to 74 GB private on a 64 GB machine, and at 978 s
 the commit charge reached the commit limit (129.1 of 129.2 GB) and the process ended without a record. So a build
 thread starts a build only while the machine has 8 GB of commit and 4 GB of physical memory available plus 2 GB of
 each for every compile running, the new one included (`WarmMemoryGuard.RoomForBuild`, polled every 2 s): during the
 load that leaves one to a few compiles instead of 16. A pipeline with 4 MiB of DXIL or more goes to a thread of its own
-that also waits for 40 GB of commit, so it never holds up the others; until then its draws stay skipped. The sample summary counts the queued
-builds and the threads waiting for memory.
+that also waits for 40 GB of commit, so it never holds up the others; until then its draws stay skipped. The sample summary counts the
+queued builds and the threads waiting for memory.
 
 ### Disk cache
 
@@ -107,8 +115,9 @@ flowchart LR
 
 | Item | Rule |
 |---|---|
-| Key (pipeline name) | the first 16 bytes of a SHA-256 over the stream: each subobject's type and payload, the DXIL itself in place of shader pointers, the input elements' semantic names and fields; the root signature is left out (the salt covers it). The padding of the blend and depth-stencil descs is zeroed first (`StatePadding`): the game leaves stack bytes there, which gave one pipeline a new key on every boot |
-| Salt | SHA-256 of a format string and the serialized bindless root signature; files with another salt are deleted |
+| Key (pipeline name) | the first 16 bytes of a SHA-256 over the stream: each subobject's type and payload, the DXIL itself in place of shader pointers, the input element count and the elements' semantic names and fields; the root signature is left out (the salt covers it). Everything the loader substitutes (renamed input elements, render-target and depth format substitutes, the program variant's DXIL) is in the stream, so in the key. The padding of the blend and depth-stencil descs is zeroed first (`StatePadding`): the game leaves stack bytes there, which gave one pipeline a new key on every boot |
+| Salt | SHA-256 of a format string and the serialized bindless root signature; files with another salt are deleted. The format string's number goes up whenever keys or streams change (now 2) |
+| Refusals | `LoadPipeline` compares the stream with the one the pipeline was stored with. A key the driver refuses is built anew and not offered to the driver again in that process. Mesh pipelines were all refused (debug-layer warning 972) until their stream named the topology type: the runtime keeps the mesh shader's output topology as the pipeline's, and a stream without the subobject reads as undefined. Translated mesh programs output triangles, so mesh streams carry `TRIANGLE` (checked on WARP by `D3D12XPipelineKeyTests`) |
 | Segment file `<utc time>-<pid>-<n>.psolib` | `FSPL`, u32 version 1, the 32-byte salt, u32 name count, u32 0, u64 library size, the 16-byte names, then the serialized library at a 256-byte boundary |
 | Opening | every segment is mapped read-only and its names indexed; a background thread gives the segments, newest first, to `CreatePipelineLibrary` (8 segments, 830 MB: 0.9 s) while the device is created. A pipeline whose segment is not open yet is built as if not cached. A segment the driver refuses (D3D12_ERROR_ADAPTER_NOT_FOUND, D3D12_ERROR_DRIVER_VERSION_MISMATCH, a damaged blob) is deleted |
 | New pipelines | go to an empty library of this process. Every minute, after every 2,048 new ones and at exit it is sealed (a new empty library takes new ones at once), written to a segment file of its own through a `.tmp` file and a rename, and replaced by that file mapped read-only; no lock the game waits on is held while the driver serializes |
@@ -257,10 +266,10 @@ flowchart LR
 | Game item | Desktop pipeline |
 |---|---|
 | Shader (DXBC container or cache code block) | the translated program whose code block starts with the same 24 bytes (the FSSM program inside a container and the cache's code block share them); DXIL is read from the ahead-of-time translation, dxc never runs here |
-| Shader stage | from the program's hardware stage: VS, PS, GS, NGG as mesh shader (no input assembler then) |
+| Shader stage | from the program's hardware stage: VS, PS, GS, NGG as mesh shader (no input assembler then, topology type `TRIANGLE`) |
 | Root signature | `BindlessRootSignature`, created once per device; the game's root signature is kept in the description for binding translation |
 | Input layout | an element becomes `ATTR` p, p the position of its semantic name and index among the non-system ISG1 inputs of the VS; elements the VS does not read become `UNUSED` k. A stream VS is its own DXBC container; a cache VS (a bare code block) takes the signature of its program's container, `<shader-dir>/../dxbc/<name>.dxbc` (`ProgramSignatures`), and only without that file element n becomes `ATTR` n |
-| Blend, rasterizer, depth-stencil | passed through (stream); decoded from the context registers (cache) with 0 values replaced by the D3D12 default. Two console combinations the runtime refuses are rewritten (`DesktopStateRules`): a dual-source factor on target 0 turns independent blending off and gives targets 1 to 7 the default blend; a forced sample count with depth or stencil on becomes 0 |
+| Blend, rasterizer, depth-stencil | passed through (stream); decoded from the context registers (cache) with 0 values replaced by the D3D12 default. Console combinations the runtime refuses are rewritten (`DesktopStateRules`): a dual-source factor on target 0 turns independent blending off and gives targets 1 to 7 the default blend; a forced sample count with depth or stencil on becomes 0; a NaN depth-bias clamp or slope scale becomes 0 (CreateRasterizerState refuses NaN; the console cache's registers hold none, game descs are not checked yet) |
 | Topology type | 1 to 4 pass; 0, the console type 19 and other values become `TRIANGLE` (stream and cache) |
 | Render-target and depth formats, sample mask and count (cache) | the record's 0x0C entry ([pipeline-cache.md](pipeline-cache.md#pipeline-outputs-and-vertex-input-layout)); the console's D16_UNORM_S8_UINT (118) becomes D32_FLOAT_S8X24_UINT (`DepthFormats`). Only without that entry are they guessed from the registers |
 | Derive | the base pipeline's description (kept per created pipeline) with the overrides applied, created anew; the formats are the base's, which the game found by a pipeline hash over them |
@@ -297,8 +306,8 @@ unwrapped, so slot 55 receives the desktop pointer it registered.
 
 ## Unknown
 
-- Why `LoadPipeline` refuses (E_INVALIDARG) about 1,600 cached pipelines per boot with the same key, mostly shadow,
-  linear-depth and puddle passes, also within the run that stored them; they are built anew.
+- Whether refusals remain after the mesh topology fix (before it, about 2,000 keys per boot, mostly shadow,
+  linear-depth and puddle passes; on WARP every mesh pipeline was refused, on the NVIDIA driver fewer).
 - Whether the 15-block cycle without an exit edge in the ray-traced shadow programs (`*_Tiled`: from 0x11fd8 through a
   far-jump island at 0x38758 back to 0x11fd8, the jumps made with `s_getpc_b64`/`s_sub_u32`/`s_setpc_b64`) is the
   console's code or an island target off by one instruction (0x11fd4 holds the loop's `s_cbranch_execz`). The

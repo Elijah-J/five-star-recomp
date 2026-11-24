@@ -102,7 +102,7 @@ public sealed unsafe class D3D12XRectangleListTests
         var iid = DesktopDevice.PipelineStateIid;
         nint pipeline;
         Assert.Equal(0, DesktopPipelineBuilder.Graphics(device2, root, description, programs, &iid, &pipeline));
-        var rectangles = new RectanglePipelines(device2, root, folder, new OnceLog(new LoaderLog(new StringWriter(), null, false)));
+        var rectangles = new RectanglePipelines(device2, root, folder, new FixedProgramLibrary([.. programs]), new OnceLog(new LoaderLog(new StringWriter(), null, false)));
         rectangles.Remember(pipeline, description, programs);
         test.Runtime.D3D12X.Rectangles.Attach(rectangles);
 

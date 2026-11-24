@@ -28,7 +28,11 @@ internal sealed unsafe class PipelineLibraryCache : IDisposable
     private const int SaveBatch = 2048;
     private const long MaximumBytes = 32L << 30;
     private const double BytesPerMegabyte = 1 << 20;
-    private const string Format = "fivestar pipeline cache 1";
+    /// <summary>
+    /// Part of the salt: raised whenever <see cref="DesktopStream.Key"/> or the streams change, so segments of the old
+    /// form are deleted instead of answering under keys that now mean something else (2: mesh topology).
+    /// </summary>
+    private const string Format = "fivestar pipeline cache 2";
     private const string IdFormat = "yyyyMMdd-HHmmss-fff";
 
     private static readonly TimeSpan SaveInterval = TimeSpan.FromMinutes(1);
@@ -36,6 +40,7 @@ internal sealed unsafe class PipelineLibraryCache : IDisposable
     private readonly object _active = new();
     private readonly object _saving = new();
     private readonly ConcurrentDictionary<string, PipelineLibrarySegment> _index = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, byte> _refusedKeys = new(StringComparer.Ordinal);
     private readonly List<PipelineLibrarySegment> _segments = [];
     private readonly List<string> _activeKeys = [];
     private readonly HashSet<string> _activeSet = new(StringComparer.Ordinal);
@@ -116,12 +121,20 @@ internal sealed unsafe class PipelineLibraryCache : IDisposable
         }
     }
 
-    /// <summary>The cached pipeline of <paramref name="stream"/> (S_OK), or a failure when it is not cached.</summary>
+    /// <summary>
+    /// The cached pipeline of <paramref name="stream"/> (S_OK), or a failure when it is not cached. A key the driver
+    /// refused once is not offered to it again in this process.
+    /// </summary>
     public int Load(DesktopStream stream, Guid* iid, nint* result)
     {
         var key = stream.Key;
         int hr = HResult.NotFound;
         bool known = false;
+
+        if (_refusedKeys.ContainsKey(key))
+        {
+            return hr;
+        }
 
         lock (_active)
         {
@@ -142,7 +155,7 @@ internal sealed unsafe class PipelineLibraryCache : IDisposable
         {
             Interlocked.Increment(ref _hits);
         }
-        else if (known && hr != HResult.Pending && Interlocked.Increment(ref _refused) == 1)
+        else if (known && hr != HResult.Pending && _refusedKeys.TryAdd(key, 0) && Interlocked.Increment(ref _refused) == 1)
         {
             _log.Warn($"[d3d12_xs] pipeline cache: the driver refused a cached pipeline ({HResult.Format(hr)}); refusals are built anew and counted");
         }

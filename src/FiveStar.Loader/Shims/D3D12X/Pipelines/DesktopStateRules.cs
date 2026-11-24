@@ -13,7 +13,9 @@ namespace FiveStar.Loader.Shims.D3D12X.Pipelines;
 /// blend on the other seven, the runtime allows dual-source factors only when target 0 is the one blend
 /// (debug-layer errors 112, 113, 115). Independent blending is turned off and targets 1 to 7 get the default blend
 /// (one render target is all dual-source blending can write);</item>
-/// <item>a forced sample count with depth or stencil on (error 672): the forced count is dropped.</item>
+/// <item>a forced sample count with depth or stencil on (error 672): the forced count is dropped;</item>
+/// <item>a NaN depth-bias clamp or slope scale (CreateRasterizerState: invalid value): it becomes 0, no clamp and no
+/// slope bias.</item>
 /// </list>
 /// </summary>
 internal static class DesktopStateRules
@@ -44,16 +46,35 @@ internal static class DesktopStateRules
         bool forced = BinaryPrimitives.ReadUInt32LittleEndian(rasterizer.AsSpan(DesktopStateBytes.ForcedSampleCountField)) != 0;
         bool depth = BinaryPrimitives.ReadInt32LittleEndian(depthStencil.AsSpan(DesktopStateBytes.DepthEnableField)) != 0;
         bool stencil = BinaryPrimitives.ReadInt32LittleEndian(depthStencil.AsSpan(DesktopStateBytes.StencilEnableField)) != 0;
+        bool dropForced = forced && (depth || stencil);
+        bool nanBias = IsNaN(rasterizer, DesktopStateBytes.DepthBiasClampField) || IsNaN(rasterizer, DesktopStateBytes.SlopeScaledDepthBiasField);
 
-        if (!forced || (!depth && !stencil))
+        if (!dropForced && !nanBias)
         {
             return rasterizer;
         }
 
         var desktop = (byte[])rasterizer.Clone();
-        BinaryPrimitives.WriteUInt32LittleEndian(desktop.AsSpan(DesktopStateBytes.ForcedSampleCountField), 0);
+
+        if (dropForced)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(desktop.AsSpan(DesktopStateBytes.ForcedSampleCountField), 0);
+        }
+
+        foreach (var field in (int[])[DesktopStateBytes.DepthBiasClampField, DesktopStateBytes.SlopeScaledDepthBiasField])
+        {
+            if (IsNaN(desktop, field))
+            {
+                BinaryPrimitives.WriteSingleLittleEndian(desktop.AsSpan(field), 0);
+            }
+        }
 
         return desktop;
+    }
+
+    private static bool IsNaN(byte[] desc, int field)
+    {
+        return float.IsNaN(BinaryPrimitives.ReadSingleLittleEndian(desc.AsSpan(field)));
     }
 
     private static bool UsesDualSource(byte[] blend)

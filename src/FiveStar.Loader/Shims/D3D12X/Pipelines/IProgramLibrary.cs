@@ -11,4 +11,10 @@ internal interface IProgramLibrary
 
     /// <summary>The extracted programs whose code starts with <paramref name="prefix"/>, translated or not.</summary>
     IReadOnlyList<string> Names(ReadOnlySpan<byte> prefix);
+
+    /// <summary>The translated program named <paramref name="name"/>, or null when it has no loadable form.</summary>
+    TranslatedProgram? Load(string name);
+
+    /// <summary>Bytes of DXIL the library keeps in memory.</summary>
+    long HeldBytes { get; }
 }

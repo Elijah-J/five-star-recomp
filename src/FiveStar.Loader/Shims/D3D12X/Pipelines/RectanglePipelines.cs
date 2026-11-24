@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Five Star Recomp contributors.
+// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Collections.Concurrent;
@@ -26,6 +26,7 @@ internal sealed unsafe class RectanglePipelines
     private readonly nint _device2;
     private readonly nint _rootSignature;
     private readonly string _folder;
+    private readonly IProgramLibrary _programs;
     private readonly OnceLog _warnings;
     private readonly ConcurrentDictionary<nint, RectangleRecipe> _recipes = new();
     private readonly ConcurrentDictionary<nint, nint> _variants = new();
@@ -34,12 +35,14 @@ internal sealed unsafe class RectanglePipelines
     /// <param name="device2">A desktop ID3D12Device2 (the caller keeps it alive).</param>
     /// <param name="rootSignature">The root signature of translated programs.</param>
     /// <param name="folder">The compiled geometry shaders (<c>&lt;translated&gt;/rect-gs</c>).</param>
+    /// <param name="programs">Where a variant's programs are read again by name.</param>
     /// <param name="warnings">Where missing shaders and failures are reported, once each.</param>
-    public RectanglePipelines(nint device2, nint rootSignature, string folder, OnceLog warnings)
+    public RectanglePipelines(nint device2, nint rootSignature, string folder, IProgramLibrary programs, OnceLog warnings)
     {
         _device2 = device2;
         _rootSignature = rootSignature;
         _folder = folder;
+        _programs = programs;
         _warnings = warnings;
     }
 
@@ -60,7 +63,7 @@ internal sealed unsafe class RectanglePipelines
             return;
         }
 
-        _recipes[pipeline] = new RectangleRecipe(description, programs, vertex);
+        _recipes[pipeline] = new RectangleRecipe(description, [.. programs.Select(program => program.Name)], vertex.Name);
     }
 
     /// <summary>The programs, input layout and target formats of a remembered pipeline, for traces; null when unknown.</summary>
@@ -72,7 +75,7 @@ internal sealed unsafe class RectanglePipelines
         }
 
         var description = recipe.Description;
-        string programs = string.Join(" + ", recipe.Programs.Select(program => program.Name));
+        string programs = string.Join(" + ", recipe.Programs);
         string inputs = string.Join(", ", description.InputLayout.Select(e => $"{e.Semantic}{e.SemanticIndex} fmt {e.Format} slot {e.InputSlot} +{e.Offset}"));
 
         string blend = Convert.ToHexString(description.Blend, 0, Math.Min(description.Blend.Length, BlendTraceBytes));
@@ -119,21 +122,38 @@ internal sealed unsafe class RectanglePipelines
 
     private nint Build(RectangleRecipe recipe)
     {
-        var shader = Shader(recipe.Vertex);
+        var programs = new List<TranslatedProgram>();
+
+        foreach (var name in recipe.Programs)
+        {
+            var program = _programs.Load(name);
+
+            if (program is null)
+            {
+                _warnings.Warn($"rect-program-{name}", $"[d3d12_xs] rectangle-list pipeline: {name} is no longer loadable; drawn as triangles");
+
+                return 0;
+            }
+
+            programs.Add(program);
+        }
+
+        var vertex = programs.First(program => program.Name == recipe.Vertex);
+        var shader = Shader(vertex);
 
         if (shader is null)
         {
             return 0;
         }
 
-        var programs = recipe.Programs.Append(new TranslatedProgram(recipe.Vertex.Name, HardwareStage.Geometry, shader)).ToList();
+        programs.Add(new TranslatedProgram(vertex.Name, HardwareStage.Geometry, shader));
         var iid = DesktopDevice.PipelineStateIid;
         nint variant = 0;
         var hr = DesktopPipelineBuilder.Graphics(_device2, _rootSignature, recipe.Description, programs, &iid, &variant);
 
         if (HResult.Failed(hr))
         {
-            _warnings.Warn($"rect-create-{recipe.Vertex.Name}", $"[d3d12_xs] rectangle-list pipeline for {recipe.Vertex.Name}: {HResult.Format(hr)}; drawn as triangles");
+            _warnings.Warn($"rect-create-{vertex.Name}", $"[d3d12_xs] rectangle-list pipeline for {vertex.Name}: {HResult.Format(hr)}; drawn as triangles");
 
             return 0;
         }

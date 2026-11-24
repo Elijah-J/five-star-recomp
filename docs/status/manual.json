@@ -16,7 +16,8 @@
         { "name": "User, saves, pad pairing", "done": 1, "partial": 0, "todo": 0 },
         { "name": "Next stage streaming", "done": 1, "partial": 0, "todo": 0, "note": "three-minute boots run without a crash" },
         { "name": "First image", "done": 1, "partial": 0, "todo": 0, "note": "the intro video" },
-        { "name": "Menus", "done": 0, "partial": 0, "todo": 1 },
+        { "name": "First-run screens", "done": 1, "partial": 0, "todo": 0, "note": "options, legal, privacy; UI text misses letters" },
+        { "name": "Story load", "done": 0, "partial": 1, "todo": 0, "note": "GPU hang about six minutes in" },
         { "name": "In game", "done": 0, "partial": 0, "todo": 1 }
       ]
     },
@@ -73,8 +74,9 @@
     {
       "area": "Running the game",
       "items": [
-        { "name": "Menus", "note": "the game is still loading after three minutes; longer runs next" },
-        { "name": "First image", "note": "frames are still black" },
+        { "name": "Story load", "note": "the GPU hangs about six minutes into the load" },
+        { "name": "UI text", "note": "letters missing, calibration symbols black" },
+        { "name": "Memory", "note": "the story load reaches 62 to 65 GB; allocator of the large blocks unknown" },
         { "name": "Pipeline warm-up", "note": "about 9 hours for the full set; the cache makes later boots warm" }
       ]
     },

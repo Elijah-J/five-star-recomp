@@ -61,6 +61,9 @@ internal sealed unsafe class PipelineFactory
     /// <summary>Pipelines handed out before the driver built them.</summary>
     public StandInPipelines StandIns { get; }
 
+    /// <summary>Bytes of DXIL the program library keeps in memory.</summary>
+    public long ProgramBytes => _programs.HeldBytes;
+
     /// <summary>The creations running now (<see cref="PipelineSlots"/> marks them).</summary>
     public PipelineCreationsInFlight InFlight { get; } = new();
 
@@ -194,7 +197,8 @@ internal sealed unsafe class PipelineFactory
 
     /// <summary>
     /// The pipeline of <paramref name="stream"/>: from the cache on this thread when it is there, else built on the
-    /// build threads (<see cref="StandInPipelines"/>) and stored in the cache. Takes ownership of the stream.
+    /// build threads (<see cref="StandInPipelines"/>) and stored in the cache. Takes ownership of the stream, whose
+    /// native copy is freed while it waits for a build thread.
     /// </summary>
     private int Create(DesktopStream stream, Guid* iid, nint* result, string names, Action<nint>? built)
     {
@@ -214,18 +218,22 @@ internal sealed unsafe class PipelineFactory
 
         *result = 0;
         var wanted = *iid;
+        stream.Release();
 
         return StandIns.Create(() => Build(stream, wanted), result, names, named, stream.ShaderBytes >= HeavyShaderBytes);
     }
 
     /// <summary>
     /// Builds the pipeline of <paramref name="stream"/> on this thread and stores it in the cache; disposes the stream.
-    /// Pipelines with <see cref="HeavyShaderBytes"/> of DXIL or more are built one at a time.
+    /// Pipelines with <see cref="HeavyShaderBytes"/> of DXIL or more are built one at a time, and no build starts while
+    /// the machine is short of commit (<see cref="WarmMemoryGuard"/>), since one driver compile can take gigabytes.
     /// </summary>
     public PipelineResult Build(DesktopStream stream, Guid iid)
     {
         using (stream)
         {
+            WarmMemoryGuard.WaitForRoom(static () => false);
+
             if (stream.ShaderBytes < HeavyShaderBytes)
             {
                 return BuildNow(stream, iid);

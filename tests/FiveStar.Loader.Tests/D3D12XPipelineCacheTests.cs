@@ -88,7 +88,7 @@ public sealed unsafe class D3D12XPipelineCacheTests
         var standIns = new StandInPipelines(budget, builds, builds, warnings);
         var cache = PipelineLibraryCache.Open(folder, device2, log)!;
         Assert.True(cache.WaitForSegments(TimeSpan.FromMinutes(1)));
-        var factory = new PipelineFactory(device2, root, new SingleProgramLibrary(program), new ProgramSignatures(folder), warnings, null, standIns, cache);
+        var factory = new PipelineFactory(device2, root, new FixedProgramLibrary(program), new ProgramSignatures(folder), warnings, null, standIns, cache);
         var iid = DesktopDevice.PipelineStateIid;
         nint pipeline;
 

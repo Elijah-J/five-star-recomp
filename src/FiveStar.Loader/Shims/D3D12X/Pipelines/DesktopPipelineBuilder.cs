@@ -39,7 +39,13 @@ internal static unsafe class DesktopPipelineBuilder
         stream.AddBytes(PipelineStateSubObjectType.Rasterizer, DesktopStateRules.Rasterizer(description.Rasterizer, description.DepthStencil));
         stream.AddBytes(PipelineStateSubObjectType.DepthStencil1, StatePadding.DepthStencil(description.DepthStencil));
 
-        if (!mesh)
+        if (mesh)
+        {
+            // The runtime keeps a mesh pipeline's topology type as its shader's output topology and refuses a library
+            // load whose stream leaves it out (debug-layer warning 972); translated mesh programs output triangles.
+            stream.AddWords(PipelineStateSubObjectType.PrimitiveTopology, [PipelineLayout.TriangleTopology]);
+        }
+        else
         {
             InputAssembler(stream, description);
         }
