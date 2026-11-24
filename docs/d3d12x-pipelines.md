@@ -72,6 +72,14 @@ the logical processors):
 | done within `PipelineSlots.CreationBudget` (1 s) and no creation queued before it | the desktop pipeline or the failure |
 | still running, or queued behind others | S_OK and a stand-in |
 
+**First use.** A story load creates about 85,000 pipelines (52,000 distinct desktop ones built in the first 8
+minutes of a cold boot, 32,000 more still queued), while a scene draws with few of them. So by default a pipeline the
+disk cache lacks is not built at creation: the game gets a stand-in at once, and the build is queued when a command
+list first sets the stand-in (SetPipelineState or a Reset with an initial pipeline). Pipelines an earlier boot used
+(the journal, [Warm-up](#warm-up)) are queued at creation instead, so they are ready by the time the game draws.
+`--eager-pipelines` builds every one at creation, as before. The sample summary counts the stand-ins deferred to first
+use and how many of them were used.
+
 A stand-in is our own `ID3D12PipelineState` (`StandInPipelineObject`): a vtable, the desktop pipeline once built
 (0 before), 0x20 zero bytes the game reads, its own reference count. Its last Release releases the desktop pipeline,
 or the build does when it ends later. Slot 25 of the command list (SetPipelineState) sets the built pipeline; while
@@ -147,8 +155,11 @@ text. `fivestar setup` runs it as the `pipeline-warm` step ([setup.md](setup.md)
 
 Slot 86 streams and slot 55 derives are not in the console cache; the journal brings them to the warm-up.
 
-**Journal.** A boot appends every description it is asked for (all five slots, derives included) to
-`pipelines-used.bin` in the cache folder, once each, in first-use order across boots (`PipelineJournal`). A record
+**Journal.** A boot appends every description whose pipeline a command list first sets (all five slots, derives
+included; with `--eager-pipelines` every description at creation) to `pipelines-used.bin` in the cache folder, once
+each, in first-use order across boots (`PipelineJournal`). A pipeline the disk cache answered is not seen at use, so it
+enters the journal on the first boot that has to build it (after a new translation). The idea of keeping the last
+run's pipelines and starting them during loading follows VIctory (THIRD_PARTY_NOTICES.md). A record
 holds the description with each shader as its 24-byte code-block prefix, not its translation, so it still names the
 pipeline after a new translation, which makes every cached pipeline stale (the DXIL is in the key). A vertex shader
 given as a container then takes its input signature from the extracted program of that prefix, the same ISG1. Each

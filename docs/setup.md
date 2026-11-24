@@ -7,7 +7,7 @@ with the same state before it starts the game.
 
 ```
 fivestar setup <dump folder> [--work <dir>] [--only <step,...>] [--force] [--limit N] [--step K] [--jobs N]
-                             [--mesh-fallbacks] [--dxc <dxc.exe>] [--gdk-lib <xgameruntime.lib>] [--loader <fivestar-loader.exe>]
+                             [--mesh-fallbacks] [--warm-all] [--dxc <dxc.exe>] [--gdk-lib <xgameruntime.lib>] [--loader <fivestar-loader.exe>]
 fivestar setup <dump folder> --status
 fivestar setup <dump folder> --clean-cache
 ```
@@ -35,7 +35,7 @@ flowchart LR
 | `pipeline-cache` | `fivestar shader psocache` of the console pipeline cache, matched to the programs | `pipelines` (`pipelines.json`, `code/`) |
 | `textures` | `fivestar texture extract` of every page file | `textures/<page file path>/*.dds` |
 | `gdk-abi` | `fivestar platform gdk-abi` from the PC GDK's `xgameruntime.lib`, for `fivestar-loader --gdk-abi`. Without a GDK it finishes with a note | `loader/gdk-abi.txt` |
-| `pipeline-warm` | `fivestar-loader --warm-pipelines` of `shaders.rpf` with `--warm-step` = `--step`: builds every pipeline of the console pipeline cache with the desktop driver ([d3d12x-pipelines.md](d3d12x-pipelines.md#warm-up)), so the first boot loads them. `fivestar run` does not wait for it | `pipeline-cache` |
+| `pipeline-warm` | `fivestar-loader --warm-pipelines --warm-used-only` of `shaders.rpf` with `--warm-step` = `--step`: builds the pipelines earlier boots used (the loader's `pipeline-cache/pipelines-used.bin`) with the desktop driver ([d3d12x-pipelines.md](d3d12x-pipelines.md#warm-up)), so the next boot loads them; without that file there is nothing to do, since the game builds its pipelines on first use. `--warm-all` also builds every pipeline of the console pipeline cache (about 9 hours). `fivestar run` does not wait for it | `pipeline-cache` |
 
 `variants.json` lists every compiled program with its DXIL forms (native, wave32 variant or mesh superstep form, mesh fallback) and wave
 floor, so the runtime picks the form for the GPU without reading HLSL (see
@@ -70,7 +70,7 @@ or the step fails, and the step then shows as interrupted.
 | `pipeline-cache` | `shaders.rpf` | FiveStar.Shaders, FiveStar.Formats |
 | `textures` | every page file, the sample options | FiveStar.Formats |
 | `gdk-abi` | the GDK library and the dump's modules, or none | FiveStar.Formats |
-| `pipeline-warm` | `shaders.rpf`, the sample options | the `fivestar-loader.exe` file |
+| `pipeline-warm` | `shaders.rpf`, the sample options, `--warm-all`, the size and time of `pipelines-used.bin` | the `fivestar-loader.exe` file |
 
 A step's inputs also include the records of the steps it depends on, so a redone step redoes what follows it. A
 step runs when it has no record, its record differs, its outputs are gone or it was interrupted. Within a step:
