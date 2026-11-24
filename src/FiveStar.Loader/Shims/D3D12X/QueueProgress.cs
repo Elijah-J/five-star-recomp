@@ -252,7 +252,8 @@ internal static unsafe class QueueProgress
             var entry = queue.Events[i % History];
             text.Append("\n      ").Append(Format(entry, queue.Seen, now));
 
-            if (entry.Kind == QueueEventKind.Execute && entry.Value > queue.Seen)
+            // The last finished execution as well: its lists show the markers reached the CPU.
+            if (entry.Kind == QueueEventKind.Execute && entry.Value >= queue.Seen)
             {
                 GpuBreadcrumbs.Describe(text, Volatile.Read(ref wrapper->Fence), entry.Value, PipelineName);
             }
