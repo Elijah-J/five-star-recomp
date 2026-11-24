@@ -53,7 +53,7 @@
           "done": 0,
           "partial": 1,
           "todo": 0,
-          "note": "stops at a page bookkeeping assert"
+          "note": "DirectStorage compression format 14 next"
         },
         {
           "name": "First image",
@@ -199,8 +199,12 @@
       "area": "Running the game",
       "items": [
         {
-          "name": "Physical page bookkeeping",
-          "note": "a game assert after the pad pairs"
+          "name": "DirectStorage format 14",
+          "note": "texture pages, likely BCPack"
+        },
+        {
+          "name": "Memory corruption",
+          "note": "intermittent crashes being tracked down"
         },
         {
           "name": "First image",
