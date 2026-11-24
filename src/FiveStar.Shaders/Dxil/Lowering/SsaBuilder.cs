@@ -11,17 +11,19 @@ namespace FiveStar.Shaders.Dxil.Lowering;
 /// through its predecessors, placing a phi where paths meet. A block is sealed once all its predecessors are known; a
 /// phi whose operands are one value (or itself) is replaced by that value, and <see cref="Finish"/> rewrites every
 /// operand through the replacements.
+/// <para>
+/// The code is structured, so a join closes a region (if, switch, loop, inlined call) that starts at one block. The
+/// lowering records which slots each region writes (<see cref="BeginRegion"/>, <see cref="EndRegion"/>); a read of any
+/// other slot at the join continues at the region's start instead of visiting every path through it.
+/// </para>
 /// </summary>
 public sealed class SsaBuilder
 {
     private readonly DxilModule _module;
     private readonly List<IrType> _slotTypes = [];
-    private readonly Dictionary<BasicBlock, Dictionary<int, Value>> _definitions = [];
-    private readonly Dictionary<BasicBlock, List<BasicBlock>> _predecessors = [];
-    private readonly HashSet<BasicBlock> _sealed = [];
-    private readonly Dictionary<BasicBlock, List<(int Slot, Instruction Phi)>> _incomplete = [];
-    private readonly Dictionary<Value, Value> _replacements = [];
+    private readonly List<BlockState?> _states = [];
     private readonly List<BasicBlock> _blocks = [];
+    private readonly Stack<HashSet<int>> _regions = new();
 
     public SsaBuilder(DxilModule module)
     {
@@ -54,66 +56,106 @@ public sealed class SsaBuilder
     /// <summary>Records a control-flow edge (call when the branch is made).</summary>
     public void AddEdge(BasicBlock from, BasicBlock to)
     {
-        Predecessors(to).Add(from);
+        State(to).Predecessors.Add(from);
     }
 
     public int PredecessorCount(BasicBlock block)
     {
-        return Predecessors(block).Count;
+        return State(block).Predecessors.Count;
     }
 
     public void Write(int slot, BasicBlock block, Value value)
     {
-        Definitions(block)[slot] = value;
+        State(block).Definitions[slot] = value;
+
+        if (_regions.Count > 0)
+        {
+            _regions.Peek().Add(slot);
+        }
+    }
+
+    /// <summary>Starts recording the slots a region writes.</summary>
+    public void BeginRegion()
+    {
+        _regions.Push([]);
+    }
+
+    /// <summary>
+    /// Ends the innermost region: reads at <paramref name="join"/> of slots it did not write continue at
+    /// <paramref name="start"/>, the block every path into the join came from.
+    /// </summary>
+    public void EndRegion(BasicBlock start, BasicBlock join)
+    {
+        var written = _regions.Pop();
+
+        if (_regions.Count > 0)
+        {
+            _regions.Peek().UnionWith(written);
+        }
+
+        var state = State(join);
+        state.RegionStart = start;
+        state.RegionWrites = written;
     }
 
     public Value Read(int slot, BasicBlock block)
     {
         var current = block;
+        Value value;
 
-        // Walk single-predecessor chains without recursion.
         while (true)
         {
-            if (Definitions(current).TryGetValue(slot, out var value))
-            {
-                return Find(value);
-            }
+            var state = State(current);
 
-            var predecessors = Predecessors(current);
-
-            if (!_sealed.Contains(current) || predecessors.Count != 1)
+            if (state.Definitions.TryGetValue(slot, out var found))
             {
+                value = Find(found);
+
                 break;
             }
 
-            current = predecessors[0];
-        }
+            var next = Skip(state, slot);
 
-        var result = ReadAtJoin(slot, current);
+            if (next is null)
+            {
+                value = ReadAtJoin(slot, current);
+
+                break;
+            }
+
+            current = next;
+        }
 
         if (!ReferenceEquals(current, block))
         {
-            Definitions(block)[slot] = result;
+            State(block).Definitions[slot] = value;
         }
 
-        return result;
+        return value;
     }
 
     public void Seal(BasicBlock block)
     {
-        if (!_sealed.Add(block))
+        var state = State(block);
+
+        if (state.Sealed)
         {
             return;
         }
 
-        if (_incomplete.Remove(block, out var phis))
+        state.Sealed = true;
+
+        if (state.Incomplete is null)
         {
-            foreach (var (slot, phi) in phis)
-            {
-                var value = AddOperands(slot, phi);
-                Definitions(block)[slot] = value;
-            }
+            return;
         }
+
+        foreach (var (slot, phi) in state.Incomplete)
+        {
+            state.Definitions[slot] = AddOperands(slot, phi);
+        }
+
+        state.Incomplete = null;
     }
 
     /// <summary>Removes the remaining trivial phis and rewrites every operand through the replacements.</summary>
@@ -131,52 +173,84 @@ public sealed class SsaBuilder
             }
         }
 
-        foreach (var instruction in _blocks.SelectMany(block => block.Phis.Concat(block.Body)))
+        foreach (var block in _blocks)
         {
-            for (var index = 0; index < instruction.Operands.Count; index++)
+            Rewrite(block.Phis);
+            Rewrite(block.Body);
+
+            if (block.Terminator is not null)
             {
-                instruction.Operands[index] = Find(instruction.Operands[index]);
+                Rewrite(block.Terminator);
             }
         }
+    }
 
-        foreach (var block in _blocks.Where(block => block.Terminator is not null))
+    /// <summary>The block a read continues in without a phi: the single predecessor, or the start of a region that leaves the slot alone.</summary>
+    private static BasicBlock? Skip(BlockState state, int slot)
+    {
+        if (!state.Sealed)
         {
-            var operands = block.Terminator!.Operands;
+            return null;
+        }
 
-            for (var index = 0; index < operands.Count; index++)
-            {
-                operands[index] = Find(operands[index]);
-            }
+        if (state.Predecessors.Count == 1)
+        {
+            return state.Predecessors[0];
+        }
+
+        if (state.RegionStart is not null && !state.RegionWrites!.Contains(slot))
+        {
+            return state.RegionStart;
+        }
+
+        return null;
+    }
+
+    private static void Rewrite(List<Instruction> instructions)
+    {
+        foreach (var instruction in instructions)
+        {
+            Rewrite(instruction);
+        }
+    }
+
+    private static void Rewrite(Instruction instruction)
+    {
+        var operands = instruction.Operands;
+
+        for (var index = 0; index < operands.Count; index++)
+        {
+            operands[index] = Find(operands[index]);
         }
     }
 
     private Value ReadAtJoin(int slot, BasicBlock block)
     {
         var type = _slotTypes[slot];
+        var state = State(block);
 
-        if (!_sealed.Contains(block))
+        if (!state.Sealed)
         {
             var pending = IrBuilder.Phi(block, type);
-            Incomplete(block).Add((slot, pending));
-            Definitions(block)[slot] = pending;
+            state.Incomplete ??= [];
+            state.Incomplete.Add((slot, pending));
+            state.Definitions[slot] = pending;
 
             return pending;
         }
 
-        var predecessors = Predecessors(block);
-
-        if (predecessors.Count == 0)
+        if (state.Predecessors.Count == 0)
         {
             var undefined = _module.Undefined(type);
-            Definitions(block)[slot] = undefined;
+            state.Definitions[slot] = undefined;
 
             return undefined;
         }
 
         var phi = IrBuilder.Phi(block, type);
-        Definitions(block)[slot] = phi;
+        state.Definitions[slot] = phi;
         var value = AddOperands(slot, phi);
-        Definitions(block)[slot] = value;
+        state.Definitions[slot] = value;
 
         return value;
     }
@@ -184,7 +258,7 @@ public sealed class SsaBuilder
     /// <summary>Fills a phi from the predecessors; returns the phi, or the one value it would always hold.</summary>
     private Value AddOperands(int slot, Instruction phi)
     {
-        foreach (var predecessor in Predecessors(phi.Block))
+        foreach (var predecessor in State(phi.Block).Predecessors)
         {
             phi.Operands.Add(Read(slot, predecessor));
             phi.Targets.Add(predecessor);
@@ -215,8 +289,18 @@ public sealed class SsaBuilder
         }
 
         same ??= _module.Undefined(phi.Type);
-        _replacements[phi] = same;
-        phi.Block.Phis.Remove(phi);
+        phi.Replacement = same;
+        var phis = phi.Block.Phis;
+
+        // Usually the newest phi of its block.
+        if (phis.Count > 0 && ReferenceEquals(phis[^1], phi))
+        {
+            phis.RemoveAt(phis.Count - 1);
+        }
+        else
+        {
+            phis.Remove(phi);
+        }
 
         return same;
     }
@@ -236,54 +320,55 @@ public sealed class SsaBuilder
         return changed;
     }
 
-    private Value Find(Value value)
+    private static Value Find(Value value)
     {
         var current = value;
 
-        while (_replacements.TryGetValue(current, out var next))
+        while (current is Instruction instruction && instruction.Replacement is not null)
         {
-            current = next;
+            current = instruction.Replacement;
         }
 
         // Shorten the chain for the next lookup.
-        if (!ReferenceEquals(current, value))
+        if (value is Instruction first && first.Replacement is not null)
         {
-            _replacements[value] = current;
+            first.Replacement = current;
         }
 
         return current;
     }
 
-    private Dictionary<int, Value> Definitions(BasicBlock block)
+    private BlockState State(BasicBlock block)
     {
-        if (!_definitions.TryGetValue(block, out var definitions))
+        while (_states.Count <= block.Number)
         {
-            definitions = [];
-            _definitions[block] = definitions;
+            _states.Add(null);
         }
 
-        return definitions;
+        var state = _states[block.Number];
+
+        if (state is null)
+        {
+            state = new BlockState();
+            _states[block.Number] = state;
+        }
+
+        return state;
     }
 
-    private List<BasicBlock> Predecessors(BasicBlock block)
+    /// <summary>Per block: definitions by slot, predecessors, sealed, phis waiting for the seal, the region it closes.</summary>
+    private sealed class BlockState
     {
-        if (!_predecessors.TryGetValue(block, out var predecessors))
-        {
-            predecessors = [];
-            _predecessors[block] = predecessors;
-        }
+        public Dictionary<int, Value> Definitions { get; } = [];
 
-        return predecessors;
-    }
+        public List<BasicBlock> Predecessors { get; } = [];
 
-    private List<(int Slot, Instruction Phi)> Incomplete(BasicBlock block)
-    {
-        if (!_incomplete.TryGetValue(block, out var phis))
-        {
-            phis = [];
-            _incomplete[block] = phis;
-        }
+        public bool Sealed { get; set; }
 
-        return phis;
+        public List<(int Slot, Instruction Phi)>? Incomplete { get; set; }
+
+        public BasicBlock? RegionStart { get; set; }
+
+        public HashSet<int>? RegionWrites { get; set; }
     }
 }

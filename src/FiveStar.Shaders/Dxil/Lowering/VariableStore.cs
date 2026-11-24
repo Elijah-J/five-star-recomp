@@ -88,6 +88,13 @@ public sealed class VariableStore
     /// <summary>The whole variable as a place.</summary>
     public LValue Whole(Variable variable)
     {
+        variable.WholePlace ??= MakeWhole(variable);
+
+        return variable.WholePlace;
+    }
+
+    private LValue MakeWhole(Variable variable)
+    {
         var count = variable.Type.Count;
 
         return variable.Storage switch

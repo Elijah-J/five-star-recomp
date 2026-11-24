@@ -37,6 +37,9 @@ public sealed class Variable
     /// <summary>A read-only constant table (stores are refused).</summary>
     public bool IsConstant { get; init; }
 
+    /// <summary>The whole variable as a place, made once.</summary>
+    internal LValue? WholePlace { get; set; }
+
     public override string ToString()
     {
         return $"{Type} {Name}";

@@ -52,8 +52,8 @@ public sealed class FunctionInliner
         for (var index = 0; index < parameters.Count; index++)
         {
             var parameter = parameters[index];
-            var copiesOut = parameter.Modifiers.Contains("out") || parameter.Modifiers.Contains("inout");
-            var copiesIn = !parameter.Modifiers.Contains("out");
+            var copiesOut = parameter.HasModifier("out") || parameter.HasModifier("inout");
+            var copiesIn = !parameter.HasModifier("out");
             var argument = call.Children[index];
             LValue? target = null;
             RValue? value = null;
@@ -89,10 +89,13 @@ public sealed class FunctionInliner
         var returnCount = returnType.Shape == TypeShape.Void ? 0 : returnType.Count;
         var returnSlots = Enumerable.Range(returnVariable.FirstSlot, returnCount).ToList();
         var exit = _context.Flow.NewBlock();
+        var start = _context.Flow.Current;
+        _context.Ssa.BeginRegion();
         _context.Flow.PushFrame(new FunctionFrame(exit, returnType, returnSlots));
         _context.Statements.LowerBlockContents(body);
         _context.Flow.Jump(exit);
         _context.Flow.PopFrame();
+        _context.Ssa.EndRegion(start, exit);
         _context.Flow.Seal(exit);
         _context.Flow.Enter(exit);
 

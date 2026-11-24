@@ -12,4 +12,7 @@ public abstract class Value
     }
 
     public IrType Type { get; }
+
+    /// <summary>The value number while the module is written (-1: none).</summary>
+    internal int Id { get; set; } = -1;
 }

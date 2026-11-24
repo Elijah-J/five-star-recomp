@@ -14,19 +14,16 @@ internal sealed class FunctionBodyWriter
     private const int Width = 4;
 
     private readonly BitstreamWriter _out;
-    private readonly Dictionary<Value, int> _ids;
     private readonly IrFunction _function;
     private readonly TypeTable _types;
-    private readonly Dictionary<BasicBlock, int> _positions = [];
-    private readonly HashSet<Instruction> _live = [];
+    private readonly List<Instruction> _live = [];
     private List<BasicBlock> _layout = [];
     private int _base;
     private int _next;
 
-    public FunctionBodyWriter(BitstreamWriter output, Dictionary<Value, int> ids, IrFunction function, TypeTable types)
+    public FunctionBodyWriter(BitstreamWriter output, IrFunction function, TypeTable types)
     {
         _out = output;
-        _ids = ids;
         _function = function;
         _types = types;
     }
@@ -38,7 +35,7 @@ internal sealed class FunctionBodyWriter
 
         for (var index = 0; index < _layout.Count; index++)
         {
-            _positions[_layout[index]] = index;
+            _layout[index].Position = index;
         }
 
         MarkLive();
@@ -62,20 +59,31 @@ internal sealed class FunctionBodyWriter
         return referenced;
     }
 
-    /// <summary>Numbers the live results after the module-level values.</summary>
-    public void NumberInstructions()
+    /// <summary>Numbers the live results after the <paramref name="moduleValues"/> module-level values.</summary>
+    public void NumberInstructions(int moduleValues)
     {
-        _base = _ids.Count;
+        _base = moduleValues;
         var next = _base;
 
-        foreach (var instruction in _layout.SelectMany(Instructions))
+        foreach (var block in _layout)
         {
-            if (!instruction.Type.IsVoid)
+            next = Number(block.Phis, next);
+            next = Number(block.Body, next);
+        }
+    }
+
+    private static int Number(List<Instruction> instructions, int next)
+    {
+        foreach (var instruction in instructions)
+        {
+            if (instruction.Live && !instruction.Type.IsVoid)
             {
-                _ids[instruction] = next;
+                instruction.Id = next;
                 next++;
             }
         }
+
+        return next;
     }
 
     public void Write()
@@ -103,9 +111,9 @@ internal sealed class FunctionBodyWriter
     }
 
     /// <summary>The live phis and body instructions of a block, in order.</summary>
-    private IEnumerable<Instruction> Instructions(BasicBlock block)
+    private static IEnumerable<Instruction> Instructions(BasicBlock block)
     {
-        return block.Phis.Concat(block.Body).Where(_live.Contains);
+        return block.Phis.Concat(block.Body).Where(instruction => instruction.Live);
     }
 
     private static List<BasicBlock> ReversePostorder(BasicBlock entry)
@@ -168,15 +176,22 @@ internal sealed class FunctionBodyWriter
 
     private void Mark(Value value, Stack<Instruction> work)
     {
-        if (value is Instruction instruction && _live.Add(instruction))
+        if (value is Instruction instruction && !instruction.Live)
         {
+            instruction.Live = true;
+            _live.Add(instruction);
             work.Push(instruction);
         }
     }
 
     private ulong Relative(Value value)
     {
-        var id = _ids[value];
+        var id = value.Id;
+
+        if (id < 0)
+        {
+            throw new InvalidOperationException($"an operand that is not written: {value}");
+        }
 
         if (id >= _next)
         {
@@ -235,7 +250,7 @@ internal sealed class FunctionBodyWriter
                 _out.Record((int)FunctionCode.GetElementPtr, [1, (ulong)instruction.SourceType!.Id, .. operands.Select(Relative)]);
                 break;
             case Opcode.Alloca:
-                _out.Record((int)FunctionCode.Alloca, [(ulong)instruction.SourceType!.Id, (ulong)_types.Int32.Id, (ulong)_ids[operands[0]], ModuleWriter.Records.Alignment | ModuleWriter.Records.AllocaFlags]);
+                _out.Record((int)FunctionCode.Alloca, [(ulong)instruction.SourceType!.Id, (ulong)_types.Int32.Id, (ulong)operands[0].Id, ModuleWriter.Records.Alignment | ModuleWriter.Records.AllocaFlags]);
                 break;
             case Opcode.Call:
                 WriteCall(instruction);
@@ -261,12 +276,19 @@ internal sealed class FunctionBodyWriter
 
         for (var index = 0; index < phi.Operands.Count; index++)
         {
-            if (!_positions.TryGetValue(phi.Targets[index], out var position))
+            var position = phi.Targets[index].Position;
+
+            if (position < 0)
             {
                 continue;
             }
 
-            record.Add(BitstreamWriter.Signed((long)_next - _ids[phi.Operands[index]]));
+            if (phi.Operands[index].Id < 0)
+            {
+                throw new InvalidOperationException($"a phi operand that is not written: {phi.Operands[index]}");
+            }
+
+            record.Add(BitstreamWriter.Signed((long)_next - phi.Operands[index].Id));
             record.Add((ulong)position);
         }
 
@@ -275,7 +297,7 @@ internal sealed class FunctionBodyWriter
 
     private void WriteTerminator(Instruction terminator)
     {
-        var targets = terminator.Targets.Select(target => (ulong)_positions[target]).ToArray();
+        var targets = terminator.Targets.Select(target => (ulong)target.Position).ToArray();
 
         switch (terminator.Opcode)
         {
@@ -301,7 +323,7 @@ internal sealed class FunctionBodyWriter
 
         for (var index = 0; index < terminator.Cases.Count; index++)
         {
-            record.Add((ulong)_ids[terminator.Cases[index]]);
+            record.Add((ulong)terminator.Cases[index].Id);
             record.Add(targets[index + 1]);
         }
 

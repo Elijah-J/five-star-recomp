@@ -47,7 +47,10 @@ public sealed class StatementParser
     {
         var attributes = Attributes();
         var statement = Unattributed();
-        statement.Attributes.AddRange(attributes);
+        if (attributes.Count > 0)
+        {
+            statement.Attributes.AddRange(attributes);
+        }
 
         return statement;
     }
@@ -111,7 +114,7 @@ public sealed class StatementParser
         var line = _tokens.Line;
         var type = _expressions.ParseType();
         var declaration = new SyntaxNode(SyntaxKind.Variable, line) { Type = type };
-        declaration.Modifiers.UnionWith(modifiers);
+        SyntaxNode.AddModifiers(declaration, modifiers);
 
         do
         {

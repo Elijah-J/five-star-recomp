@@ -12,6 +12,7 @@ public sealed class DxilModule
     private const int BoolBits = 1;
 
     private readonly Dictionary<(int Type, ConstantKind Kind, long Bits, string Elements), Constant> _constantIndex = [];
+    private readonly Dictionary<(int Type, ConstantKind Kind, long Bits), Constant> _scalarIndex = [];
     private readonly Dictionary<string, IrFunction> _functionIndex = new(StringComparer.Ordinal);
     private readonly List<Constant> _constants = [];
     private readonly Dictionary<Constant, int> _constantNumbers = [];
@@ -35,6 +36,11 @@ public sealed class DxilModule
 
     public Constant Int(IrType type, long value)
     {
+        if (!type.IsInteger)
+        {
+            throw new InvalidOperationException($"an integer constant of type {type}");
+        }
+
         var bits = SignExtend(value, type.Bits);
 
         return Intern(type, ConstantKind.Integer, bits, []);
@@ -63,6 +69,11 @@ public sealed class DxilModule
     /// <summary>A floating-point constant of <paramref name="type"/> from its bits (half, float or double layout).</summary>
     public Constant FloatBits(IrType type, long bits)
     {
+        if (!type.IsFloatingPoint)
+        {
+            throw new InvalidOperationException($"a floating-point constant of type {type}");
+        }
+
         return Intern(type, ConstantKind.FloatingPoint, bits, []);
     }
 
@@ -146,6 +157,11 @@ public sealed class DxilModule
 
     private Constant Intern(IrType type, ConstantKind kind, long bits, IReadOnlyList<Constant> elements)
     {
+        if (elements.Count == 0)
+        {
+            return InternScalar(type, kind, bits);
+        }
+
         var key = (type.Id, kind, bits, string.Join(',', elements.Select(element => _constantNumbers[element])));
 
         if (_constantIndex.TryGetValue(key, out var existing))
@@ -157,6 +173,21 @@ public sealed class DxilModule
         _constantNumbers[constant] = _constants.Count;
         _constants.Add(constant);
         _constantIndex[key] = constant;
+
+        return constant;
+    }
+
+    private Constant InternScalar(IrType type, ConstantKind kind, long bits)
+    {
+        if (_scalarIndex.TryGetValue((type.Id, kind, bits), out var existing))
+        {
+            return existing;
+        }
+
+        var constant = new Constant(type, kind, bits, []);
+        _constantNumbers[constant] = _constants.Count;
+        _constants.Add(constant);
+        _scalarIndex[(type.Id, kind, bits)] = constant;
 
         return constant;
     }

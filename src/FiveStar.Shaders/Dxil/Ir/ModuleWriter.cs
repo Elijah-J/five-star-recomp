@@ -40,7 +40,7 @@ public sealed class ModuleWriter
 
     private readonly DxilModule _module;
     private readonly BitstreamWriter _out = new();
-    private readonly Dictionary<Value, int> _ids = [];
+    private int _moduleValues;
     private List<GlobalVariable> _globals = [];
     private List<IrFunction> _functions = [];
 
@@ -69,7 +69,7 @@ public sealed class ModuleWriter
         _out.TextRecord((int)ModuleCode.DataLayout, [], DataLayout);
 
         var entry = _module.Functions.First(function => function.HasBody);
-        var body = new FunctionBodyWriter(_out, _ids, entry, _module.Types);
+        var body = new FunctionBodyWriter(_out, entry, _module.Types);
         body.Analyze();
         var referenced = body.Referenced();
         _globals = [.. _module.Globals.Where(referenced.Contains)];
@@ -78,7 +78,7 @@ public sealed class ModuleWriter
         WriteGlobals();
         WriteFunctionDeclarations();
         WriteConstants();
-        body.NumberInstructions();
+        body.NumberInstructions(_moduleValues);
         WriteMetadata();
         WriteSymbols();
         body.Write();
@@ -177,19 +177,10 @@ public sealed class ModuleWriter
 
     private void NumberModuleValues()
     {
-        foreach (var global in _globals)
+        foreach (var value in _globals.Cast<Value>().Concat(_functions).Concat(_module.Constants))
         {
-            _ids[global] = _ids.Count;
-        }
-
-        foreach (var function in _functions)
-        {
-            _ids[function] = _ids.Count;
-        }
-
-        foreach (var constant in _module.Constants)
-        {
-            _ids[constant] = _ids.Count;
+            value.Id = _moduleValues;
+            _moduleValues++;
         }
     }
 
@@ -204,7 +195,7 @@ public sealed class ModuleWriter
             if (global.Initializer is not null)
             {
                 constant = 1;
-                initializer = (ulong)_ids[global.Initializer] + 1;
+                initializer = (ulong)global.Initializer.Id + 1;
                 linkage = InternalLinkage;
             }
 
@@ -258,7 +249,7 @@ public sealed class ModuleWriter
                 _out.Record((int)ConstantCode.Float, [(ulong)constant.Bits]);
                 break;
             default:
-                _out.Record((int)ConstantCode.Aggregate, [.. constant.Elements.Select(element => (ulong)_ids[element])]);
+                _out.Record((int)ConstantCode.Aggregate, [.. constant.Elements.Select(element => (ulong)element.Id)]);
                 break;
         }
     }
@@ -275,7 +266,7 @@ public sealed class ModuleWriter
             }
             else if (metadata.Value is not null)
             {
-                _out.Record((int)MetadataCode.Value, [(ulong)metadata.Value.Type.Id, (ulong)_ids[metadata.Value]]);
+                _out.Record((int)MetadataCode.Value, [(ulong)metadata.Value.Type.Id, (ulong)metadata.Value.Id]);
             }
             else
             {
@@ -317,12 +308,12 @@ public sealed class ModuleWriter
 
         foreach (var global in _globals)
         {
-            _out.TextRecord((int)SymbolCode.Entry, [(ulong)_ids[global]], global.Name);
+            _out.TextRecord((int)SymbolCode.Entry, [(ulong)global.Id], global.Name);
         }
 
         foreach (var function in _functions)
         {
-            _out.TextRecord((int)SymbolCode.Entry, [(ulong)_ids[function]], function.Name);
+            _out.TextRecord((int)SymbolCode.Entry, [(ulong)function.Id], function.Name);
         }
 
         _out.Exit();

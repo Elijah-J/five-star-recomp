@@ -18,6 +18,10 @@ namespace FiveStar.Shaders.Dxil.Hlsl;
 /// </summary>
 public sealed class SyntaxNode
 {
+    private List<SyntaxNode>? _body;
+    private HashSet<string>? _modifiers;
+    private List<SyntaxNode>? _attributes;
+
     public SyntaxNode(SyntaxKind kind, int line)
     {
         Kind = kind;
@@ -33,18 +37,35 @@ public sealed class SyntaxNode
     public List<SyntaxNode> Children { get; } = [];
 
     /// <summary>A case's statements.</summary>
-    public List<SyntaxNode> Body { get; } = [];
+    public List<SyntaxNode> Body => _body ??= [];
 
     /// <summary>A declaration's type, a function's return type or a cast's target.</summary>
     public TypeSyntax? Type { get; set; }
 
     /// <summary>Storage and parameter modifiers (static, const, groupshared, in, out, inout, nointerpolation, ...).</summary>
-    public HashSet<string> Modifiers { get; } = new(StringComparer.Ordinal);
+    public HashSet<string> Modifiers => _modifiers ??= new(StringComparer.Ordinal);
 
     public string? Semantic { get; set; }
 
     /// <summary>Attributes before a function or statement (<c>[numthreads(8, 1, 1)]</c>, <c>[loop]</c>).</summary>
-    public List<SyntaxNode> Attributes { get; } = [];
+    public List<SyntaxNode> Attributes => _attributes ??= [];
+
+    /// <summary>A case's statements without making the list (empty for other nodes).</summary>
+    public IReadOnlyList<SyntaxNode> BodyOrEmpty => (IReadOnlyList<SyntaxNode>?)_body ?? [];
+
+    /// <summary>Adds modifiers to a node (no set is made for none).</summary>
+    public static void AddModifiers(SyntaxNode node, HashSet<string> modifiers)
+    {
+        if (modifiers.Count > 0)
+        {
+            node.Modifiers.UnionWith(modifiers);
+        }
+    }
+
+    public bool HasModifier(string modifier)
+    {
+        return _modifiers is not null && _modifiers.Contains(modifier);
+    }
 
     /// <summary>A literal's token.</summary>
     public Token Literal { get; init; }

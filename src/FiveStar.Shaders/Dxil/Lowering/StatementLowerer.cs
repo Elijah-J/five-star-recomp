@@ -119,7 +119,7 @@ public sealed class StatementLowerer
             var type = _context.Types.Resolve(declarator.Type!, dimension => ArraySize(dimension, declarator));
             var initializer = declarator.Children.FirstOrDefault();
 
-            if (type.Shape == TypeShape.Array && declaration.Modifiers.Contains("const") && initializer is not null)
+            if (type.Shape == TypeShape.Array && declaration.HasModifier("const") && initializer is not null)
             {
                 var table = Expressions.Lower(initializer);
 
@@ -184,7 +184,9 @@ public sealed class StatementLowerer
             whenFalse = Flow.NewBlock();
         }
 
+        var start = Flow.Current;
         Flow.Branch(condition, whenTrue, whenFalse);
+        _context.Ssa.BeginRegion();
         Flow.Seal(whenTrue);
         Flow.Enter(whenTrue);
         Lower(statement[1]);
@@ -198,6 +200,7 @@ public sealed class StatementLowerer
             Flow.Jump(merge);
         }
 
+        _context.Ssa.EndRegion(start, merge);
         Flow.Seal(merge);
         Flow.Enter(merge);
     }
@@ -234,6 +237,7 @@ public sealed class StatementLowerer
         var exit = Flow.NewBlock();
         Flow.Jump(header);
         Flow.Enter(header);
+        _context.Ssa.BeginRegion();
 
         if (condition.Kind == SyntaxKind.Empty)
         {
@@ -260,6 +264,7 @@ public sealed class StatementLowerer
 
         Flow.Jump(header);
         Flow.Seal(header);
+        _context.Ssa.EndRegion(header, exit);
         Flow.Seal(exit);
         Flow.Enter(exit);
     }
@@ -271,6 +276,7 @@ public sealed class StatementLowerer
         var exit = Flow.NewBlock();
         Flow.Jump(body);
         Flow.Enter(body);
+        _context.Ssa.BeginRegion();
         Flow.PushLoop(exit, test);
         Lower(statement[0]);
         Flow.PopLoop();
@@ -279,6 +285,7 @@ public sealed class StatementLowerer
         Flow.Enter(test);
         Flow.Branch(Expressions.Condition(statement[1]), body, exit);
         Flow.Seal(body);
+        _context.Ssa.EndRegion(body, exit);
         Flow.Seal(exit);
         Flow.Enter(exit);
     }
@@ -310,10 +317,13 @@ public sealed class StatementLowerer
             }
         }
 
+        var start = Flow.Current;
         Flow.Switch(selector, fallback, labels);
+        _context.Ssa.BeginRegion();
         Flow.PushLoop(exit, null);
         Cases(cases, blocks, exit);
         Flow.PopLoop();
+        _context.Ssa.EndRegion(start, exit);
         Flow.Seal(exit);
         Flow.Enter(exit);
     }

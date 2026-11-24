@@ -257,6 +257,11 @@ public sealed class Operators
     /// <summary>Folds an operator on two literals (or two integer constants); null otherwise.</summary>
     private Value? Fold(string op, ScalarKind kind, Value a, Value b)
     {
+        if (kind == ScalarKind.LiteralFloat && a is Constant x0 && b is Constant y0 && x0.Kind == ConstantKind.FloatingPoint && y0.Kind == ConstantKind.FloatingPoint)
+        {
+            return FoldLiteralFloat(op, BitConverter.Int64BitsToDouble(x0.Bits), BitConverter.Int64BitsToDouble(y0.Bits));
+        }
+
         if (a is not Constant left || b is not Constant right || left.Kind != ConstantKind.Integer || right.Kind != ConstantKind.Integer)
         {
             return null;
@@ -289,6 +294,41 @@ public sealed class Operators
         }
 
         return _context.Convert.IntegerConstant(kind, result.Value);
+    }
+
+    /// <summary>Literal floats are exact doubles until they meet a type, as HLSL folds them.</summary>
+    private Value? FoldLiteralFloat(string op, double x, double y)
+    {
+        double? result = op switch
+        {
+            "+" => x + y,
+            "-" => x - y,
+            "*" => x * y,
+            "/" => x / y,
+            _ => null,
+        };
+
+        if (result is not null)
+        {
+            return _context.Convert.FloatConstant(ScalarKind.LiteralFloat, result.Value);
+        }
+
+        if (IsComparison(op))
+        {
+            var truth = op switch
+            {
+                "==" => x == y,
+                "!=" => x != y,
+                "<" => x < y,
+                ">" => x > y,
+                "<=" => x <= y,
+                _ => x >= y,
+            };
+
+            return Module.Bool(truth);
+        }
+
+        return null;
     }
 
     private static long? FoldInteger(string op, long x, long y, bool unsigned, ScalarKind kind)

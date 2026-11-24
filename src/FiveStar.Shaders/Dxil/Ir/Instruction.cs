@@ -10,6 +10,9 @@ namespace FiveStar.Shaders.Dxil.Ir;
 /// </summary>
 public sealed class Instruction : Value
 {
+    private List<BasicBlock>? _targets;
+    private List<Constant>? _cases;
+
     internal Instruction(Opcode opcode, IrType type, BasicBlock block)
         : base(type)
     {
@@ -19,16 +22,22 @@ public sealed class Instruction : Value
 
     public Opcode Opcode { get; }
 
+    /// <summary>Written: has an effect or feeds one (set by the writer).</summary>
+    internal bool Live { get; set; }
+
+    /// <summary>A removed phi's value (set by SSA construction).</summary>
+    internal Value? Replacement { get; set; }
+
     public BasicBlock Block { get; }
 
     public List<Value> Operands { get; } = [];
 
     public int Code { get; init; }
 
-    public List<BasicBlock> Targets { get; } = [];
+    public List<BasicBlock> Targets => _targets ??= [];
 
     /// <summary>A switch's case values, parallel to <see cref="Targets"/> after the default.</summary>
-    public List<Constant> Cases { get; } = [];
+    public List<Constant> Cases => _cases ??= [];
 
     /// <summary>The called function.</summary>
     public IrFunction? Callee { get; init; }

@@ -62,14 +62,17 @@ public sealed class Parser
         if (_tokens.Peek(1).Is("("))
         {
             var function = Function(type, line);
-            function.Modifiers.UnionWith(modifiers);
-            function.Attributes.AddRange(attributes);
+            SyntaxNode.AddModifiers(function, modifiers);
+            if (attributes.Count > 0)
+            {
+                function.Attributes.AddRange(attributes);
+            }
 
             return function;
         }
 
         var declaration = new SyntaxNode(SyntaxKind.Variable, line) { Type = type };
-        declaration.Modifiers.UnionWith(modifiers);
+        SyntaxNode.AddModifiers(declaration, modifiers);
 
         do
         {
@@ -121,7 +124,7 @@ public sealed class Parser
                 var name = _tokens.Identifier();
                 var field = new SyntaxNode(SyntaxKind.Field, line) { Text = name, Type = type.WithDimensions(_expressions.Dimensions()) };
                 field.Semantic = _statements.Semantic();
-                field.Modifiers.UnionWith(modifiers);
+                SyntaxNode.AddModifiers(field, modifiers);
                 owner.Children.Add(field);
             }
             while (_tokens.Accept(","));
@@ -159,7 +162,7 @@ public sealed class Parser
         var type = _expressions.ParseType();
         var name = _tokens.Identifier();
         var parameter = new SyntaxNode(SyntaxKind.Parameter, line) { Text = name, Type = type.WithDimensions(_expressions.Dimensions()) };
-        parameter.Modifiers.UnionWith(modifiers);
+        SyntaxNode.AddModifiers(parameter, modifiers);
         parameter.Semantic = _statements.Semantic();
 
         if (_tokens.Accept("="))

@@ -21,15 +21,16 @@ internal static class DxilCommand
     private const int TopReasons = 25;
     private const int ReasonLength = 160;
     private const string ValidateFlag = "validate";
+    private const string PhasesFlag = "phases";
     private const string LogName = "dxil-backend.tsv";
 
     public static int Run(IReadOnlyList<string> args)
     {
-        var arguments = new CommandArguments(args, new HashSet<string> { ValidateFlag });
+        var arguments = new CommandArguments(args, new HashSet<string> { ValidateFlag, PhasesFlag });
 
         if (arguments.Positional.Count != OnePath)
         {
-            throw new ArgumentException("dxil <hlsl file or folder> [--out <dir>] [--validate] [--limit N] [--step K] [--jobs N] [--dxc <path>]");
+            throw new ArgumentException("dxil <hlsl file or folder> [--out <dir>] [--validate] [--limit N] [--step K] [--jobs N] [--repeat N] [--dxc <path>]");
         }
 
         var files = Sources(arguments);
@@ -43,7 +44,16 @@ internal static class DxilCommand
             Directory.CreateDirectory(output);
         }
 
-        Parallel.ForEach(files, options, file => results.Add(CompileOne(file, output, validator)));
+        var repeat = arguments.IntegerOption("repeat") ?? 1;
+
+        if (arguments.Flag(PhasesFlag))
+        {
+            Phases(files, repeat, arguments.Option("ir"));
+
+            return Success;
+        }
+
+        Parallel.ForEach(files, options, file => results.Add(CompileOne(file, output, validator, repeat)));
         Report([.. results.OrderBy(result => result.Name, StringComparer.Ordinal)], output);
 
         return Success;
@@ -91,16 +101,21 @@ internal static class DxilCommand
         return DxilValidator.Load(Path.Combine(folder, "dxil.dll"));
     }
 
-    private static Outcome CompileOne(string file, string? output, DxilValidator? validator)
+    /// <summary>Compiles one program <paramref name="repeat"/> times (the last run is timed, after JIT warm-up).</summary>
+    private static Outcome CompileOne(string file, string? output, DxilValidator? validator, int repeat)
     {
         var name = Path.GetFileNameWithoutExtension(file);
         var hlsl = File.ReadAllText(file);
         var clock = Stopwatch.StartNew();
-        byte[] dxil;
+        byte[] dxil = [];
 
         try
         {
-            dxil = DxilBackend.Compile(hlsl, "cs");
+            for (var run = 0; run < repeat; run++)
+            {
+                clock.Restart();
+                dxil = DxilBackend.Compile(hlsl, "cs");
+            }
         }
         catch (DxilBackendException exception)
         {
@@ -123,6 +138,51 @@ internal static class DxilCommand
 
         return new Outcome(name, hlsl.Length, milliseconds, dxil.Length, "ok", string.Empty);
     }
+
+    /// <summary>Times the backend's phases on each program (the last of <paramref name="repeat"/> runs).</summary>
+    private static void Phases(List<string> files, int repeat, string? listing)
+    {
+        foreach (var file in files)
+        {
+            var hlsl = File.ReadAllText(file);
+            var times = new double[PhaseCount];
+
+            for (var run = 0; run < repeat; run++)
+            {
+                var a0 = GC.GetAllocatedBytesForCurrentThread();
+                var clock = Stopwatch.StartNew();
+                var tokens = FiveStar.Shaders.Dxil.Hlsl.Preprocessor.Run(hlsl, FiveStar.Shaders.Translation.RuntimeIncludes.Read);
+                times[0] = clock.Elapsed.TotalMilliseconds;
+                var tree = FiveStar.Shaders.Dxil.Hlsl.Parser.Parse(tokens);
+                times[1] = clock.Elapsed.TotalMilliseconds;
+                var a1 = GC.GetAllocatedBytesForCurrentThread();
+                var (module, main, description) = FiveStar.Shaders.Dxil.Lowering.ShaderLowering.Compute(tree);
+                times[PhaseLower] = clock.Elapsed.TotalMilliseconds;
+                var a2 = GC.GetAllocatedBytesForCurrentThread();
+                var container = FiveStar.Shaders.Dxil.Container.ShaderContainer.Write(module, main, description);
+                times[PhaseWrite] = clock.Elapsed.TotalMilliseconds;
+                _ = container;
+
+                if (run == repeat - 1 && listing is not null)
+                {
+                    File.WriteAllText(listing, FiveStar.Shaders.Dxil.Ir.IrText.Print(main));
+                }
+
+                if (run == repeat - 1)
+                {
+                    Console.WriteLine($"alloc MB: front {(a1 - a0) / 1000000}, lower {(a2 - a1) / 1000000}, write {(GC.GetAllocatedBytesForCurrentThread() - a2) / 1000000}");
+                    Console.WriteLine($"blocks {main.Blocks.Count}, instructions {main.Blocks.Sum(block => block.Body.Count)}, phis {main.Blocks.Sum(block => block.Phis.Count)}, constants {module.Constants.Count}, bytes {container.Length}");
+                }
+            }
+
+            Console.WriteLine($"gc0 {GC.CollectionCount(0)} gc1 {GC.CollectionCount(1)} gc2 {GC.CollectionCount(2)} allocated {GC.GetTotalAllocatedBytes() / 1000000} MB");
+            Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{Path.GetFileName(file)}: preprocess {times[0]:F1}, parse {times[1] - times[0]:F1}, lower {times[PhaseLower] - times[1]:F1}, write {times[PhaseWrite] - times[PhaseLower]:F1} ms"));
+        }
+    }
+
+    private const int PhaseCount = 4;
+    private const int PhaseLower = 2;
+    private const int PhaseWrite = 3;
 
     private static void Report(List<Outcome> results, string? output)
     {

@@ -43,6 +43,7 @@ public static class ShaderLowering
 
         context.Ssa.Finish();
         main.Blocks.AddRange(context.Ssa.Blocks);
+        DeadCode.Remove(main);
         var flags = context.Flags | FeatureScan.Flags(main);
 
         return (module, main, new ShaderDescription(threads, waveSize, flags, context.UserDataBytes));

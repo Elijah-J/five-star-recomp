@@ -62,7 +62,7 @@ public sealed class Purity
 
     private bool Children(SyntaxNode node, HashSet<string>? locals)
     {
-        foreach (var child in node.Children.Concat(node.Body))
+        foreach (var child in node.Children.Concat(node.BodyOrEmpty))
         {
             if (!Check(child, locals))
             {
@@ -121,7 +121,7 @@ public sealed class Purity
         var locals = new HashSet<string>(StringComparer.Ordinal);
         CollectLocals(function, locals);
         var parameters = function.Children.Where(child => child.Kind == SyntaxKind.Parameter);
-        var copiesOut = parameters.Any(parameter => parameter.Modifiers.Contains("out") || parameter.Modifiers.Contains("inout"));
+        var copiesOut = parameters.Any(parameter => parameter.HasModifier("out") || parameter.HasModifier("inout"));
         var pure = !copiesOut && function.Children.All(child => child.Kind == SyntaxKind.Parameter || Check(child, locals));
         _functions[function] = pure;
 
@@ -135,7 +135,7 @@ public sealed class Purity
             locals.Add(node.Text);
         }
 
-        foreach (var child in node.Children.Concat(node.Body))
+        foreach (var child in node.Children.Concat(node.BodyOrEmpty))
         {
             CollectLocals(child, locals);
         }

@@ -20,6 +20,9 @@ public sealed class BasicBlock
 
     public Instruction? Terminator { get; set; }
 
+    /// <summary>The written position (-1: unreachable, left out).</summary>
+    internal int Position { get; set; } = -1;
+
     public bool IsTerminated => Terminator is not null;
 
     public IEnumerable<BasicBlock> Successors

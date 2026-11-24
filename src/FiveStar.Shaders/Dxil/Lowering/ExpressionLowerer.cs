@@ -165,6 +165,13 @@ public sealed class ExpressionLowerer
             return ResourceLowerer.HeapReference(node[0].Text, Index(node[1]));
         }
 
+        var texture = ResourceBase(node);
+
+        if (texture is not null)
+        {
+            return _context.Resources.Textures.ReadElement(node, texture);
+        }
+
         var place = TryPlace(node);
 
         if (place is not null)
@@ -195,7 +202,7 @@ public sealed class ExpressionLowerer
             case SyntaxKind.Member:
                 return Nested(node, MemberPlace);
             case SyntaxKind.Index:
-                return Nested(node, ElementPlace);
+                return Nested(node, ElementPlaceOrNone);
             default:
                 return null;
         }
@@ -213,7 +220,7 @@ public sealed class ExpressionLowerer
         return Variables.Whole(variable);
     }
 
-    private LValue? Nested(SyntaxNode node, Func<LValue, SyntaxNode, LValue> part)
+    private LValue? Nested(SyntaxNode node, Func<LValue, SyntaxNode, LValue?> part)
     {
         var owner = TryPlace(node[0]);
 
@@ -239,6 +246,16 @@ public sealed class ExpressionLowerer
         var components = Swizzle(type, node);
 
         return VariableStore.Pick(owner, HlslType.Vector(type.Kind, components.Count), components);
+    }
+
+    private LValue? ElementPlaceOrNone(LValue owner, SyntaxNode node)
+    {
+        if (owner.Type.Shape == TypeShape.Resource)
+        {
+            return null;
+        }
+
+        return ElementPlace(owner, node);
     }
 
     private LValue ElementPlace(LValue owner, SyntaxNode node)
@@ -430,6 +447,8 @@ public sealed class ExpressionLowerer
         var right = flow.NewBlock();
         var merge = flow.NewBlock();
 
+        var start = flow.Current;
+
         if (node.Text == "&&")
         {
             flow.Branch(condition, right, merge);
@@ -439,18 +458,54 @@ public sealed class ExpressionLowerer
             flow.Branch(condition, merge, right);
         }
 
+        _context.Ssa.BeginRegion();
         flow.Seal(right);
         flow.Enter(right);
         _context.Ssa.Write(slot, Builder.Block, Condition(node[1]));
         flow.Jump(merge);
+        _context.Ssa.EndRegion(start, merge);
         flow.Seal(merge);
         flow.Enter(merge);
 
         return RValue.Of(HlslType.Bool, _context.Ssa.Read(slot, merge));
     }
 
+    /// <summary>The resource an element access indexes (<c>texture[uv]</c>), or null.</summary>
+    private RValue? ResourceBase(SyntaxNode node)
+    {
+        if (node.Kind != SyntaxKind.Index)
+        {
+            return null;
+        }
+
+        var owner = TryPlace(node[0]);
+
+        if (owner is null || owner.Type.Shape != TypeShape.Resource)
+        {
+            return null;
+        }
+
+        return Variables.Read(owner);
+    }
+
     private RValue Assign(SyntaxNode node)
     {
+        var texture = ResourceBase(node[0]);
+
+        if (texture is not null)
+        {
+            var stored = Lower(node[1]);
+
+            if (node.Text != "=")
+            {
+                stored = _operators.Binary(node.Text[..^1], _context.Resources.Textures.ReadElement(node[0], texture), stored);
+            }
+
+            _context.Resources.Textures.WriteElement(node[0], texture, stored);
+
+            return stored;
+        }
+
         var place = Place(node[0]);
         var value = Lower(node[1]);
 
@@ -542,7 +597,9 @@ public sealed class ExpressionLowerer
     {
         var flow = _context.Flow;
         var (whenTrue, whenFalse, merge) = (flow.NewBlock(), flow.NewBlock(), flow.NewBlock());
+        var start = flow.Current;
         flow.Branch(condition, whenTrue, whenFalse);
+        _context.Ssa.BeginRegion();
         flow.Seal(whenTrue);
         flow.Seal(whenFalse);
         flow.Enter(whenTrue);
@@ -562,6 +619,7 @@ public sealed class ExpressionLowerer
             flow.Jump(merge);
         }
 
+        _context.Ssa.EndRegion(start, merge);
         flow.Seal(merge);
         flow.Enter(merge);
 

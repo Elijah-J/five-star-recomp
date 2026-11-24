@@ -17,9 +17,17 @@ public static class FeatureScan
     {
         var flags = ShaderFlagBits.None;
 
-        foreach (var instruction in main.Blocks.SelectMany(block => block.Phis.Concat(block.Body)))
+        foreach (var block in main.Blocks)
         {
-            flags |= Of(instruction);
+            foreach (var instruction in block.Body)
+            {
+                flags |= Of(instruction);
+            }
+
+            foreach (var phi in block.Phis)
+            {
+                flags |= Of(phi);
+            }
         }
 
         return flags;
@@ -27,20 +35,11 @@ public static class FeatureScan
 
     private static ShaderFlagBits Of(Instruction instruction)
     {
-        var flags = ShaderFlagBits.None;
-        var types = instruction.Operands.Select(operand => operand.Type).Append(instruction.Type);
+        var flags = Of(instruction.Type);
 
-        foreach (var type in types)
+        foreach (var operand in instruction.Operands)
         {
-            if (type.Kind == IrTypeKind.Integer && type.Bits == sizeof(long) * BitsPerByte)
-            {
-                flags |= ShaderFlagBits.Int64Ops;
-            }
-
-            if (type.Kind == IrTypeKind.Double)
-            {
-                flags |= ShaderFlagBits.EnableDoublePrecision;
-            }
+            flags |= Of(operand.Type);
         }
 
         if (flags.HasFlag(ShaderFlagBits.EnableDoublePrecision) && NeedsExtensions(instruction))
@@ -49,6 +48,21 @@ public static class FeatureScan
         }
 
         return flags;
+    }
+
+    private static ShaderFlagBits Of(IrType type)
+    {
+        if (type.Kind == IrTypeKind.Integer && type.Bits == sizeof(long) * BitsPerByte)
+        {
+            return ShaderFlagBits.Int64Ops;
+        }
+
+        if (type.Kind == IrTypeKind.Double)
+        {
+            return ShaderFlagBits.EnableDoublePrecision;
+        }
+
+        return ShaderFlagBits.None;
     }
 
     private static bool NeedsExtensions(Instruction instruction)

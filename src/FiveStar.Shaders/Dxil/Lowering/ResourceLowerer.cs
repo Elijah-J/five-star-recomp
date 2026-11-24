@@ -32,7 +32,7 @@ public sealed class ResourceLowerer
 
     private DxilModule Module => _context.Module;
 
-    private TextureLowerer Textures => _textures ??= new TextureLowerer(_context);
+    public TextureLowerer Textures => _textures ??= new TextureLowerer(_context);
 
     public bool IsHeap(string name)
     {

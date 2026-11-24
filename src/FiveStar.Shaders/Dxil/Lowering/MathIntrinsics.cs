@@ -198,7 +198,12 @@ public sealed class MathIntrinsics
 
         if (value is Constant constant)
         {
-            return Choice.Of<Value>(target.IsFloatingPoint, Module.FloatBits(target, constant.Bits), Module.Int(target, constant.Bits));
+            if (target.IsFloatingPoint)
+            {
+                return Module.FloatBits(target, constant.Bits);
+            }
+
+            return Module.Int(target, constant.Bits);
         }
 
         return Builder.Cast(CastOp.Bitcast, value, target);
