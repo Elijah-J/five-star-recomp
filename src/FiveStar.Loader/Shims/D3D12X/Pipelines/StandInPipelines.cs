@@ -43,8 +43,8 @@ internal sealed unsafe class StandInPipelines
         _self = GCHandle.Alloc(this, GCHandleType.Weak);
     }
 
-    /// <summary>Stand-ins handed out, how many have their pipeline, the work skipped meanwhile and the work recorded.</summary>
-    public string Summary => $"{Volatile.Read(ref _created)} stand-in pipelines ({Volatile.Read(ref _ready)} built since), {Interlocked.Read(ref _skipped)} draws and dispatches skipped, {Interlocked.Read(ref _recorded)} recorded";
+    /// <summary>Stand-ins handed out, how many have their pipeline, the builds still queued, the work skipped meanwhile and the work recorded.</summary>
+    public string Summary => $"{Volatile.Read(ref _created)} stand-in pipelines ({Volatile.Read(ref _ready)} built since, {_builds.Backlog} builds queued), {Interlocked.Read(ref _skipped)} draws and dispatches skipped, {Interlocked.Read(ref _recorded)} recorded";
 
     /// <summary>
     /// Runs <paramref name="create"/> and writes its pipeline to <paramref name="result"/>; when it takes longer than

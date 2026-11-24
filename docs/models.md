@@ -254,7 +254,9 @@ fivestar graphics draw-model <out.png> --archive <file.rpf> --from 0xOFFSET [--n
 drawable. `export` writes `<offset>_<name>.obj` per drawable: positions, normals, texture coordinates (v flipped for
 OBJ) and the diffuse texture hash of each shader as a comment; tangents, further texture coordinates and skin are
 decoded (`MeshGeometry.Extras`) but not exported. `--from` starts at an entry's offset (as `scan --list`
-prints it) instead of the start of the archive.
+prints it) instead of the start of the archive. Both map the archive 256 MiB at a time (`WindowedFileSource`), so
+their memory stays flat: a whole-file mapping kept every page read in the working set, 35 GB over `levels.rpf`; over
+its first 4,000 MB the working set now stays under 0.4 GB (it was 4 GB), at the same speed.
 
 ## Unknown
 

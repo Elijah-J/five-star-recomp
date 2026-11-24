@@ -394,7 +394,7 @@ fivestar-loader --load $dump\XboxBvhBuilder.dll --load $dump\Bink2Scarlett.dll -
 | `--unresolved stub\|trap\|error`, `--no-shim <module!symbol>` | unresolved-import handling; disable one shim |
 | `--no-entry`, `--no-exports`, `--unload`, `--work-dir <dir>` | skip DllMain; skip the export listing; unload at the end; folder of the TLS host DLLs |
 | `--log <file>`, `-v` | full log of every import and shim call; the same on the console |
-| `--sample-threads <s>` | with `--run`: every s seconds the calls per shim, stub and GDK slot since the last sample, DirectStorage, pipeline, present and GameInput counters, and every thread's stack (below) |
+| `--sample-threads <s>` | with `--run`: every s seconds the calls per shim, stub and GDK slot since the last sample, DirectStorage, pipeline (queued builds, DXIL held), present and GameInput counters, memory (private commit, managed heap, XMem allocations, physical pages), and every thread's stack (below) |
 | `--profile-threads` | with `--sample-threads`: also the main image's busiest functions on running threads (400 rounds of every thread per sample, several seconds in which the game runs slower: frame times then are not the game's) |
 | `--trace-module <dll>` | with `--run`: the call trace also wraps imports bound to this mapped image (for example `bink2scarlett.dll`) |
 | `--input-script <file>` | timed key presses added to the desktop keys and timed captures; followed while running (below) |
