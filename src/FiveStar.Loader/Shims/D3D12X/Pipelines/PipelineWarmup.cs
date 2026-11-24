@@ -31,6 +31,7 @@ internal sealed unsafe class PipelineWarmup
     private readonly HashSet<string> _refused;
     private readonly object _failures = new();
     private readonly WarmTally _tally = new();
+    private readonly BlockingCollection<(PipelineRecipe Recipe, string Key)> _heavy = [];
     private volatile bool _stopping;
 
     public PipelineWarmup(PipelineFactory factory, PipelineLibraryCache cache, string cacheFolder, LoaderLog log)
@@ -58,6 +59,8 @@ internal sealed unsafe class PipelineWarmup
         var options = new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, jobs) };
         var partitions = Partitioner.Create(targets, EnumerablePartitionerOptions.NoBuffering);
         using var progress = new Timer(_ => Report(targets.Count, clock), null, ProgressInterval, ProgressInterval);
+        var heavy = new Thread(BuildHeavy) { IsBackground = true, Name = "fivestar warm-up heavy" };
+        heavy.Start();
 
         Parallel.ForEach(partitions, options, (target, loop) =>
         {
@@ -76,9 +79,30 @@ internal sealed unsafe class PipelineWarmup
             }
         });
 
+        _heavy.CompleteAdding();
+        heavy.Join();
         Report(targets.Count, clock);
 
         return !_stopping;
+    }
+
+    /// <summary>
+    /// Builds the pipelines of <see cref="PipelineFactory.HeavyShaderBytes"/> or more one after another on their own
+    /// thread, so the job threads go on with the others instead of waiting for the factory's lock.
+    /// </summary>
+    private void BuildHeavy()
+    {
+        foreach (var (recipe, key) in _heavy.GetConsumingEnumerable())
+        {
+            if (_stopping)
+            {
+                recipe.Stream.Dispose();
+
+                continue;
+            }
+
+            Build(recipe, key);
+        }
     }
 
     private void Warm(WarmTarget target)
@@ -107,6 +131,13 @@ internal sealed unsafe class PipelineWarmup
         {
             recipe.Stream.Dispose();
             _tally.Count(WarmOutcome.Skipped);
+
+            return;
+        }
+
+        if (recipe.Stream.ShaderBytes >= PipelineFactory.HeavyShaderBytes)
+        {
+            _heavy.Add((recipe, key));
 
             return;
         }

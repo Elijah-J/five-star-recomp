@@ -14,7 +14,14 @@ namespace FiveStar.Loader.Shims.D3D12X.Pipelines;
 /// </summary>
 internal sealed unsafe class PipelineFactory
 {
+    /// <summary>
+    /// DXIL size from which a pipeline is built alone: the NVIDIA driver took over 40 GB and minutes for one of the
+    /// 10 MB ray-traced shadow programs (docs/d3d12x-pipelines.md), so two at once can exhaust memory.
+    /// </summary>
+    public const long HeavyShaderBytes = 4L << 20;
+
     private readonly object _gate = new();
+    private readonly object _heavy = new();
     private readonly nint _device2;
     private readonly nint _rootSignature;
     private readonly IProgramLibrary _programs;
@@ -199,21 +206,37 @@ internal sealed unsafe class PipelineFactory
         return StandIns.Create(() => Build(stream, wanted), result, names, built);
     }
 
-    /// <summary>Builds the pipeline of <paramref name="stream"/> on this thread and stores it in the cache; disposes the stream.</summary>
+    /// <summary>
+    /// Builds the pipeline of <paramref name="stream"/> on this thread and stores it in the cache; disposes the stream.
+    /// Pipelines with <see cref="HeavyShaderBytes"/> of DXIL or more are built one at a time.
+    /// </summary>
     public PipelineResult Build(DesktopStream stream, Guid iid)
     {
         using (stream)
         {
-            nint pipeline = 0;
-            int hr = stream.Create(_device2, &iid, &pipeline);
-
-            if (!HResult.Failed(hr) && pipeline != 0)
+            if (stream.ShaderBytes < HeavyShaderBytes)
             {
-                Cache?.Store(stream.Key, pipeline);
+                return BuildNow(stream, iid);
             }
 
-            return new PipelineResult(hr, pipeline);
+            lock (_heavy)
+            {
+                return BuildNow(stream, iid);
+            }
         }
+    }
+
+    private PipelineResult BuildNow(DesktopStream stream, Guid iid)
+    {
+        nint pipeline = 0;
+        int hr = stream.Create(_device2, &iid, &pipeline);
+
+        if (!HResult.Failed(hr) && pipeline != 0)
+        {
+            Cache?.Store(stream.Key, pipeline);
+        }
+
+        return new PipelineResult(hr, pipeline);
     }
 
     private TranslatedProgram? Resolve(ShaderSource source)

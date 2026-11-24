@@ -75,6 +75,51 @@ it is not built the list sets nothing and drops its draws, dispatches and Execut
 SetPipelineState (counted in the sample summary). A derive (slot 55) from a stand-in uses the description kept
 under the stand-in's address; the rectangle-list variant is made from the built pipeline.
 
+### Disk cache
+
+The driver's own shader cache stores a compile only once it finishes, so a boot that ends before the largest
+programs are built compiles them again next time. `PipelineLibraryCache` keeps every built desktop pipeline in
+`ID3D12PipelineLibrary1` files in `--pipeline-cache <dir>` (default `<work-dir>\pipeline-cache`; `--no-pipeline-cache`
+turns it off).
+
+```mermaid
+flowchart LR
+  desc["game description"] --> stream["desktop stream + key"]
+  stream --> hit{"key in the cache?"}
+  hit -->|"yes"| load["LoadPipeline on the calling thread"]
+  hit -->|"no, or the driver refuses the load"| build["build thread (stand-in after 1 s)"]
+  build --> store["StorePipeline into this process's library"]
+  store --> file["written every minute, at the end of a timed-out run and at exit"]
+```
+
+| Item | Rule |
+|---|---|
+| Key (pipeline name) | the first 16 bytes of a SHA-256 over the stream: each subobject's type and payload, the DXIL itself in place of shader pointers, the input elements' semantic names and fields; the root signature is left out (the salt covers it) |
+| Salt | SHA-256 of a format string and the serialized bindless root signature; files with another salt are deleted |
+| Segment file `<utc time>-<pid>-<n>.psolib` | `FSPL`, u32 version 1, the 32-byte salt, u32 name count, u32 0, u64 library size, the 16-byte names, then the serialized library at a 256-byte boundary |
+| Opening | every segment is mapped read-only and given to `CreatePipelineLibrary`; one the driver refuses (D3D12_ERROR_ADAPTER_NOT_FOUND, D3D12_ERROR_DRIVER_VERSION_MISMATCH, a damaged blob) is deleted |
+| New pipelines | go to an empty library of this process, written to its own segment through a `.tmp` file and a rename; past 512 MiB it becomes a read-only segment and a new library starts |
+| Size | past 32 GiB the oldest segments are deleted when the cache opens |
+
+Processes never write each other's segments, so the game and the warm-up can share the folder. A cache hit is
+synchronous: the game gets the desktop pipeline itself, never a stand-in. The sample summary counts loads, stores and
+loads the driver refused.
+
+### Warm-up
+
+`fivestar-loader --warm-pipelines <shaders.rpf | cache blob> --shader-dir <fssm> --translated-dir <dxil>
+[--pipeline-cache <dir>] [--warm-jobs N] [--warm-step K] [--warm-match text]` runs no game. On the default adapter it
+reads the console pipeline cache ([pipeline-cache.md](pipeline-cache.md)), turns every compute and graphics record
+into the description slots 67 and 57 would get, and builds each through the same factory as the game, on
+`--warm-jobs` threads (default half the logical processors), without a time limit. Compute pipelines go first, the
+largest code first. A pipeline whose key is cached is skipped, so a stopped run (Ctrl+C finishes the running builds
+and writes the cache) resumes; pipelines the driver refuses are listed in `warm-failures.txt` in the cache folder
+and not retried while their key stays the same. Builds over 20 s are named in the log; every 30 s it prints the
+counts. `--warm-step K` takes every K-th record, `--warm-match` only records with a program whose name contains the
+text. `fivestar setup` runs it as the `pipeline-warm` step ([setup.md](setup.md)).
+
+Slot 86 streams and slot 55 derives are not in the console cache; they are cached when a run builds them.
+
 ## Pipeline-state stream (slot 86)
 
 0x14086f090 zeroes 0x2B0 bytes and writes a fixed stream; the desc is `{u64 0x2B0, stream}`. Each subobject is a u32
@@ -225,7 +270,7 @@ Without `variants.json` every program loads `<name>.dxil` and a warning says so.
 
 When the device is created and the loader has `--shader-dir` and `--translated-dir`, `XboxDeviceFactory` builds the
 `PipelineSlots` (a `PipelineFactory` over the desktop `ID3D12Device2`, `BindlessRoot.Create`, a
-`TranslatedProgramLibrary` and the `StandInPipelines` with their build threads) and `PipelineSlotHandlers.Register` binds slots 55, 57, 62, 67 and 86 through
+`TranslatedProgramLibrary`, the `StandInPipelines` with their build threads and the disk cache) and `PipelineSlotHandlers.Register` binds slots 55, 57, 62, 67 and 86 through
 `XboxObjects.SetHandler`. Without the folders the slots stay logged E_NOTIMPL stubs. Pipeline states are returned
 unwrapped, so slot 55 receives the desktop pointer it registered.
 

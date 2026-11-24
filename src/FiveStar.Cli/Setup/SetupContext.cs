@@ -23,6 +23,9 @@ internal sealed record SetupContext(string Dump, string Work, int? Limit, int Ev
 
     public string PipelineFolder => Path.Combine(Work, "pipelines");
 
+    /// <summary>The loader's disk cache of built desktop pipelines (<c>fivestar-loader --pipeline-cache</c>).</summary>
+    public string PipelineLibraryFolder => Path.Combine(Work, "pipeline-cache");
+
     public string TextureFolder => Path.Combine(Work, "textures");
 
     public string LoaderFolder => Path.Combine(Work, "loader");

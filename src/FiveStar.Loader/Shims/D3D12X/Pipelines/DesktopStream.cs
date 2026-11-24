@@ -28,6 +28,9 @@ internal sealed unsafe class DesktopStream : IDisposable
     private nint* _desc;
     private string? _key;
 
+    /// <summary>The bytes of shader bytecode in the stream.</summary>
+    public long ShaderBytes { get; private set; }
+
     /// <summary>The pipeline's name in the pipeline cache: 32 hex digits of the content hash.</summary>
     public string Key => _key ??= Convert.ToHexStringLower(_identity.GetCurrentHash().AsSpan(0, KeyBytes));
 
@@ -43,6 +46,7 @@ internal sealed unsafe class DesktopStream : IDisposable
         Begin(type, PipelineLayout.PointerSize);
         _bytes.AddRange(BitConverter.GetBytes((long)Native(bytecode)));
         _bytes.AddRange(BitConverter.GetBytes((long)bytecode.Length));
+        ShaderBytes += bytecode.Length;
         Identify(BitConverter.GetBytes(bytecode.Length));
         Identify(bytecode);
     }
