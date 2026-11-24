@@ -91,11 +91,23 @@ public sealed partial class CorpusTranslator
 
         var results = new ProgramResult[paths.Count];
         var parallel = new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, options.Parallelism) };
+        var costs = ExpectedCosts.Of(paths, options.OutputFolder);
+        var total = costs.Sum();
         var done = 0;
-        Parallel.ForEach(Partitioner.Create(LargestFirst(paths), EnumerablePartitionerOptions.NoBuffering), parallel, index =>
+        var finished = 0.0;
+        var gate = new Lock();
+        Parallel.ForEach(Partitioner.Create(CostliestFirst(costs), EnumerablePartitionerOptions.NoBuffering), parallel, index =>
         {
             results[index] = Work(paths[index], options);
-            _progress?.Report(new CorpusProgress(Interlocked.Increment(ref done), paths.Count));
+            double work;
+
+            lock (gate)
+            {
+                finished += costs[index];
+                work = finished;
+            }
+
+            _progress?.Report(new CorpusProgress(Interlocked.Increment(ref done), paths.Count, work, total));
         });
 
         var merged = Merge(prior, results);
@@ -105,14 +117,12 @@ public sealed partial class CorpusTranslator
     }
 
     /// <summary>
-    /// The indices of the programs, largest file first: dxc needs minutes for the largest few, so started last they
-    /// would run on alone at the end of the run while the other jobs idle.
+    /// The indices of the programs, the costliest first (<see cref="ExpectedCosts"/>): dxc needs minutes for the largest
+    /// few, so started last they would run on alone at the end of the run while the other jobs idle.
     /// </summary>
-    private static int[] LargestFirst(IReadOnlyList<string> paths)
+    private static int[] CostliestFirst(double[] costs)
     {
-        var sizes = paths.Select(path => File.Exists(path) ? new FileInfo(path).Length : 0).ToArray();
-
-        return Enumerable.Range(0, paths.Count).OrderByDescending(index => sizes[index]).ThenBy(index => index).ToArray();
+        return Enumerable.Range(0, costs.Length).OrderByDescending(index => costs[index]).ThenBy(index => index).ToArray();
     }
 
     /// <summary>Earlier results in their order with re-run programs replaced; new programs at the end.</summary>
