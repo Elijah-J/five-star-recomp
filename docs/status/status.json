@@ -67,7 +67,7 @@
           "done": 1,
           "partial": 0,
           "todo": 0,
-          "note": "options, legal, privacy; UI text misses letters"
+          "note": "options, legal, privacy; UI text complete"
         },
         {
           "name": "Story load",
@@ -211,8 +211,8 @@
           "note": "the GPU hangs about six minutes into the load"
         },
         {
-          "name": "UI text",
-          "note": "letters missing, calibration symbols black"
+          "name": "Brightness symbol",
+          "note": "black; a pipeline\u0027s program is missing"
         },
         {
           "name": "Memory",
