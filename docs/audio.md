@@ -121,10 +121,39 @@ A multichannel stream has id 0 and a 0x48 chunk instead of 0x76; its channels ar
 | 0x08 | 4 | Channel count (1 in 2,958; up to 8) |
 | 0x0C | 16 per channel | u32 id, u32 sample count, i16 headroom, u16 sample rate field, u8 codec, u8 channel count, u16 unknown |
 
-The data chunk is a run of blocks; the last is cut short. A block starts with 0x18 bytes per channel (u32 0xFFFFFFFF,
-u32 page count, u32 skip, u32 sample count, two u32 zero), then each channel's seek table (u32 per page: the page's
-start sample on the stream's timeline), zero padding to 2 KiB, then each channel's pages in channel order. A block may
-start before the previous one ended; the packets before that end are dropped. All 3,116 channels are Opus.
+The data chunk is a run of blocks; the last is cut short. A block starts with 0x18 bytes per channel (`u32 0xFFFFFFFF`,
+`u32 page_count`, `u32 skip_samples`, `u32 block_samples`, two `u32 zero`), then each channel's seek table (`u32` per
+page: the page's start sample on the stream's timeline), zero padding to 2 KiB, then each channel's pages in channel
+order. Both `skip_samples` (+0x08) and `block_samples` (+0x0C) are interleaved sample counts across the channel's Opus
+channel count (2× frames for stereo):
+
+- `block_samples` gives the block's sample budget; trailing subblock padding packets beyond `block_samples / channels`
+  are trimmed.
+- `skip_samples` gives the leading overlap repeated from the previous block's tail (dropped on whole-packet boundaries).
+  When the preceding block stopped short of its `block_samples` budget, the deficit carries into the next block's
+  `skip_samples` (`net_skip = max(0, skip_samples / channels - prev_deficit)`).
+
+All 3,116 channels are Opus.
+
+## Radio metadata (`GAME.DAT` / `SOUNDS.DAT`)
+
+The zlib streams at the start of `audio.rpf` (before the first `ADAT` container) assemble into `audMetadataFile`
+containers identified by magic `0x045A88EA` at `+0x08` (`u32 version`, `u32 meta_size`, `u32 magic`, followed by the
+metadata body, section 1, section 2, bucket-sorted `(u32 hash, u32 offset)` object table, pre-reference table, and
+cross-object reference hash table).
+
+| Object type | Container | Layout |
+|---|---|---|
+| `0x0E` (`RadioStationList`) | `GAME.DAT` | Discovered by `joaat("RADIO_STATIONS_01")`..`16`; `u8 count` at `+0x05`, `u32` ref indices at `+0x08` |
+| `0x10` (`RadioStationSettings`) | `GAME.DAT` | `u32 flags` at `+0x01` (`(flags & 0x30) == 0x10` static world emitter; `(flags & 0x0C) == 0x04` hidden wheel station), `u32 name_hash` at `+0x08`, `u32 wheel_position` at `+0x0C`, `u32 tracklist_count` at `+0x3C`, 12-byte tracklist entries at `+0x40` |
+| `0x11` (`RadioStationTrackList`) | `GAME.DAT` | Optional `ObjectList` (`0x02`) ref at `+0x44` (`0xFFFFFFFF` if absent), `u16 inline_count` at `+0x48`, `u32` track refs at `+0x4C` |
+| `0x0F` (`RadioTrackSettings`) | `GAME.DAT` | `u32 sound_ref` at `+0x0C` targeting `SOUNDS.DAT` |
+| `0x08` (`StreamingSound`) | `SOUNDS.DAT` | `u32 duration_ms` immediately before `0x0C <channel_count> <u32 child_ids...>`, followed sequentially by `<channel_count>` `SimpleSound` (`0x0C`) objects carrying `(u32 bank_hash, u32 wave_hash)` at `+0x02` (`wave_hash & 0x1FFFFFFF` = AWC stream ID) |
+
+Streamed music banks also carry `0xBD` cue chunks (16-byte records: `u32 type_hash`, `f32 value`, `u32 frame_at_48khz`,
+`u32 flags`). Records with `type_hash == 0xA6D93246` (`joaat("trackid")`) store a track number `N > 1`, whose display
+title and artist resolve via `joaat("<N>s")` and `joaat("<N>a")` in the English `trackid` text table first, falling
+back to `GLOBAL` only when absent (talk-radio segments carry an empty `<N>s` and non-empty `<N>a` show/host label).
 
 ## Export
 
@@ -152,5 +181,5 @@ to 384 to 768 samples fewer.
 - What the sample rate field means for Opus streams when it is not 48,000.
 - Whether the encoder delay is exactly 312 samples; the containers do not store it.
 - The flag 0x02, the u32 of flag 0x40, the words of flag 0x20, and the unknown format fields.
-- The last seek table entry of a single stream, and the skip field of a block.
-- Stream names. In earlier RAGE games the id is the low 29 bits of the name's hash; no names are in the dump.
+- The last seek table entry of a single stream.
+- Original bank/stream filenames for non-radio banks (radio stations, tracklists, and track titles resolve via `GAME.DAT` / `SOUNDS.DAT` and the `trackid` / `GLOBAL` text tables above; non-radio banks still carry only 29-bit stream IDs without an unencrypted RPF9 table of contents).
