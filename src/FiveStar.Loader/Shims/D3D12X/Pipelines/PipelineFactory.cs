@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using FiveStar.Loader.Native;
+using FiveStar.Shaders.Containers;
 using FiveStar.Shaders.Hardware;
 
 namespace FiveStar.Loader.Shims.D3D12X.Pipelines;
@@ -18,6 +19,7 @@ internal sealed unsafe class PipelineFactory
     private readonly nint _device2;
     private readonly nint _rootSignature;
     private readonly IProgramLibrary _programs;
+    private readonly ProgramSignatures _signatures;
     private readonly OnceLog _warnings;
     private readonly RectanglePipelines? _rectangles;
     private readonly Dictionary<nint, GraphicsPipelineDescription> _created = [];
@@ -25,14 +27,17 @@ internal sealed unsafe class PipelineFactory
     /// <param name="device2">A desktop ID3D12Device2 (the caller keeps it alive).</param>
     /// <param name="rootSignature">The root signature of translated programs on that device (<see cref="BindlessRoot"/>).</param>
     /// <param name="programs">The translated programs.</param>
+    /// <param name="signatures">The input signatures of the extracted programs, for cache layouts.</param>
     /// <param name="warnings">Where failures are reported, once each.</param>
     /// <param name="rectangles">Told every graphics pipeline, for its rectangle-list variant; null for none.</param>
     /// <param name="standIns">Hands out pipelines the driver takes too long for.</param>
-    public PipelineFactory(nint device2, nint rootSignature, IProgramLibrary programs, OnceLog warnings, RectanglePipelines? rectangles, StandInPipelines standIns)
+    public PipelineFactory(nint device2, nint rootSignature, IProgramLibrary programs, ProgramSignatures signatures, OnceLog warnings, RectanglePipelines? rectangles, StandInPipelines standIns)
     {
         _device2 = device2;
         _rootSignature = rootSignature;
         _programs = programs;
+        _signatures = signatures;
+
         _warnings = warnings;
         _rectangles = rectangles;
         StandIns = standIns;
@@ -47,7 +52,7 @@ internal sealed unsafe class PipelineFactory
     public int Graphics(GraphicsPipelineDescription description, Guid* iid, nint* result)
     {
         var programs = new List<TranslatedProgram>();
-        ShaderSource? vertex = null;
+        IReadOnlyList<SignatureElement>? inputs = null;
 
         foreach (var source in description.Shaders)
         {
@@ -60,7 +65,7 @@ internal sealed unsafe class PipelineFactory
 
             if (program.Stage == HardwareStage.Vertex)
             {
-                vertex = source;
+                inputs = VertexInputs(source, program);
             }
 
             programs.Add(program);
@@ -68,9 +73,9 @@ internal sealed unsafe class PipelineFactory
 
         var desktop = description;
 
-        if (vertex is not null)
+        if (programs.Exists(program => program.Stage == HardwareStage.Vertex))
         {
-            desktop = description with { InputLayout = InputLayoutMapping.Map(description.InputLayout, vertex) };
+            desktop = description with { InputLayout = InputLayoutMapping.Map(description.InputLayout, inputs) };
         }
 
         var names = string.Join(" + ", programs.Select(program => program.Name));
@@ -157,6 +162,24 @@ internal sealed unsafe class PipelineFactory
         int hr = DesktopPipelineBuilder.Compute(_device2, _rootSignature, program, &iid, &pipeline);
 
         return new PipelineResult(hr, pipeline);
+    }
+
+    /// <summary>The vertex shader's inputs: from its container, or for a cache code block from its program's container.</summary>
+    private IReadOnlyList<SignatureElement>? VertexInputs(ShaderSource source, TranslatedProgram program)
+    {
+        if (source.Kind != ShaderSourceKind.CacheCode)
+        {
+            return InputLayoutMapping.Inputs(source.Bytes);
+        }
+
+        var inputs = _signatures.Inputs(program.Name);
+
+        if (inputs is null)
+        {
+            _warnings.Warn($"signature-{program.Name}", $"[d3d12_xs] no DXBC container for {program.Name}: its cache input layout is taken in attribute order");
+        }
+
+        return inputs;
     }
 
     private TranslatedProgram? Resolve(ShaderSource source)

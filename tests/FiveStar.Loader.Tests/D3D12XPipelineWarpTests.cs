@@ -1,9 +1,6 @@
 // Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-using FiveStar.Formats.Common;
-using FiveStar.Formats.Compression;
-using FiveStar.Formats.Rpf;
 using FiveStar.Graphics;
 using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Shims.D3D12X.Pipelines;
@@ -35,7 +32,7 @@ public sealed unsafe class D3D12XPipelineWarpTests(ITestOutputHelper output)
 
         try
         {
-            var cache = PipelineCache.Read(CacheBlob(Path.Combine(DumpFactAttribute.Folder!, "shaders.rpf")));
+            var cache = DumpPipelineCache.Read();
             var programs = Path.Combine(work.FullName, "fssm");
             var index = Candidates(programs, Path.Combine(work.FullName, "dxbc"));
             var (record, vertex, pixel) = UnlitRecord(cache, index);
@@ -44,7 +41,7 @@ public sealed unsafe class D3D12XPipelineWarpTests(ITestOutputHelper output)
             Translate([vertex, pixel], programs, translated);
             output.WriteLine($"record {record.Index}: {vertex} + {pixel}");
 
-            Create(cache, record, new TranslatedProgramLibrary(index, translated, null), Path.Combine(work.FullName, "dxbc", vertex + ".dxbc"), Path.Combine(work.FullName, "dxbc", pixel + ".dxbc"));
+            Create(cache, record, new TranslatedProgramLibrary(index, translated, null), new ProgramSignatures(programs), Path.Combine(work.FullName, "dxbc", vertex + ".dxbc"), Path.Combine(work.FullName, "dxbc", pixel + ".dxbc"));
         }
         finally
         {
@@ -52,7 +49,7 @@ public sealed unsafe class D3D12XPipelineWarpTests(ITestOutputHelper output)
         }
     }
 
-    private static void Create(PipelineCache cache, GraphicsPipelineRecord record, IProgramLibrary library, string vertexContainer, string pixelContainer)
+    private static void Create(PipelineCache cache, GraphicsPipelineRecord record, IProgramLibrary library, ProgramSignatures signatures, string vertexContainer, string pixelContainer)
     {
         using var device = GpuDevice.CreateWarp(debugLayer: false);
         using var memory = new NativeBlocks();
@@ -60,7 +57,7 @@ public sealed unsafe class D3D12XPipelineWarpTests(ITestOutputHelper output)
 
         var warnings = new OnceLog(new LoaderLog(log, null, false));
         var (device2, root) = DesktopObjects(device.Device.NativePointer);
-        var slots = new PipelineSlots(new PipelineFactory(device2, root, library, warnings, null, new StandInPipelines(PipelineSlots.CreationBudget, new PipelineBuildQueue(1), warnings)), warnings);
+        var slots = new PipelineSlots(new PipelineFactory(device2, root, library, signatures, warnings, null, new StandInPipelines(PipelineSlots.CreationBudget, new PipelineBuildQueue(1), warnings)), warnings);
         var iid = DesktopDevice.PipelineStateIid;
         nint cached, streamed, derived;
 
@@ -155,16 +152,6 @@ public sealed unsafe class D3D12XPipelineWarpTests(ITestOutputHelper output)
         (rasterizer[0], rasterizer[1], rasterizer[6]) = (3, 1, 1);
 
         return entry;
-    }
-
-    private static byte[] CacheBlob(string archive)
-    {
-        using var source = new MappedFileSource(archive);
-        var reader = new ChunkRunReader(source, new ZlibStreamProbe(source, new ZlibInflater()), new ZlibInflater());
-        var start = reader.Find(PipelineCacheHeader.Magic);
-        var header = PipelineCacheHeader.Parse(reader.Read(start, PipelineCacheHeader.Size).Data);
-
-        return reader.Read(start, header.TotalSize).Data;
     }
 
     /// <summary>Copies the unlit programs (and their containers) of the shader folder and indexes them.</summary>

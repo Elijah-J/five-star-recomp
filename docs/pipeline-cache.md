@@ -205,8 +205,11 @@ The graphics record's 0x0C entry. Code: `PipelineTargetsParser`, `InputLayoutPar
 
 An element is `u32 name length (with the NUL), name, u32 semantic index, u32 DXGI format, u32 input slot, u32 byte
 offset, u32 classification, u32 step rate` (the order of `D3D12_INPUT_ELEMENT_DESC`), packed without alignment; the
-entry is padded to 4 bytes. For every vertex pipeline whose vertex shader is extracted (13,388), the elements equal the
-non-system inputs of the shader's ISG1 signature.
+entry is padded to 4 bytes. For every vertex pipeline whose vertex shader is extracted (13,388), the elements are the
+non-system inputs of the shader's ISG1 signature (same names and indices), but in 61 of them (140 elements) not in
+signature order: 52 (VS_Bink, VS_WithViewProjection, VS_blit, VS_2GBufBlit) list POSITION, COLOR, TEXCOORD where the
+shader reads POSITION, TEXCOORD, COLOR; the corona, trail-map and VS_TransformSkinnedD ones put NORMAL before COLOR.
+Elements are therefore matched to the signature by semantic, not by position.
 
 Checks on the reference dump: NumRenderTargets equals the number of non-zero RTVFormats in every pipeline. Of the
 43,938 targets below NumRenderTargets that the pixel shader writes, 29,444 have the format guessed from
