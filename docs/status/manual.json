@@ -1,0 +1,98 @@
+{
+  // Hand-maintained inputs for `fivestar progress collect --manual`; counts only, no game data.
+  // Update after merging work, then render docs/wiki/progress.svg (docs/status/README.md).
+  "areas": [
+    {
+      "key": "boot",
+      "title": "Booting the game",
+      "unit": " stages",
+      "groups": [
+        { "name": "Load and imports", "done": 1, "partial": 0, "todo": 0 },
+        { "name": "C runtime and memory", "done": 1, "partial": 0, "todo": 0 },
+        { "name": "Archives via DirectStorage", "done": 1, "partial": 0, "todo": 0 },
+        { "name": "D3D12.X device", "done": 1, "partial": 0, "todo": 0 },
+        { "name": "Frame loop and present", "done": 1, "partial": 0, "todo": 0 },
+        { "name": "Pipelines", "done": 1, "partial": 0, "todo": 0, "note": "stand-ins while the driver compiles" },
+        { "name": "User, saves, pad pairing", "done": 1, "partial": 0, "todo": 0 },
+        { "name": "Next stage streaming", "done": 0, "partial": 1, "todo": 0, "note": "stops at a page bookkeeping assert" },
+        { "name": "First image", "done": 1, "partial": 0, "todo": 0, "note": "the intro video" },
+        { "name": "Menus", "done": 0, "partial": 0, "todo": 1 },
+        { "name": "In game", "done": 0, "partial": 0, "todo": 1 }
+      ]
+    },
+    {
+      "key": "shaders",
+      "title": "Shaders translated",
+      "unit": " programs",
+      "groups": [
+        { "name": "Pixel", "done": 12049, "partial": 0, "todo": 0 },
+        { "name": "Mesh", "done": 8719, "partial": 46, "todo": 0, "note": "46 compile only through the mesh fallback" },
+        { "name": "Compute", "done": 2684, "partial": 0, "todo": 0 },
+        { "name": "Vertex", "done": 2191, "partial": 0, "todo": 0 },
+        { "name": "Geometry", "done": 195, "partial": 0, "todo": 0 }
+      ]
+    },
+    {
+      "key": "runtime",
+      "title": "Console runtime",
+      "unit": " functions",
+      "groups": [
+        { "name": "Executable imports", "done": 587, "partial": 0, "todo": 0 },
+        { "name": "GDK calls", "done": 161, "partial": 0, "todo": 0 }
+      ]
+    },
+    {
+      "key": "textures",
+      "title": "Textures",
+      "unit": " textures",
+      "groups": [
+        { "name": "Exact", "done": 354998, "partial": 0, "todo": 0, "note": "zlib, stored and BCPack BC1" },
+        { "name": "BCPack BC4/BC5", "done": 0, "partial": 132, "todo": 0, "note": "approximate, fitted tables" },
+        { "name": "BCPack BC7", "done": 0, "partial": 0, "todo": 1870 },
+        { "name": "BCPack BC6H/BC3", "done": 0, "partial": 0, "todo": 115 }
+      ]
+    },
+    {
+      "key": "models",
+      "title": "Models",
+      "unit": " geometries",
+      "groups": [
+        { "name": "Geometries", "done": 4304343, "partial": 0, "todo": 2651 }
+      ]
+    },
+    {
+      "key": "audio",
+      "title": "Audio",
+      "unit": " sounds",
+      "groups": [
+        { "name": "Sounds exported", "done": 1603231, "partial": 0, "todo": 0, "note": "Opus, XMA2 (1,818 decoded) and PCM" }
+      ]
+    }
+  ],
+  "stillNeeded": [
+    {
+      "area": "Running the game",
+      "items": [
+        { "name": "Physical page bookkeeping", "note": "a game assert after the pad pairs" },
+        { "name": "First image", "note": "frames are still black" },
+        { "name": "Pipeline disk cache", "note": "cold driver compiles take minutes" }
+      ]
+    },
+    {
+      "area": "Research",
+      "items": [
+        { "name": "BCPack BC7, BC6H, BC3", "note": "endpoint and preset tables" },
+        { "name": "Ray tracing", "note": "instance node fields 0x00 and 0x70" },
+        { "name": "Audio DSP impulse responses", "note": "format not confirmed" }
+      ]
+    },
+    {
+      "area": "Engineering",
+      "items": [
+        { "name": "Intel CPUs", "note": "emulation not yet run on Intel hardware" },
+        { "name": "Skinned model export", "note": "glTF" },
+        { "name": "Linux and Steam Deck", "note": "Proton test" }
+      ]
+    }
+  ]
+}

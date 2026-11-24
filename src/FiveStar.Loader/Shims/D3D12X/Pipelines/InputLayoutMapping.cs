@@ -7,8 +7,9 @@ namespace FiveStar.Loader.Shims.D3D12X.Pipelines;
 
 /// <summary>
 /// Renames the game's vertex elements to what a translated vertex shader reads: fetched attribute n is <c>ATTR</c>
-/// index n, and attribute n is the n-th non-system input of the shader's ISG1 signature (the cache's input layouts
-/// list exactly those, in that order). Elements the shader does not read get unique placeholder names.
+/// index n, and attribute n is the n-th non-system input of the shader's ISG1 signature. Elements are matched to the
+/// signature by semantic name and index, in stream and cache layouts alike (61 cache layouts list them in another
+/// order). Elements the shader does not read get unique placeholder names.
 /// </summary>
 internal static class InputLayoutMapping
 {
@@ -17,22 +18,23 @@ internal static class InputLayoutMapping
 
     private const string InputSignature = "ISG1";
 
-    /// <summary>The layout for <paramref name="vertexShader"/>; a cache record's layout is already in attribute order.</summary>
-    public static IReadOnlyList<VertexElement> Map(IReadOnlyList<VertexElement> layout, ShaderSource vertexShader)
+    /// <summary>
+    /// The layout for a vertex shader with the non-system <paramref name="inputs"/> (<see cref="Inputs"/>); without
+    /// them the layout is taken to be in attribute order, element n becoming attribute n.
+    /// </summary>
+    public static IReadOnlyList<VertexElement> Map(IReadOnlyList<VertexElement> layout, IReadOnlyList<SignatureElement>? inputs)
     {
-        if (vertexShader.Kind == ShaderSourceKind.CacheCode)
+        if (inputs is null)
         {
             return layout.Select((element, index) => element with { Semantic = AttributeSemantic, SemanticIndex = index }).ToList();
         }
 
-        var inputs = Inputs(vertexShader.Bytes);
         var mapped = new List<VertexElement>(layout.Count);
         var unused = 0;
 
         foreach (var element in layout)
         {
-            var attribute = inputs.FindIndex(input =>
-                string.Equals(input.Name, element.Semantic, StringComparison.OrdinalIgnoreCase) && input.SemanticIndex == element.SemanticIndex);
+            var attribute = Attribute(inputs, element);
 
             if (attribute < 0)
             {
@@ -47,7 +49,8 @@ internal static class InputLayoutMapping
         return mapped;
     }
 
-    private static List<SignatureElement> Inputs(byte[] container)
+    /// <summary>The non-system inputs of a DXBC container's ISG1 signature, in attribute order; empty without one.</summary>
+    public static IReadOnlyList<SignatureElement> Inputs(byte[] container)
     {
         var signature = DxbcContainer.Parse(container).FindFirst(InputSignature);
 
@@ -57,5 +60,18 @@ internal static class InputLayoutMapping
         }
 
         return SignatureParser.Parse(signature.Data.Span).Where(input => input.SystemValue.Length == 0).ToList();
+    }
+
+    private static int Attribute(IReadOnlyList<SignatureElement> inputs, VertexElement element)
+    {
+        for (var index = 0; index < inputs.Count; index++)
+        {
+            if (string.Equals(inputs[index].Name, element.Semantic, StringComparison.OrdinalIgnoreCase) && inputs[index].SemanticIndex == element.SemanticIndex)
+            {
+                return index;
+            }
+        }
+
+        return -1;
     }
 }

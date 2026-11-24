@@ -235,7 +235,7 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         var standIns = new StandInPipelines(PipelineSlots.CreationBudget, builds, warnings);
 
         var cache = OpenCache(device2);
-        Pipelines = new PipelineSlots(new PipelineFactory(device2, root, library, warnings, rectangles, standIns, cache), warnings);
+        Pipelines = new PipelineSlots(new PipelineFactory(device2, root, library, new ProgramSignatures(programs), warnings, rectangles, standIns, cache), warnings);
         PipelineSlotHandlers.Register(Objects);
         _log.Detail($"  [d3d12_xs] pipeline slots on: programs {programs}, translated {translated}");
     }

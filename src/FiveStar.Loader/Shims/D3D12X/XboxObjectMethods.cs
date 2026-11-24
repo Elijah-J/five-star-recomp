@@ -117,12 +117,29 @@ internal static unsafe class XboxObjectMethods
                 *data = game;
             }
 
+            if (self->Dimension != States.ResourceStates.BufferDimension)
+            {
+                ShimContext.Runtime.D3D12X.Textures.Watch(self->GameAddress);
+            }
+
             return HResult.Ok;
         }
 
         nint inner = self->Header.Inner;
+        int hr = ((delegate* unmanaged<nint, uint, void*, void**, int>)ComObject.Slot(inner, DesktopMapSlot))(inner, subresource, readRange, data);
 
-        return ((delegate* unmanaged<nint, uint, void*, void**, int>)ComObject.Slot(inner, DesktopMapSlot))(inner, subresource, readRange, data);
+        if (HResult.Failed(hr))
+        {
+            WarnMapFailed(hr);
+        }
+
+        return hr;
+    }
+
+    /// <summary>A failed desktop Map, warned once (a default-heap resource the game expected to reach from the CPU).</summary>
+    private static void WarnMapFailed(int hr)
+    {
+        ShimContext.Runtime.D3D12X.Warnings.Warn("map", $"[d3d12_xs] ID3D12Resource::Map failed on a desktop resource: {HResult.Format(hr)}");
     }
 
     /// <summary>Allocator slot 8, Reset: the desktop allocator and the spares lent for it (<see cref="SpareAllocators"/>).</summary>

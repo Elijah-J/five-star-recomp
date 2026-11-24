@@ -51,6 +51,10 @@ flowchart LR
   texture's state, waited for.
 - **Refresh points**: creation, and every slot-70 view of the texture. The game creates a texture's view once its
   data has arrived, so a view is where new bytes are taken. A 64-bit hash of the bytes skips unchanged memory.
+- **CPU-mapped textures** (`GpuTextures.Watch`): a slot-133 texture the game maps (resource Map returns its memory)
+  is written by the CPU whenever it likes; Bink decodes every video frame into its Y, Cr and Cb planes (1920x1080
+  and 3840x2160 R8, mapped once). Such textures are checked once a frame, at the first ExecuteCommandLists after a
+  present, and uploaded when the hash changed. Before this the planes kept the zeros of their creation.
 - **Buffer views** (`AddressBufferViews`): a slot-70 view with a buffer desc (or a texture desc without a format) is
   the game's desktop buffer SRV desc on the desktop buffer over the address (`XboxGameMemoryBuffers.TryFind`), its
   first element moved by the address's offset in that buffer; an address outside known memory, off the element size
@@ -60,12 +64,13 @@ flowchart LR
 
 ### Trade-offs and limits
 
-- Change detection is explicit (creation, slot 70), not watched: `MEM_WRITE_WATCH` does not apply to mapped
+- Change detection is explicit (creation, slot 70, a frame check of mapped textures), not watched: `MEM_WRITE_WATCH` does not apply to mapped
   views, and guard-page tracking would fault on every streamed page. CPU writes after the last view of a texture
   are not seen.
 - Uploads are synchronous on their own queue and do not wait for the game's queues: a texture the GPU is reading in
   flight is overwritten without ordering.
 - Retired textures are never released before shutdown.
+- A texture the game mapped once stays checked every frame (a hash of its bytes); 12 in the intro video.
 - XG layout spans larger than the game's own (128x1 A8 with 4 KB swizzle: 0x2000 computed, views 0x1000 apart)
   make neighbours retire each other.
 - Depth-stencil (two-plane) textures are not uploaded; a slot-70 view of a desktop depth-format texture is null.

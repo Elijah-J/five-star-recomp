@@ -536,12 +536,13 @@ flags), queue Signal and Wait and CPU fence signals, numbering queues and fences
 
 Two readback aids (`DrawTrace`, `FrameCapture`; debug only, they allocate and wait for the GPU):
 
-- `--d3d12-trace-draws` logs the first 24 draws, and 8 after each captured present: pipeline (programs, input
+- `--d3d12-trace-draws` logs the first 24 draws, and 32 after each captured present: pipeline (programs, input
   layout, target formats, blend, rasterizer and depth state), render targets, viewport, scissor, depth view, vertex
   buffers with their first vertices, the graphics user SGPRs, and the first 8 records of every table with the view
   each names, the game's own record and a buffer's first values. After each traced draw the first render target is
   copied inside the game's list (`DrawProbes`) and summarized two presents later (non-black pixels, their box, mean
-  colour).
+  colour). The game executes some closed lists again, so a probe's buffer is released only once its list was reset
+  (releasing it at the report removed the device, debug-layer error #921).
 - `--capture-presents 60,300` reads the presented plane back at those present numbers once the presenting queue is
   idle and logs the same summary; `--capture-dir <dir>` also writes `present-N.png` there. Only the plane is read,
   never the window or the desktop.
