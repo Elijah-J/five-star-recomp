@@ -46,6 +46,12 @@ internal sealed unsafe class RectanglePipelines
         _warnings = warnings;
     }
 
+    /// <summary>
+    /// Compiles a geometry shader source missing from the folder into the given DXIL path and returns it (null when it
+    /// fails), for programs made on demand; null reads the folder only.
+    /// </summary>
+    public Func<string, string, byte[]?>? Compiler { get; init; }
+
     /// <summary>Keeps how <paramref name="pipeline"/> was built; a variant of an earlier pipeline at that address is dropped.</summary>
     public void Remember(nint pipeline, GraphicsPipelineDescription description, IReadOnlyList<TranslatedProgram> programs)
     {
@@ -178,16 +184,21 @@ internal sealed unsafe class RectanglePipelines
             return null;
         }
 
-        return _shaders.GetOrAdd(RectangleGeometryShader.FileName(source), Load);
+        return _shaders.GetOrAdd(RectangleGeometryShader.FileName(source), file => Load(file, source));
     }
 
-    private byte[]? Load(string file)
+    private byte[]? Load(string file, string source)
     {
         var path = Path.Combine(_folder, file);
 
         if (File.Exists(path))
         {
             return File.ReadAllBytes(path);
+        }
+
+        if (Compiler is not null)
+        {
+            return Compiler(source, path);
         }
 
         _warnings.Warn($"rect-file-{file}", $"[d3d12_xs] {path} missing (fivestar shader rect-gs <translated>): its rectangle lists are drawn as triangles");

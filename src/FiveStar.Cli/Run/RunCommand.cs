@@ -27,6 +27,7 @@ internal static class RunCommand
         "  --debug              the D3D12 debug layer (needs the Graphics Tools optional feature)",
         "  --timeout <s>        end the game after s seconds (fivestar-loader --run-timeout)",
         "  --shaders <fssm dir> --translated <dir>   use these shader folders instead of building them in the work folder",
+        "  --translate-ahead    translate every program before the boot (default: the loader does each on first use)",
         "  --loader <exe>       fivestar-loader.exe (default: FIVESTAR_LOADER, then beside this command, then the build tree)",
         "  --dxc <dxc.exe> --gdk-lib <xgameruntime.lib> --bcpack-tables <file> --jobs N   as for fivestar setup",
         "  -- <options>         passed on to fivestar-loader (fivestar-loader --help lists them)",
@@ -71,7 +72,10 @@ internal static class RunCommand
         return Start(options, identity, checkOnly);
     }
 
-    /// <summary>The setup steps the game needs: all shader steps, unless prebuilt shader folders are given.</summary>
+    /// <summary>
+    /// The setup steps the game needs: the extracted programs (the loader translates each on first use), with
+    /// <c>--translate-ahead</c> also the whole translation; none of the shader steps when prebuilt folders are given.
+    /// </summary>
     public static IReadOnlyList<ISetupStep> Steps(RunOptions options)
     {
         if (options.PrebuiltShaders)
@@ -79,7 +83,12 @@ internal static class RunCommand
             return [new VerifyStep(), new BcPackTablesStep(), new GdkAbiStep()];
         }
 
-        return [new VerifyStep(), new ShaderExtractStep(), new ShaderTranslateStep(), new RectangleShaderStep(), new BcPackTablesStep(), new GdkAbiStep()];
+        if (options.TranslateAhead)
+        {
+            return [new VerifyStep(), new ShaderExtractStep(), new ShaderTranslateStep(), new RectangleShaderStep(), new BcPackTablesStep(), new GdkAbiStep()];
+        }
+
+        return [new VerifyStep(), new ShaderExtractStep(), new BcPackTablesStep(), new GdkAbiStep()];
     }
 
     private static int Start(RunOptions options, DumpIdentity identity, bool checkOnly)

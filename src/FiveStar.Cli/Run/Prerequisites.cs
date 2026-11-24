@@ -138,7 +138,8 @@ internal sealed class Prerequisites
     private static RunCheck Dxc(RunPlan plan)
     {
         var shaderSteps = new[] { ShaderTranslateStep.StepName, RectangleShaderStep.StepName };
-        var needed = plan.PendingSteps.Any(step => shaderSteps.Contains(step.Name));
+        // The loader compiles programs on first use with the dxcompiler.dll beside dxc, unless prebuilt ones are given.
+        var needed = !plan.Options.PrebuiltShaders || plan.PendingSteps.Any(step => shaderSteps.Contains(step.Name));
         var missing = ToolCheck.MissingShaderTools(plan.Options.Tools);
 
         if (missing.Count == 0)

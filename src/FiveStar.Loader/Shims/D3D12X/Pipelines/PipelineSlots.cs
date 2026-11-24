@@ -94,7 +94,7 @@ internal sealed unsafe class PipelineSlots
             var running = _factory.InFlight.Summary();
             var counts = $"{Volatile.Read(ref _requests)} pipelines requested, {Volatile.Read(ref _created)} created, {_factory.ProgramBytes >> MegabyteShift} MB of DXIL held, {_factory.StandIns.Summary}";
 
-            var parts = new[] { counts, _failures.Summary(), running, _factory.Cache?.Summary ?? string.Empty }.Where(part => part.Length > 0);
+            var parts = new[] { counts, _factory.OnDemand?.Summary ?? string.Empty, _failures.Summary(), running, _factory.Cache?.Summary ?? string.Empty }.Where(part => part.Length > 0);
 
             return string.Join(", ", parts);
         }

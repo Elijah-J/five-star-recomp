@@ -56,23 +56,27 @@ flowchart LR
    | `loader` | `fivestar-loader.exe` not found |
    | `gdk` | no `--gdk-lib`, no PC GDK under `Program Files (x86)\Microsoft GDK`, no table from an earlier run and no `--gdk-abi` after `--` |
    | `bcpack` | warns when the work folder has no BCPack tables: BC3, BC6H and BC7 pages then get placeholder blocks |
-   | `dxc` | dxc not found while shaders still have to be built |
+   | `dxc` | dxc (and the `dxcompiler.dll` beside it, which the loader compiles programs with on first use) not found, unless `--shaders`/`--translated` give built shaders |
    | `disk` | the drive of the work folder has less free space than the steps still to do need, plus 2 GiB for the run |
    | `shaders` | with `--shaders`/`--translated`: a folder or `rect-gs/` missing; no `variants.json` warns |
    | `debug layer` | `--debug` and no `d3d12SDKLayers.dll` in System32 |
 
 2. **Setup steps**, through the same runner and state as [`fivestar setup`](setup.md), so a step done by either
-   command is done for both: `verify`, `shader-extract`, `shader-translate` (all variants the loader picks, with
-   `variants.json`), `rect-gs`, `bcpack-tables`, `gdk-abi`. With `--shaders`/`--translated` only `verify`,
-   `bcpack-tables` and `gdk-abi`.
+   command is done for both: `verify`, `shader-extract`, `bcpack-tables`, `gdk-abi`. The loader translates each
+   program when the game first uses it ([d3d12x-pipelines.md](d3d12x-pipelines.md#programs-on-demand)); with
+   `--translate-ahead` also `shader-translate` (all variants the loader picks, with `variants.json`) and `rect-gs`
+   first. With `--shaders`/`--translated` only `verify`, `bcpack-tables` and `gdk-abi`.
 3. **Loader**, started as
 
    ```
    fivestar-loader --load <dump>\game_scarlett_master.exe --no-exports --work-dir <work>\loader\tls
      --log <work>\logs\run-<time>.log --run [--run-timeout s] --shader-dir <work>\shaders\fssm
-     --translated-dir <work>\shaders\hlsl --pipeline-cache <work>\pipeline-cache [--gdk-abi <work>\loader\gdk-abi.txt]
+     --program-cache <work>\program-cache [--translated-dir <work>\shaders\hlsl] [--dxc <dxc>]
+     --pipeline-cache <work>\pipeline-cache [--gdk-abi <work>\loader\gdk-abi.txt]
      [--bcpack-tables <work>\loader\bcpack-tables.bin] [--d3d12-debug] [<loader options>]
    ```
+
+   `--translated-dir` is passed with `--translate-ahead` or `--translated`, `--dxc` when run gets it.
 
    The console shows the loader's milestones (`==` lines, errors, faults with their address, presents); the full log
    is the file. `--pipeline-cache` is left out when the loader options name `--pipeline-cache` or

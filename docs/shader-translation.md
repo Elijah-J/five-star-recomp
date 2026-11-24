@@ -453,7 +453,10 @@ Sources over 2,500,000 characters use `-Od` from the start, and so does every HL
 in the output folder's `compile-times.tsv` from an earlier run. dxc comes from `--dxc`, then `FIVESTAR_DXC`, then the
 Windows SDK default when it exists, then `PATH`. Compiling in-process through `dxcompiler.dll` was measured no faster
 (a dxc.exe start costs about 10 ms against a median compile of 0.85 s), and a process can be killed at the limit
-while an in-process crash or allocation failure ends the whole run.
+while an in-process crash or allocation failure ends the whole run. The loader, which translates programs on first use
+([d3d12x-pipelines.md](d3d12x-pipelines.md#programs-on-demand)), does compile in-process (`DxcLibraryCompiler`, same
+arguments, same DXIL), since it cannot start a process per program while the game runs. The translation itself is
+`CorpusTranslator.TranslateFile`, shared by both.
 
 `results.json` is an array of `{"name", "stage", "status", "reason"}`:
 

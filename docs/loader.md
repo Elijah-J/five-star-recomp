@@ -381,7 +381,8 @@ fivestar-loader --load $dump\XboxBvhBuilder.dll --load $dump\Bink2Scarlett.dll -
 | `--patches <file or folder>` | code patches (repeatable) |
 | `--mods <dir>` | mod folder over the package root (repeatable, first has priority) |
 | `--input <file>` | the keyboard-and-mouse gamepad mapping |
-| `--shader-dir <dir>`, `--translated-dir <dir>` | extracted FSSM programs and their translated DXIL; with both, the D3D12.X pipeline slots create pipelines |
+| `--shader-dir <dir>`, `--translated-dir <dir>` | extracted FSSM programs (the D3D12.X pipeline slots then create pipelines) and, optionally, their translated DXIL |
+| `--program-cache <dir>`, `--no-on-demand`, `--dxc <path>`, `--shader-jobs <n>` | programs translated and compiled on first use ([d3d12x-pipelines.md](d3d12x-pipelines.md#programs-on-demand)): their folder, off, the `dxcompiler.dll`, the threads |
 | `--ffx <dll>` | the PC FidelityFX API DLL the game's FidelityFX calls go to ([middleware.md](middleware.md)) |
 | `--d3d12-debug`, `--d3d12-gpu-validation` | the D3D12 debug layer (and GPU-based validation) and DRED, with their messages and the removal report in the log ([d3d12x-shim.md](d3d12x-shim.md)); needs the Graphics Tools optional feature |
 | `--d3d12-skip <i:n,...>` | D3D12.X slots that do nothing and return 0 (`list:20`, `queue:35`, `device:127`), to bisect GPU faults ([d3d12x-shim.md](d3d12x-shim.md#debug-layer)) |

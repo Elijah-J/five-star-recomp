@@ -18,6 +18,9 @@ public sealed class DxcCompiler : IShaderCompiler
     private const string ValidatorFile = "dxil.dll";
     private const int ErrorTextLength = 200;
 
+    /// <summary>The arguments besides the profile, the include folder and -Od, for compiler identities.</summary>
+    internal const string FixedArguments = "-E main -HV 2021";
+
     private readonly DxcOptions _options;
     private readonly Lazy<string> _identity;
 
@@ -65,7 +68,7 @@ public sealed class DxcCompiler : IShaderCompiler
     }
 
     /// <summary>The dxc arguments of a request, the source file last.</summary>
-    private static List<string> Arguments(CompileRequest request)
+    internal static List<string> Arguments(CompileRequest request)
     {
         var folder = Path.GetDirectoryName(Path.GetFullPath(request.HlslPath)) ?? ".";
         var arguments = new List<string> { "-T", request.Profile + ShaderModel, "-E", "main", "-HV", "2021", "-I", folder };
@@ -85,7 +88,7 @@ public sealed class DxcCompiler : IShaderCompiler
     {
         var folder = Path.GetDirectoryName(_options.Path) ?? string.Empty;
         string[] files = [_options.Path, Path.Combine(folder, CompilerFile), Path.Combine(folder, ValidatorFile)];
-        string[] arguments = [ShaderModel, "-E main -HV 2021"];
+        string[] arguments = [ShaderModel, FixedArguments];
 
         return ContentHash.OfText([ContentHash.OfFiles(files), .. arguments, .. RuntimeIncludes.Names.Select(RuntimeIncludes.Read)]);
     }

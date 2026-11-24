@@ -36,6 +36,14 @@ internal sealed class ProgramVariantPicker
             return nativeFile;
         }
 
+        return Pick(program);
+    }
+
+    /// <summary>The file of <paramref name="program"/>'s forms the adapter loads, or null when none loads.</summary>
+    public string? Pick(ProgramVariants program)
+    {
+        var name = program.Name;
+        var nativeFile = name + ".dxil";
         var choice = VariantSelector.Choose(_adapter, program);
 
         switch (choice.Outcome)

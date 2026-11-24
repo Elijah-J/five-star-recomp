@@ -366,7 +366,16 @@ public sealed partial class CorpusTranslator
 
     private TranslatedProgram TranslateProgram(string path, CorpusOptions options)
     {
-        var loaded = _loader.Load(path, options.Stages);
+        return TranslateFile(_loader, path, options.Stages, options.Translation);
+    }
+
+    /// <summary>
+    /// Loads and translates one program, with its wave variant where it has one, as a run does before compiling; a
+    /// program that does not translate has its status and reason instead of HLSL.
+    /// </summary>
+    public static TranslatedProgram TranslateFile(ProgramLoader loader, string path, IReadOnlySet<ShaderStage>? stages, TranslationOptions translation)
+    {
+        var loaded = loader.Load(path, stages);
         var program = loaded.Program;
 
         if (program is null)
@@ -378,9 +387,9 @@ public sealed partial class CorpusTranslator
 
         try
         {
-            var hlsl = HlslTranslator.Translate(program, options.Translation).Hlsl;
+            var hlsl = HlslTranslator.Translate(program, translation).Hlsl;
 
-            return new TranslatedProgram(loaded.Name, loaded.Stage, hlsl, null, null, count) { GroupWave = GroupWave(program, hlsl, options.Translation) };
+            return new TranslatedProgram(loaded.Name, loaded.Stage, hlsl, null, null, count) { GroupWave = GroupWave(program, hlsl, translation) };
         }
         catch (UnsupportedProgramException exception)
         {

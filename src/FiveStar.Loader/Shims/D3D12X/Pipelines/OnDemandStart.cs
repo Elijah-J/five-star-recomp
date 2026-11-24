@@ -1,0 +1,169 @@
+// Copyright (c) 2026 Five Star Recomp contributors.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+using System.Diagnostics;
+using FiveStar.Graphics;
+using FiveStar.Graphics.Programs;
+using FiveStar.Loader.Diagnostics;
+using FiveStar.Shaders.Cache;
+using FiveStar.Shaders.Compilation;
+using FiveStar.Shaders.Disassembly;
+using FiveStar.Shaders.Translation;
+
+namespace FiveStar.Loader.Shims.D3D12X.Pipelines;
+
+/// <summary>
+/// Programs made on demand, from loader start: the compiler and the identity of this translator and compiler build,
+/// hashed on a worker thread (the game's device creation only picks it up). Programs go to
+/// <c>&lt;program cache&gt;/&lt;identity&gt;/&lt;adapter&gt;/</c>, so a new translator, compiler or GPU starts a new folder.
+/// </summary>
+internal sealed class OnDemandStart
+{
+    /// <summary>The program cache folder's name in the work folder.</summary>
+    public const string FolderName = "program-cache";
+
+    private const string DxcVariable = "FIVESTAR_DXC";
+    private const string SdkFolder = @"C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64";
+    private const string ShadersAssembly = "FiveStar.Shaders.dll";
+    private const int IdentityLength = 16;
+    private const int ProcessorsPerJob = 4;
+    private const string HlslExtension = ".hlsl";
+    private const string GeometryProfile = "gs";
+
+    private readonly Task<string> _identity;
+    private readonly DxcLibraryCompiler _compiler;
+
+    private OnDemandStart(string root, DxcLibraryCompiler compiler, int jobs)
+    {
+        Root = root;
+        Jobs = jobs;
+        _compiler = compiler;
+        _identity = Task.Run(() => ContentHash.OfText(ShadersIdentity(), nameof(RdnaDecoder), CorpusOptions.DefaultTranslation.ToString(), compiler.Identity));
+    }
+
+    /// <summary>The program cache folder.</summary>
+    public string Root { get; }
+
+    /// <summary>Threads that make programs.</summary>
+    public int Jobs { get; }
+
+    /// <summary>Compiles a rectangle-list geometry shader source to a DXIL path (<see cref="RectanglePipelines.Compiler"/>).</summary>
+    public Func<string, string, byte[]?> RectangleCompiler => (source, path) =>
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var request = new CompileRequest(Path.ChangeExtension(path, HlslExtension), source, GeometryProfile, DisableOptimizations: false);
+
+        if (!_compiler.Compile(request, _compiler.Options.CompileTimeout).Succeeded)
+        {
+            return null;
+        }
+
+        return File.ReadAllBytes(request.DxilPath);
+    };
+
+    /// <summary>Starts the identity hash; null with a message when no dxcompiler.dll is found.</summary>
+    public static OnDemandStart? Begin(string root, string? dxc, int? jobs, out string message)
+    {
+        var library = FindLibrary(dxc);
+
+        if (library is null)
+        {
+            message = $"no {DxcLibraryCompiler.LibraryFile} (--dxc, {DxcVariable}, beside the loader or in the Windows SDK): programs are not made on demand";
+
+            return null;
+        }
+
+        message = $"programs made on demand with {library} into {root}";
+        var compiler = new DxcLibraryCompiler(DxcOptions.Defaults(library, retry: false));
+
+        return new OnDemandStart(root, compiler, jobs ?? Math.Max(1, Environment.ProcessorCount / ProcessorsPerJob));
+    }
+
+    /// <summary>The identity, waiting for it; <paramref name="waited"/> is the time spent waiting.</summary>
+    public string Identity(out TimeSpan waited)
+    {
+        long start = Stopwatch.GetTimestamp();
+        var identity = _identity.GetAwaiter().GetResult();
+        waited = Stopwatch.GetElapsedTime(start);
+
+        return identity;
+    }
+
+    /// <summary>
+    /// The on-demand library for the adapter of <paramref name="device"/>, over the ahead-of-time translation when there
+    /// is one, with its workers started.
+    /// </summary>
+    public OnDemandPrograms Open(ProgramIndex index, string programs, string? translated, nint device, OnceLog warnings, LoaderLog log)
+    {
+        var adapter = DesktopAdapter.Describe(device);
+        var folder = Path.Combine(Root, Identity(out _)[..IdentityLength], AdapterFolder(adapter));
+        Directory.CreateDirectory(folder);
+        WriteIncludes(folder);
+
+        var ownLog = Path.Combine(Root, TimedCompiler.LogName);
+        List<string> logs = [ownLog];
+        TranslatedProgramLibrary? ahead = null;
+
+        if (translated is not null && Directory.Exists(translated))
+        {
+            ahead = TranslatedProgramLibrary.Open(index, translated, device, warnings, log);
+            logs.Add(Path.Combine(translated, TimedCompiler.LogName));
+        }
+
+        var slow = SlowCompiles.Read(logs, _compiler.Options.CompileTimeout);
+        var compiler = new TimedCompiler(_compiler, ownLog, TimeProvider.System);
+        var picker = new ProgramVariantPicker(new ShaderManifest([]), adapter, warnings);
+        var workers = new ProgramWorkers(Jobs, WarmMemoryGuard.RoomForBuild, WarmMemoryGuard.RoomForHeavyBuild);
+        workers.Start();
+        log.Detail($"  [d3d12_xs] programs on demand: {folder}, {Jobs} threads and one for heavy compiles, {slow.Count} sources slow at -O3");
+
+        return new OnDemandPrograms(index, ahead, new ProgramProducer(programs, folder, picker, compiler, slow), workers, warnings);
+    }
+
+    /// <summary>The adapter facts that pick a program's form: shader model, wave lane range, mesh-shader tier.</summary>
+    private static string AdapterFolder(AdapterInfo adapter)
+    {
+        return $"sm{adapter.ShaderModel}-w{adapter.WaveLaneCountMin}-{adapter.WaveLaneCountMax}-{adapter.MeshShaderTier}";
+    }
+
+    /// <summary>The runtime headers the sources include; another process may be writing them too.</summary>
+    private static void WriteIncludes(string folder)
+    {
+        if (RuntimeIncludes.Names.All(name => File.Exists(Path.Combine(folder, name))))
+        {
+            return;
+        }
+
+        try
+        {
+            RuntimeIncludes.WriteTo(folder);
+        }
+        catch (IOException)
+        {
+            // Written by the other process; the identity covers their text.
+        }
+    }
+
+    /// <summary>The translator build: FiveStar.Shaders.dll beside the loader, or the loader itself when published as one file.</summary>
+    private static string ShadersIdentity()
+    {
+        var assembly = Path.Combine(AppContext.BaseDirectory, ShadersAssembly);
+
+        if (File.Exists(assembly))
+        {
+            return ContentHash.OfFiles([assembly]);
+        }
+
+        return ContentHash.OfFiles([Environment.ProcessPath ?? string.Empty]);
+    }
+
+    private static string? FindLibrary(string? dxc)
+    {
+        string?[] candidates = [dxc, Environment.GetEnvironmentVariable(DxcVariable), AppContext.BaseDirectory, SdkFolder];
+
+        return candidates
+            .Where(candidate => !string.IsNullOrEmpty(candidate))
+            .Select(candidate => DxcLibraryCompiler.LibraryPath(candidate!))
+            .FirstOrDefault(File.Exists);
+    }
+}

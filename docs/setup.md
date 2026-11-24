@@ -7,11 +7,16 @@ with the same state before it starts the game.
 
 ```
 fivestar setup <dump folder> [--work <dir>] [--only <step,...>] [--force] [--limit N] [--step K] [--jobs N]
-                             [--mesh-fallbacks] [--all-forms] [--warm-all] [--dxc <dxc.exe>] [--gdk-lib <xgameruntime.lib>]
-                             [--loader <fivestar-loader.exe>] [--bcpack-tables <bcpack-tables.bin>]
+                             [--translate-ahead] [--mesh-fallbacks] [--all-forms] [--warm-all] [--dxc <dxc.exe>]
+                             [--gdk-lib <xgameruntime.lib>] [--loader <fivestar-loader.exe>] [--bcpack-tables <bcpack-tables.bin>]
 fivestar setup <dump folder> --status
 fivestar setup <dump folder> --clean-cache
 ```
+
+The loader translates and compiles each program when the game first uses it
+([d3d12x-pipelines.md](d3d12x-pipelines.md#programs-on-demand)), so a run selects every step but `shader-translate`,
+`rect-gs` and `pipeline-warm`. `--translate-ahead` selects them too (about 2 hours and 36 dxc CPU-hours for every
+program), as does naming them in `--only`.
 
 ## Steps
 
