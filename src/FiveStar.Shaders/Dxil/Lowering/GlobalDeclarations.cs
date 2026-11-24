@@ -165,6 +165,11 @@ public sealed class GlobalDeclarations
         {
             _context.Statements.Initialize(variable, type, initializer);
         }
+
+        if (constant && initializer is not null)
+        {
+            _context.Statements.Fix(variable);
+        }
         else if (variable.Storage == StorageKind.Slots && type.Shape != TypeShape.Resource)
         {
             var zero = RValue.Of(HlslType.LiteralInt, _context.Module.Int(_context.Module.Types.Int64, 0));

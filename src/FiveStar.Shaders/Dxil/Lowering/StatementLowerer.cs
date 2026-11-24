@@ -142,6 +142,27 @@ public sealed class StatementLowerer
             {
                 Initialize(variable, type, initializer);
             }
+
+            if (declaration.HasModifier("const") && initializer is not null)
+            {
+                Fix(variable);
+            }
+        }
+    }
+
+    /// <summary>A const variable whose value is constant: reads take the constant (also where a label needs one).</summary>
+    public void Fix(Variable variable)
+    {
+        if (variable.Storage != StorageKind.Slots || variable.Type.Shape == TypeShape.Resource)
+        {
+            return;
+        }
+
+        var value = _context.Variables.Read(_context.Variables.Whole(variable));
+
+        if (value.Components.All(component => component is Constant))
+        {
+            variable.Fixed = value.Components;
         }
     }
 

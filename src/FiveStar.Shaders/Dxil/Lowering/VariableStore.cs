@@ -209,6 +209,13 @@ public sealed class VariableStore
             return value;
         }
 
+        var fixedValues = place.Variable.Fixed;
+
+        if (fixedValues is not null && place.Variable.Storage == StorageKind.Slots)
+        {
+            return fixedValues[place.Slots[index] - place.Variable.FirstSlot];
+        }
+
         return place.Variable.Storage switch
         {
             StorageKind.Slots => _context.Ssa.Read(place.Slots[index], Builder.Block),

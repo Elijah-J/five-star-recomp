@@ -42,6 +42,8 @@ public static class FeatureScan
             flags |= Of(operand.Type);
         }
 
+        flags |= OperationFlags(instruction);
+
         if (flags.HasFlag(ShaderFlagBits.EnableDoublePrecision) && NeedsExtensions(instruction))
         {
             flags |= ShaderFlagBits.EnableDoubleExtensions;
@@ -65,6 +67,31 @@ public static class FeatureScan
         return ShaderFlagBits.None;
     }
 
+    /// <summary>Wave operations and descriptor-heap handles, from the calls the module keeps.</summary>
+    private static ShaderFlagBits OperationFlags(Instruction instruction)
+    {
+        if (instruction.Opcode != Opcode.Call || instruction.Operands.Count == 0 || instruction.Operands[0] is not Constant code)
+        {
+            return ShaderFlagBits.None;
+        }
+
+        var operation = (DxOpCode)code.Bits;
+
+        if (operation == DxOpCode.CreateHandleFromHeap)
+        {
+            var sampler = instruction.Operands[SamplerOperand] is Constant { Bits: not 0 };
+
+            return Choice.Of(sampler, ShaderFlagBits.SamplerDescriptorHeapIndexing, ShaderFlagBits.ResourceDescriptorHeapIndexing);
+        }
+
+        if (WaveOperations.Contains(operation))
+        {
+            return ShaderFlagBits.WaveOps;
+        }
+
+        return ShaderFlagBits.None;
+    }
+
     private static bool NeedsExtensions(Instruction instruction)
     {
         if (instruction.Opcode == Opcode.Binary)
@@ -82,4 +109,13 @@ public static class FeatureScan
     }
 
     private const int BitsPerByte = 8;
+    private const int SamplerOperand = 2;
+
+    private static readonly HashSet<DxOpCode> WaveOperations =
+    [
+        DxOpCode.WaveIsFirstLane, DxOpCode.WaveGetLaneIndex, DxOpCode.WaveGetLaneCount, DxOpCode.WaveAnyTrue,
+        DxOpCode.WaveAllTrue, DxOpCode.WaveActiveAllEqual, DxOpCode.WaveActiveBallot, DxOpCode.WaveReadLaneAt,
+        DxOpCode.WaveReadLaneFirst, DxOpCode.WaveActiveOp, DxOpCode.WaveActiveBit, DxOpCode.WavePrefixOp,
+        DxOpCode.QuadReadLaneAt, DxOpCode.QuadOp, DxOpCode.WaveAllBitCount, DxOpCode.WavePrefixBitCount,
+    ];
 }

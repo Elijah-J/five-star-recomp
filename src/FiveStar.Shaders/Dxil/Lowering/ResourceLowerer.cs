@@ -1,7 +1,6 @@
 // Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-using FiveStar.Shaders.Dxil.Container;
 using FiveStar.Shaders.Dxil.Hlsl;
 using FiveStar.Shaders.Dxil.Ir;
 using FiveStar.Shaders.Dxil.Ops;
@@ -68,7 +67,6 @@ public sealed class ResourceLowerer
             return RValue.Of(type, cached);
         }
 
-        _context.Flags |= Choice.Of(sampler, ShaderFlagBits.SamplerDescriptorHeapIndexing, ShaderFlagBits.ResourceDescriptorHeapIndexing);
         var (kind, detail) = ResourceProperties.Of(type, Module);
         var handle = _context.Ops.Call(
             DxOpCode.CreateHandleFromHeap, "createHandleFromHeap", AttributeSet.ReadNone, _context.Ops.Handle,

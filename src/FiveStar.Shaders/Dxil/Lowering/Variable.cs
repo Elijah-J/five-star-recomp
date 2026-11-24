@@ -37,6 +37,9 @@ public sealed class Variable
     /// <summary>A read-only constant table (stores are refused).</summary>
     public bool IsConstant { get; init; }
 
+    /// <summary>A static const scalar or vector: its constant components (reads use them directly, also as case labels).</summary>
+    public IReadOnlyList<Value>? Fixed { get; set; }
+
     /// <summary>The whole variable as a place, made once.</summary>
     internal LValue? WholePlace { get; set; }
 

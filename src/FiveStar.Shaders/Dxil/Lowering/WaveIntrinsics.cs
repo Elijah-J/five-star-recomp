@@ -1,7 +1,6 @@
 // Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-using FiveStar.Shaders.Dxil.Container;
 using FiveStar.Shaders.Dxil.Hlsl;
 using FiveStar.Shaders.Dxil.Ir;
 using FiveStar.Shaders.Dxil.Ops;
@@ -141,15 +140,12 @@ public sealed class WaveIntrinsics
 
     private Value Wave(DxOpCode code, string name, IrType result, params Value[] arguments)
     {
-        _context.Flags |= ShaderFlagBits.WaveOps;
-
         return Ops.Call(code, name, AttributeSet.NoUnwind, result, arguments);
     }
 
     /// <summary>A wave operation overloaded on the value's type (bools travel as i32).</summary>
     private Value Overloaded(DxOpCode code, string name, Value value, params Value[] rest)
     {
-        _context.Flags |= ShaderFlagBits.WaveOps;
         var boolean = value.Type == Module.Types.Bool;
         var operand = value;
 
