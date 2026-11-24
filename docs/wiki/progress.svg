@@ -5233,8 +5233,8 @@ svg { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
 <text class="ink2" x="16.0" y="1143.0" font-size="11.0">the story load reaches 62 to 65 GB;</text>
 <text class="ink2" x="16.0" y="1157.0" font-size="11.0">allocator of the large blocks unknown</text>
 <text class="ink" x="16.0" y="1177.0" font-size="12.0">Pipeline warm-up</text>
-<text class="ink2" x="16.0" y="1192.0" font-size="11.0">built on first use; the warm-up builds what</text>
-<text class="ink2" x="16.0" y="1206.0" font-size="11.0">earlier boots used</text>
+<text class="ink2" x="16.0" y="1192.0" font-size="11.0">programs and pipelines made on first use;</text>
+<text class="ink2" x="16.0" y="1206.0" font-size="11.0">only what the game uses is kept</text>
 <text class="ink" x="305.3" y="1026.0" font-size="13.0" font-weight="600">Research</text>
 <text class="ink" x="305.3" y="1044.0" font-size="12.0">BCPack speed</text>
 <text class="ink2" x="305.3" y="1059.0" font-size="11.0">table decoding is about 3x slower than the</text>

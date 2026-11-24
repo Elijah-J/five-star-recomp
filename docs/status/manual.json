@@ -77,7 +77,7 @@
         { "name": "Story load", "note": "buffer bounds checks, so GPU writes stay inside their buffers" },
         { "name": "Brightness symbol", "note": "still black on the calibration screen" },
         { "name": "Memory", "note": "the story load reaches 62 to 65 GB; allocator of the large blocks unknown" },
-        { "name": "Pipeline warm-up", "note": "built on first use; the warm-up builds what earlier boots used" }
+        { "name": "Pipeline warm-up", "note": "programs and pipelines made on first use; only what the game uses is kept" }
       ]
     },
     {

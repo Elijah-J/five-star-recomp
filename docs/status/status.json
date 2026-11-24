@@ -222,7 +222,7 @@
         },
         {
           "name": "Pipeline warm-up",
-          "note": "built on first use; the warm-up builds what earlier boots used"
+          "note": "programs and pipelines made on first use; only what the game uses is kept"
         }
       ]
     },
