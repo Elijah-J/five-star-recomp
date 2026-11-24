@@ -75,6 +75,7 @@ internal sealed unsafe class DesktopStream : IDisposable
     public void AddInputLayout(IReadOnlyList<VertexElement> elements)
     {
         var table = new byte[elements.Count * PipelineLayout.InputElementSize];
+        Identify(BitConverter.GetBytes(elements.Count));
 
         for (var index = 0; index < elements.Count; index++)
         {
