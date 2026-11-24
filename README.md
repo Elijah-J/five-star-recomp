@@ -29,7 +29,7 @@ first-run screens, and starts loading story mode, where the GPU currently hangs.
 | Textures | 99.44% of textures are readable: BCPack BC1 decodes exactly and BC4/BC5 approximately; BC7, BC6H and BC3 (about 2,000 textures) cannot be decoded yet. |
 | Models | Drawable geometry (meshlets, packed vertices) decodes and exports as OBJ ([docs/models.md](docs/models.md)). |
 | Loader | The game executable and its support libraries load with all imports resolved; the game boots through its start-up, answers its first-run screens through a scripted gamepad ([docs/first-run.input](docs/first-run.input)) and starts loading story mode. The console runtime, audio decoding and system libraries are implemented for offline use. |
-| Graphics API | The game's D3D12.X device runs on desktop D3D12: its pipelines build from the translated shaders (with a disk cache), its descriptors and barriers are translated, and it presents its logo, intro video and menus with complete UI text. Open: a GPU hang in the first frame after the story load, and shaders that read memory through root descriptors ([docs/d3d12x-shim.md](docs/d3d12x-shim.md)). |
+| Graphics API | The game's D3D12.X device runs on desktop D3D12: its pipelines build from the translated shaders (with a disk cache), its descriptors and barriers are translated, and it presents its logo, intro video and menus with complete UI text. Shaders that read memory through console GPU addresses reach the game's memory through an address map. Open: a GPU hang in the first frame after the story load ([docs/d3d12x-shim.md](docs/d3d12x-shim.md)). |
 
 The [wiki](../../wiki) has the details, research notes and the current progress report.
 
