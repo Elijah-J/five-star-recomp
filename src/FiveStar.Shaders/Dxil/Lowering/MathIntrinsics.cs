@@ -14,6 +14,7 @@ namespace FiveStar.Shaders.Dxil.Lowering;
 public sealed class MathIntrinsics
 {
     private const string UnaryClass = "unary";
+    private const int Third = 2;
     private const string BinaryClass = "binary";
     private const string TertiaryClass = "tertiary";
     private const string BitsClass = "unaryBits";
@@ -85,6 +86,7 @@ public sealed class MathIntrinsics
         handlers["asdouble"] = AsDouble;
         handlers["select"] = Select;
         handlers["min"] = call => MinMax(call, max: false);
+
         handlers["max"] = call => MinMax(call, max: true);
         handlers["clamp"] = Clamp;
         handlers["abs"] = Abs;
@@ -100,18 +102,21 @@ public sealed class MathIntrinsics
         handlers["log10"] = call => FloatMap(call, values => Builder.Binary(BinaryOp.Mul, Unary(DxOpCode.Log, values[0]), Constant(values[0], Log10Of2)));
         handlers["pow"] = call => FloatMap(call, values => Unary(DxOpCode.Exp, Builder.Binary(BinaryOp.Mul, Unary(DxOpCode.Log, values[0]), values[1])));
         handlers["fmod"] = call => FloatMap(call, values => Builder.Binary(BinaryOp.SRem, values[0], values[1]));
+
         handlers["ldexp"] = call => FloatMap(call, values => Builder.Binary(BinaryOp.Mul, values[0], Unary(DxOpCode.Exp, values[1])));
-        handlers["lerp"] = call => FloatMap(call, values => Add(values[0], Multiply(values[2], Subtract(values[1], values[0]))));
+        handlers["lerp"] = call => FloatMap(call, values => Add(values[0], Multiply(values[Third], Subtract(values[1], values[0]))));
         handlers["step"] = call => FloatMap(call, values => Step(values[0], values[1]));
         handlers["smoothstep"] = Smoothstep;
         handlers["atan2"] = call => FloatMap(call, values => new Atan2(Builder, Module, Ops).Lower(values[0], values[1]));
         handlers["mad"] = Mad;
+
         handlers["fma"] = call => Tertiary(call, DxOpCode.Fma, floating: true);
         handlers["countbits"] = call => Bits(call, DxOpCode.Countbits);
         handlers["firstbitlow"] = call => Bits(call, DxOpCode.FirstbitLo);
         handlers["firstbithigh"] = FirstBitHigh;
         handlers["reversebits"] = call => IntegerMap(call, values => Ops.Pure(DxOpCode.Bfrev, UnaryClass, values[0].Type, values[0]));
         handlers["f32tof16"] = F32ToF16;
+
         handlers["f16tof32"] = F16ToF32;
         new VectorIntrinsics(_context, _arguments).Register(handlers);
     }
@@ -221,7 +226,7 @@ public sealed class MathIntrinsics
     {
         var condition = _context.Expressions.Lower(call[0]);
 
-        return _context.Expressions.Select(condition, _context.Expressions.Lower(call[1]), _context.Expressions.Lower(call[2]));
+        return _context.Expressions.Select(condition, _context.Expressions.Lower(call[1]), _context.Expressions.Lower(call[Third]));
     }
 
     private RValue MinMax(SyntaxNode call, bool max)
@@ -255,7 +260,7 @@ public sealed class MathIntrinsics
     {
         var (type, values) = _arguments.Common(call, floating: false);
 
-        return IntrinsicArguments.Map(type, values, operands => MinMaxScalar(type.Kind, false, MinMaxScalar(type.Kind, true, operands[0], operands[1]), operands[2]));
+        return IntrinsicArguments.Map(type, values, operands => MinMaxScalar(type.Kind, false, MinMaxScalar(type.Kind, true, operands[0], operands[1]), operands[Third]));
     }
 
     private RValue Abs(SyntaxNode call)
@@ -308,7 +313,7 @@ public sealed class MathIntrinsics
         return FloatMap(call, values =>
         {
             var range = Subtract(values[1], values[0]);
-            var t = Unary(DxOpCode.Saturate, Builder.Binary(BinaryOp.SDiv, Subtract(values[2], values[0]), range));
+            var t = Unary(DxOpCode.Saturate, Builder.Binary(BinaryOp.SDiv, Subtract(values[Third], values[0]), range));
             var shape = Subtract(Constant(t, SmoothstepThree), Multiply(Constant(t, SmoothstepTwo), t));
 
             return Multiply(Multiply(t, t), shape);

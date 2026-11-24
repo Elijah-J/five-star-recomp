@@ -11,6 +11,11 @@ namespace FiveStar.Shaders.Dxil.Lowering;
 /// </summary>
 public sealed class Conversions
 {
+    private static readonly ScalarKind[] RankOrder =
+    [
+        ScalarKind.Bool, ScalarKind.Int, ScalarKind.Uint, ScalarKind.Int64, ScalarKind.Uint64, ScalarKind.Float, ScalarKind.Double,
+    ];
+
     private readonly IrBuilder _builder;
 
     public Conversions(IrBuilder builder)
@@ -235,23 +240,19 @@ public sealed class Conversions
 
     private static int Rank(ScalarKind kind)
     {
-        return kind switch
+        var rank = Array.IndexOf(RankOrder, kind);
+
+        if (rank < 0)
         {
-            ScalarKind.Bool => 0,
-            ScalarKind.Int => 1,
-            ScalarKind.Uint => 2,
-            ScalarKind.Int64 => 3,
-            ScalarKind.Uint64 => 4,
-            ScalarKind.Float => 5,
-            _ => 6,
-        };
+            return RankOrder.Length - 1;
+        }
+
+        return rank;
     }
 
     private static ScalarKind RankKind(int rank)
     {
-        ScalarKind[] kinds = [ScalarKind.Bool, ScalarKind.Int, ScalarKind.Uint, ScalarKind.Int64, ScalarKind.Uint64, ScalarKind.Float, ScalarKind.Double];
-
-        return kinds[rank];
+        return RankOrder[rank];
     }
 
     /// <summary>Converts a constant at compile time; null when <paramref name="value"/> is not a constant.</summary>

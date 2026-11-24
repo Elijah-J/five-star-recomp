@@ -5,7 +5,12 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using FiveStar.Shaders.Dxil;
+using FiveStar.Shaders.Dxil.Container;
+using FiveStar.Shaders.Dxil.Hlsl;
+using FiveStar.Shaders.Dxil.Ir;
+using FiveStar.Shaders.Dxil.Lowering;
 using FiveStar.Shaders.Dxil.Validation;
+using FiveStar.Shaders.Translation;
 
 namespace FiveStar.Cli.Shader;
 
@@ -149,38 +154,48 @@ internal static class DxilCommand
 
             for (var run = 0; run < repeat; run++)
             {
-                var a0 = GC.GetAllocatedBytesForCurrentThread();
-                var clock = Stopwatch.StartNew();
-                var tokens = FiveStar.Shaders.Dxil.Hlsl.Preprocessor.Run(hlsl, FiveStar.Shaders.Translation.RuntimeIncludes.Read);
-                times[0] = clock.Elapsed.TotalMilliseconds;
-                var tree = FiveStar.Shaders.Dxil.Hlsl.Parser.Parse(tokens);
-                times[1] = clock.Elapsed.TotalMilliseconds;
-                var a1 = GC.GetAllocatedBytesForCurrentThread();
-                var (module, main, description) = FiveStar.Shaders.Dxil.Lowering.ShaderLowering.Compute(tree);
-                times[PhaseLower] = clock.Elapsed.TotalMilliseconds;
-                var a2 = GC.GetAllocatedBytesForCurrentThread();
-                var container = FiveStar.Shaders.Dxil.Container.ShaderContainer.Write(module, main, description);
-                times[PhaseWrite] = clock.Elapsed.TotalMilliseconds;
-                _ = container;
-
-                if (run == repeat - 1 && listing is not null)
-                {
-                    File.WriteAllText(listing, FiveStar.Shaders.Dxil.Ir.IrText.Print(main));
-                }
-
-                if (run == repeat - 1)
-                {
-                    Console.WriteLine($"alloc MB: front {(a1 - a0) / 1000000}, lower {(a2 - a1) / 1000000}, write {(GC.GetAllocatedBytesForCurrentThread() - a2) / 1000000}");
-                    Console.WriteLine($"blocks {main.Blocks.Count}, instructions {main.Blocks.Sum(block => block.Body.Count)}, phis {main.Blocks.Sum(block => block.Phis.Count)}, constants {module.Constants.Count}, bytes {container.Length}");
-                }
+                times = TimePhases(hlsl, listing, run == repeat - 1);
             }
 
-            Console.WriteLine($"gc0 {GC.CollectionCount(0)} gc1 {GC.CollectionCount(1)} gc2 {GC.CollectionCount(2)} allocated {GC.GetTotalAllocatedBytes() / 1000000} MB");
-            Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{Path.GetFileName(file)}: preprocess {times[0]:F1}, parse {times[1] - times[0]:F1}, lower {times[PhaseLower] - times[1]:F1}, write {times[PhaseWrite] - times[PhaseLower]:F1} ms"));
+            var line = $"{Path.GetFileName(file)}: preprocess {times[0]:F1}, parse {times[1] - times[0]:F1}, "
+                + $"lower {times[PhaseLower] - times[1]:F1}, write {times[PhaseWrite] - times[PhaseLower]:F1} ms";
+            Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{line}"));
         }
     }
 
+    /// <summary>One compile, phase by phase: the elapsed milliseconds after each; the last run prints the IR size.</summary>
+    private static double[] TimePhases(string hlsl, string? listing, bool last)
+    {
+        var times = new double[PhaseCount];
+        var clock = Stopwatch.StartNew();
+        var tokens = Preprocessor.Run(hlsl, RuntimeIncludes.Read);
+        times[0] = clock.Elapsed.TotalMilliseconds;
+        var tree = Parser.Parse(tokens);
+        times[1] = clock.Elapsed.TotalMilliseconds;
+
+        var (module, main, description) = ShaderLowering.Compute(tree);
+        times[PhaseLower] = clock.Elapsed.TotalMilliseconds;
+        var container = ShaderContainer.Write(module, main, description);
+        times[PhaseWrite] = clock.Elapsed.TotalMilliseconds;
+
+        if (last && listing is not null)
+        {
+            File.WriteAllText(listing, IrText.Print(main));
+        }
+
+        if (last)
+        {
+            var instructions = main.Blocks.Sum(block => block.Body.Count);
+            Console.WriteLine($"blocks {main.Blocks.Count}, instructions {instructions}, phis {main.Blocks.Sum(block => block.Phis.Count)}, bytes {container.Length}");
+        }
+
+        return times;
+    }
+
     private const int PhaseCount = 4;
+    private const int Half = 2;
+    private const int CountWidth = 5;
+    private const double MillisecondsPerSecond = 1000;
     private const int PhaseLower = 2;
     private const int PhaseWrite = 3;
 
@@ -197,8 +212,8 @@ internal static class DxilCommand
         foreach (var group in results.GroupBy(result => result.Status).OrderBy(group => group.Key, StringComparer.Ordinal))
         {
             var times = group.Select(result => result.Milliseconds).Order().ToList();
-            var median = times[times.Count / 2];
-            Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{group.Key}: {group.Count()} programs, {times.Sum() / 1000:F1} s, median {median:F1} ms, max {times[^1]:F0} ms"));
+            var median = times[times.Count / Half];
+            Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{group.Key}: {group.Count()} programs, {times.Sum() / MillisecondsPerSecond:F1} s, median {median:F1} ms, max {times[^1]:F0} ms"));
         }
 
         var reasons = results.Where(result => result.Status != "ok")
@@ -208,7 +223,7 @@ internal static class DxilCommand
 
         foreach (var reason in reasons)
         {
-            Console.WriteLine($"  {reason.Count(),5}  {reason.Key}   e.g. {reason.First().Name}");
+            Console.WriteLine($"  {reason.Count().ToString(CultureInfo.InvariantCulture).PadLeft(CountWidth)}  {reason.Key}   e.g. {reason.First().Name}");
         }
     }
 

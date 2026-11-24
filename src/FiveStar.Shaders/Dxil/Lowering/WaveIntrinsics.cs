@@ -82,12 +82,14 @@ public sealed class WaveIntrinsics
         handlers["WaveActiveAnyTrue"] = call => Truth(Wave(DxOpCode.WaveAnyTrue, "waveAnyTrue", Module.Types.Bool, Condition(call)));
         handlers["WaveActiveAllTrue"] = call => Truth(Wave(DxOpCode.WaveAllTrue, "waveAllTrue", Module.Types.Bool, Condition(call)));
         handlers["WaveActiveCountBits"] = call => RValue.Of(HlslType.Uint, Wave(DxOpCode.WaveAllBitCount, "waveAllOp", Module.Types.Int32, Condition(call)));
+
         handlers["WavePrefixCountBits"] = call => RValue.Of(HlslType.Uint, Wave(DxOpCode.WavePrefixBitCount, "wavePrefixOp", Module.Types.Int32, Condition(call)));
         handlers["WaveActiveBallot"] = Ballot;
         handlers["WaveReadLaneAt"] = ReadLaneAt;
         handlers["WaveReadLaneFirst"] = call => PerComponent(call, value => Overloaded(DxOpCode.WaveReadLaneFirst, "waveReadLaneFirst", value));
         handlers["QuadReadLaneAt"] = QuadReadLaneAt;
         handlers["IsHelperLane"] = _ => Truth(Ops.Overloaded(DxOpCode.IsHelperLane, "isHelperLane", AttributeSet.ReadOnly, Module.Types.Bool, Module.Types.Bool));
+
         RegisterReductions(handlers);
     }
 
@@ -228,6 +230,13 @@ public sealed class WaveIntrinsics
 
     private RValue SharedAtomic(SyntaxNode call, AtomicOp operation)
     {
+        var texture = TextureTarget(call);
+
+        if (texture is not null)
+        {
+            return _context.Resources.Textures.Atomic(call, texture);
+        }
+
         var place = _context.Expressions.Place(call[0]);
 
         if (place.Variable.Storage != StorageKind.Memory)
@@ -253,8 +262,35 @@ public sealed class WaveIntrinsics
         return RValue.Void;
     }
 
+    /// <summary>The texture of an Interlocked call on a texel (<c>texture[uv]</c>), or null.</summary>
+    private RValue? TextureTarget(SyntaxNode call)
+    {
+        var target = call[0];
+
+        if (target.Kind != SyntaxKind.Index)
+        {
+            return null;
+        }
+
+        var owner = _context.Expressions.Lower(target[0]);
+
+        if (owner.Type.Shape != TypeShape.Resource)
+        {
+            return null;
+        }
+
+        return owner;
+    }
+
     private RValue SharedCompareExchange(SyntaxNode call, bool store)
     {
+        var texture = TextureTarget(call);
+
+        if (texture is not null)
+        {
+            return _context.Resources.Textures.Atomic(call, texture);
+        }
+
         var place = _context.Expressions.Place(call[0]);
         var compare = _context.Expressions.Lower(call[1], place.Type).Scalar;
         var value = _context.Expressions.Lower(call[OriginalArgument], place.Type).Scalar;

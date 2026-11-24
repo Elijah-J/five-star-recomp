@@ -53,6 +53,7 @@ public static class ShaderContainer
         module.Named("llvm.ident", module.Node(module.Text("Five Star Recomp")));
         var version = module.Node(module.Int32Metadata(Major), module.Int32Metadata(Minor));
         module.Named("dx.version", version);
+
         module.Named("dx.valver", version);
         module.Named("dx.shaderModel", module.Node(module.Text("cs"), module.Int32Metadata(ModelMajor), module.Int32Metadata(Minor)));
 
@@ -125,6 +126,7 @@ public static class ShaderContainer
         BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(sizeof(uint)), (uint)(bytes.Length / sizeof(uint)));
         "DXIL"u8.CopyTo(bytes.AsSpan(sizeof(ulong)));
         BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(sizeof(ulong) + sizeof(uint)), DxilVersion);
+
         BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(BitcodeHeaderBytes), BitcodeHeaderBytes);
         BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(BitcodeHeaderBytes + sizeof(uint)), (uint)bitcode.Length);
         bitcode.CopyTo(bytes, ProgramHeaderBytes);

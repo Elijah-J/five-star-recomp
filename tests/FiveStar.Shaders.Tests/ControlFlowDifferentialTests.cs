@@ -63,7 +63,7 @@ public sealed class ControlFlowDifferentialTests : IClassFixture<WarpFixture>
             folder = Path.Combine(output, stage);
         }
 
-        var runner = new DifferentialRunner(_fixture, folder);
+        var runner = new DifferentialRunner(_fixture, folder, backend: false);
         var sample = ProgramSample.Of(RealProgramTheoryAttribute.Folder!, ShaderStages.FromProfileName(stage)!.Value, first + count).Skip(first).ToList();
         var outcomes = new DifferentialOutcome[sample.Count];
         var report = new Lock();

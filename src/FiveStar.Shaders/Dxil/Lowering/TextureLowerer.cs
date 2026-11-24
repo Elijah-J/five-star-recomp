@@ -94,6 +94,65 @@ public sealed class TextureLowerer
             [texture.Handle, coordinates[0], coordinates[1], coordinates[LevelsField - 1], .. components, Module.Int8(mask)]);
     }
 
+    /// <summary>
+    /// An Interlocked call on a texel (<c>InterlockedMax(texture[uv], value[, original])</c>,
+    /// <c>InterlockedCompareExchange(texture[uv], compare, value, original)</c>).
+    /// </summary>
+    public RValue Atomic(SyntaxNode call, RValue target)
+    {
+        var element = call[0];
+        var texture = new TextureCall(_context, element, target);
+        var coordinates = Integers(Expressions.Lower(element[1]), texture.Shape.Coordinates);
+        var int32 = Module.Types.Int32;
+
+        if (call.Text is "InterlockedCompareExchange" or "InterlockedCompareStore")
+        {
+            var compare = Expressions.Lower(call[1], HlslType.Uint).Scalar;
+            var exchanged = Expressions.Lower(call[LocationArgument], HlslType.Uint).Scalar;
+            var old = texture.Ops.Overloaded(
+                DxOpCode.AtomicCompareExchange, "atomicCompareExchange", AttributeSet.NoUnwind, int32, int32,
+                texture.Handle, coordinates[0], coordinates[1], coordinates[LevelsField - 1], compare, exchanged);
+            WriteOriginal(call, AfterLocation, old);
+
+            return RValue.Void;
+        }
+
+        var argument = Expressions.Lower(call[1]);
+        var code = AtomicCode(call, argument.Type.Kind);
+        var value = _context.Convert.Convert(argument, HlslType.Uint).Scalar;
+        var original = texture.Ops.Overloaded(
+            DxOpCode.AtomicBinOp, "atomicBinOp", AttributeSet.NoUnwind, int32, int32,
+            texture.Handle, Module.Int32((uint)code), coordinates[0], coordinates[1], coordinates[LevelsField - 1], value);
+        WriteOriginal(call, LocationArgument, original);
+
+        return RValue.Void;
+    }
+
+    private void WriteOriginal(SyntaxNode call, int index, Value original)
+    {
+        if (call.Children.Count > index)
+        {
+            _context.Variables.Write(Expressions.Place(call[index]), RValue.Of(HlslType.Uint, original));
+        }
+    }
+
+    private static RawBufferLowerer.AtomicCode AtomicCode(SyntaxNode call, ScalarKind kind)
+    {
+        var signed = kind == ScalarKind.Int;
+
+        return call.Text switch
+        {
+            "InterlockedAdd" => RawBufferLowerer.AtomicCode.Add,
+            "InterlockedAnd" => RawBufferLowerer.AtomicCode.And,
+            "InterlockedOr" => RawBufferLowerer.AtomicCode.Or,
+            "InterlockedXor" => RawBufferLowerer.AtomicCode.Xor,
+            "InterlockedMin" => Choice.Of(signed, RawBufferLowerer.AtomicCode.IMin, RawBufferLowerer.AtomicCode.UMin),
+            "InterlockedMax" => Choice.Of(signed, RawBufferLowerer.AtomicCode.IMax, RawBufferLowerer.AtomicCode.UMax),
+            "InterlockedExchange" => RawBufferLowerer.AtomicCode.Exchange,
+            _ => throw SourceError.At(call, $"{call.Text} on a texture is not supported"),
+        };
+    }
+
     /// <summary>A texel load: the coordinates, then (when <paramref name="mipLast"/> is 1) the mip level.</summary>
     private RValue Load(TextureCall texture, RValue address, int mipLast)
     {
@@ -177,6 +236,7 @@ public sealed class TextureLowerer
         var channel = Math.Max(0, Array.IndexOf(Channels, name[prefix.Length..]));
         var sampler = Sampler(call[SamplerArgument]);
         var coordinates = Location(texture);
+
         var next = AfterLocation;
         Value? compareValue = null;
 

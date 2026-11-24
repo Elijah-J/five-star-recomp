@@ -6,6 +6,9 @@ namespace FiveStar.Shaders.Dxil.Hlsl;
 /// <summary>Parses expressions with C precedence: comma, assignment, conditional, binary levels, unary and casts, postfix.</summary>
 public sealed class ExpressionParser
 {
+    private const int AfterName = 2;
+    private const int AfterTemplate = 3;
+
     private static readonly string[][] Levels =
     [
         ["||"], ["&&"], ["|"], ["^"], ["&"], ["==", "!="], ["<", ">", "<=", ">="], ["<<", ">>"], ["+", "-"], ["*", "/", "%"],
@@ -107,6 +110,7 @@ public sealed class ExpressionParser
         var whenFalse = Assignment();
         var node = new SyntaxNode(SyntaxKind.Conditional, line);
         node.Children.Add(condition);
+
         node.Children.Add(whenTrue);
         node.Children.Add(whenFalse);
 
@@ -171,7 +175,7 @@ public sealed class ExpressionParser
             return false;
         }
 
-        var next = _tokens.Peek(2);
+        var next = _tokens.Peek(AfterName);
 
         return next.Is(")") || next.Is("<") || next.Is("[");
     }
@@ -324,7 +328,7 @@ public sealed class ExpressionParser
         var line = _tokens.Next().Line;
         var name = _tokens.Identifier();
 
-        if (_tokens.Current.Is("<") && _tokens.Peek(1).Kind == TokenKind.Identifier && _tokens.Peek(2).Is(">") && _tokens.Peek(3).Is("("))
+        if (_tokens.Current.Is("<") && _tokens.Peek(1).Kind == TokenKind.Identifier && _tokens.Peek(AfterName).Is(">") && _tokens.Peek(AfterTemplate).Is("("))
         {
             _tokens.Next();
             name = $"{name}<{_tokens.Next().Text}>";

@@ -123,6 +123,7 @@ public sealed class Purity
         var parameters = function.Children.Where(child => child.Kind == SyntaxKind.Parameter);
         var copiesOut = parameters.Any(parameter => parameter.HasModifier("out") || parameter.HasModifier("inout"));
         var pure = !copiesOut && function.Children.All(child => child.Kind == SyntaxKind.Parameter || Check(child, locals));
+
         _functions[function] = pure;
 
         return pure;

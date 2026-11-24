@@ -26,6 +26,7 @@ public sealed class IntrinsicLowerer
         _math.Register(_handlers);
         _wave.Register(_handlers);
         _handlers["NonUniformResourceIndex"] = NonUniform;
+
         _handlers["discard"] = _ => Discard();
     }
 

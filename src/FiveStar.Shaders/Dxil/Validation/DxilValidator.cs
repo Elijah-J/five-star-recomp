@@ -89,6 +89,7 @@ public sealed unsafe class DxilValidator : IDisposable
         table[1] = (nint)(delegate* unmanaged[Stdcall]<nint*, uint>)&Reference;
         table[ReleaseSlot] = (nint)(delegate* unmanaged[Stdcall]<nint*, uint>)&Reference;
         table[PointerSlot] = (nint)(delegate* unmanaged[Stdcall]<nint*, nint>)&BufferPointer;
+
         table[SizeSlot] = (nint)(delegate* unmanaged[Stdcall]<nint*, nint>)&BufferSize;
         blob[0] = (nint)table;
         blob[1] = (nint)data;

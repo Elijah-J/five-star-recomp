@@ -86,12 +86,14 @@ public sealed class FunctionInliner
         var parameterVariables = Bind(parameters, arguments);
         var returnType = _context.Types.Resolve(function.Type!, _ => throw SourceError.At(function, "an array return type is not supported"));
         var returnVariable = _context.Variables.DeclareSlots(function.Text + ".return", returnType);
+
         var returnCount = returnType.Shape == TypeShape.Void ? 0 : returnType.Count;
         var returnSlots = Enumerable.Range(returnVariable.FirstSlot, returnCount).ToList();
         var exit = _context.Flow.NewBlock();
         var start = _context.Flow.Current;
         _context.Ssa.BeginRegion();
         _context.Flow.PushFrame(new FunctionFrame(exit, returnType, returnSlots));
+
         _context.Statements.LowerBlockContents(body);
         _context.Flow.Jump(exit);
         _context.Flow.PopFrame();

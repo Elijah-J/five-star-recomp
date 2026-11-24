@@ -23,34 +23,34 @@ public sealed class IrBuilder
 
     public Value Binary(BinaryOp op, Value left, Value right)
     {
-        return Add(new Instruction(Opcode.Binary, left.Type, Block) { Code = (int)op }, left, right);
+        return Append(new Instruction(Opcode.Binary, left.Type, Block) { Code = (int)op }, left, right);
     }
 
     public Value Cast(CastOp op, Value value, IrType to)
     {
-        return Add(new Instruction(Opcode.Cast, to, Block) { Code = (int)op }, value);
+        return Append(new Instruction(Opcode.Cast, to, Block) { Code = (int)op }, value);
     }
 
     public Value Compare(Predicate predicate, Value left, Value right)
     {
-        return Add(new Instruction(Opcode.Compare, Types.Bool, Block) { Code = (int)predicate }, left, right);
+        return Append(new Instruction(Opcode.Compare, Types.Bool, Block) { Code = (int)predicate }, left, right);
     }
 
     public Value Select(Value condition, Value whenTrue, Value whenFalse)
     {
-        return Add(new Instruction(Opcode.Select, whenTrue.Type, Block), condition, whenTrue, whenFalse);
+        return Append(new Instruction(Opcode.Select, whenTrue.Type, Block), condition, whenTrue, whenFalse);
     }
 
     public Value Extract(Value aggregate, int index)
     {
         var type = aggregate.Type.Kind == IrTypeKind.Array ? aggregate.Type.Element! : aggregate.Type.Members[index];
 
-        return Add(new Instruction(Opcode.ExtractValue, type, Block) { Code = index }, aggregate);
+        return Append(new Instruction(Opcode.ExtractValue, type, Block) { Code = index }, aggregate);
     }
 
     public Value Call(IrFunction function, params Value[] arguments)
     {
-        return Add(new Instruction(Opcode.Call, function.FunctionType.Element!, Block) { Callee = function }, arguments);
+        return Append(new Instruction(Opcode.Call, function.FunctionType.Element!, Block) { Callee = function }, arguments);
     }
 
     /// <summary>
@@ -86,29 +86,29 @@ public sealed class IrBuilder
         var array = pointer.Type.Element!;
         var type = Types.Pointer(array.Element!, pointer.Type.AddressSpace);
 
-        return Add(new Instruction(Opcode.GetElementPtr, type, Block) { SourceType = array }, pointer, Module.Int32(0), index);
+        return Append(new Instruction(Opcode.GetElementPtr, type, Block) { SourceType = array }, pointer, Module.Int32(0), index);
     }
 
     public Value Load(Value pointer)
     {
-        return Add(new Instruction(Opcode.Load, pointer.Type.Element!, Block), pointer);
+        return Append(new Instruction(Opcode.Load, pointer.Type.Element!, Block), pointer);
     }
 
     public void Store(Value pointer, Value value)
     {
-        Add(new Instruction(Opcode.Store, Types.Void, Block), pointer, value);
+        Append(new Instruction(Opcode.Store, Types.Void, Block), pointer, value);
     }
 
     public Value AtomicRmw(AtomicOp op, Value pointer, Value value)
     {
-        return Add(new Instruction(Opcode.AtomicRmw, value.Type, Block) { Code = (int)op }, pointer, value);
+        return Append(new Instruction(Opcode.AtomicRmw, value.Type, Block) { Code = (int)op }, pointer, value);
     }
 
     /// <summary>The old value of a compare-exchange.</summary>
     public Value CompareExchange(Value pointer, Value expected, Value replacement)
     {
         var pair = Types.Struct(null, [replacement.Type, Types.Bool]);
-        var result = Add(new Instruction(Opcode.CompareExchange, pair, Block), pointer, expected, replacement);
+        var result = Append(new Instruction(Opcode.CompareExchange, pair, Block), pointer, expected, replacement);
 
         return Extract(result, 0);
     }
@@ -159,7 +159,7 @@ public sealed class IrBuilder
         Block.Terminator = new Instruction(Opcode.Return, Types.Void, Block);
     }
 
-    private Instruction Add(Instruction instruction, params Value[] operands)
+    private Instruction Append(Instruction instruction, params Value[] operands)
     {
         instruction.Operands.AddRange(operands);
         Block.Body.Add(instruction);

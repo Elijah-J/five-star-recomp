@@ -65,6 +65,7 @@ public sealed class ModuleWriter
         _out.Record((int)ModuleCode.Version, [1]);
         WriteAttributes();
         WriteTypes();
+
         _out.TextRecord((int)ModuleCode.Triple, [], Triple);
         _out.TextRecord((int)ModuleCode.DataLayout, [], DataLayout);
 
@@ -74,12 +75,14 @@ public sealed class ModuleWriter
         var referenced = body.Referenced();
         _globals = [.. _module.Globals.Where(referenced.Contains)];
         _functions = [.. _module.Functions.Where(function => function == entry || referenced.Contains(function))];
+
         NumberModuleValues();
         WriteGlobals();
         WriteFunctionDeclarations();
         WriteConstants();
         body.NumberInstructions(_moduleValues);
         WriteMetadata();
+
         WriteSymbols();
         body.Write();
         _out.Exit();

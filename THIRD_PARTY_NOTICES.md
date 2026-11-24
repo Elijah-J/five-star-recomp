@@ -37,6 +37,13 @@ Its crash in the transient-pool walk (0x144e9b54a, from stale copy-backs of shad
 object layout (state written up to +0x564) were leads for docs/d3d12x-shim.md, checked against our shim and the
 executable. No code was copied.
 
+Its DXIL emitter (`crates/victory-shader/src/emit/`, revision `ffe310eb2098e52169f4c44db5ffdabf43a72622`) showed that D3D12 accepts a container whose
+digest the producer computes itself, with no dxil.dll signing. The DXIL backend (`src/FiveStar.Shaders/Dxil`,
+docs/dxil-backend.md) learned these facts from it: the modified MD5 of the container digest (the bit count first in
+the last block, `2 × bytes + 1` last), the unabbreviated LLVM 3.7 records DXIL accepts, the attribute groups and
+metadata kinds a module declares, the PSV0 runtime-info layout of validator 1.6, and its note that the AMD driver
+wants a loop's exiting block to be its latch (docs/dxil-backend.md lists it as open). The backend's design (a compiler for the translator's HLSL, SSA built while lowering) and its code are
+our own.
 ## GTA6-Asset-Info
 
 https://github.com/TrinitronClient/GTA6-Asset-Info, revision `0f649eba78cdd6e053d7aefd333fb6e3abe9739a`, GPL-3.0.

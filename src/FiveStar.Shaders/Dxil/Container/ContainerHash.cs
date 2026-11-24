@@ -20,6 +20,8 @@ public static class ContainerHash
     private const int Rounds = 64;
     private const int RoundsPerStep = 16;
     private const int BitsPerByte = 8;
+    private const int StateC = 2;
+    private const int StateD = 3;
     private const int StepTwo = 2;
     private const byte PaddingByte = 0x80;
     private const int MultiplierTwo = 5;
@@ -97,7 +99,7 @@ public static class ContainerHash
             words[index] = BinaryPrimitives.ReadUInt32LittleEndian(block[(index * sizeof(uint))..]);
         }
 
-        var (a, b, c, d) = (state[0], state[1], state[2], state[3]);
+        var (a, b, c, d) = (state[0], state[1], state[StateC], state[StateD]);
 
         for (var round = 0; round < Rounds; round++)
         {
@@ -109,8 +111,8 @@ public static class ContainerHash
 
         state[0] += a;
         state[1] += b;
-        state[2] += c;
-        state[3] += d;
+        state[StateC] += c;
+        state[StateD] += d;
     }
 
     private static (uint Mix, int Word) Mix(int round, uint b, uint c, uint d)

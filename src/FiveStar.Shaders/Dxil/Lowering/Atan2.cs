@@ -30,6 +30,7 @@ public sealed class Atan2
         var xNegative = _builder.Compare(Predicate.FloatOrderedLess, x, zero);
         var xZero = _builder.Compare(Predicate.FloatOrderedEqual, x, zero);
         var yNonNegative = _builder.Compare(Predicate.FloatOrderedGreaterOrEqual, y, zero);
+
         var yNegative = _builder.Compare(Predicate.FloatOrderedLess, y, zero);
         var result = atan;
         result = _builder.Select(_builder.Binary(BinaryOp.And, xNegative, yNonNegative), _builder.Binary(BinaryOp.Add, atan, Constant(type, Math.PI)), result);

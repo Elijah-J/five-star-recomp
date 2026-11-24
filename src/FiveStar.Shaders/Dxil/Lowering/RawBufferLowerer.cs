@@ -14,6 +14,7 @@ namespace FiveStar.Shaders.Dxil.Lowering;
 public sealed class RawBufferLowerer
 {
     private const int MaxDwords = 4;
+    private const int ValueArgument = 2;
     private const string DimensionsClass = "getDimensions";
 
     private static readonly Dictionary<string, AtomicCode> Atomics = new(StringComparer.Ordinal)
@@ -121,14 +122,14 @@ public sealed class RawBufferLowerer
     private void Store(SyntaxNode call, Value handle, int count)
     {
         var offset = Expressions.Index(call[1]);
-        var value = Expressions.Lower(call[2], HlslType.Vector(ScalarKind.Uint, count));
+        var value = Expressions.Lower(call[ValueArgument], HlslType.Vector(ScalarKind.Uint, count));
         _context.Ops.RawStore(handle, offset, value.Components);
     }
 
     private void Atomic(SyntaxNode call, Value handle, AtomicCode code)
     {
         var offset = Expressions.Index(call[1]);
-        var argument = Expressions.Lower(call[2]);
+        var argument = Expressions.Lower(call[ValueArgument]);
 
         if (argument.Type.Kind == ScalarKind.Int && code is AtomicCode.UMin or AtomicCode.UMax)
         {
@@ -150,7 +151,7 @@ public sealed class RawBufferLowerer
     private void CompareExchange(SyntaxNode call, Value handle)
     {
         var offset = Expressions.Index(call[1]);
-        var compare = Expressions.Lower(call[2], HlslType.Uint).Scalar;
+        var compare = Expressions.Lower(call[ValueArgument], HlslType.Uint).Scalar;
         var value = Expressions.Lower(call[MaxDwords - 1], HlslType.Uint).Scalar;
         var undefined = Module.Undefined(Module.Types.Int32);
         var original = _context.Ops.Overloaded(

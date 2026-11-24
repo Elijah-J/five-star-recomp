@@ -29,32 +29,33 @@ public static class PsvWriter
         BinaryPrimitives.WriteUInt32LittleEndian(info.AsSpan(MinimumWaveOffset), minimum);
         BinaryPrimitives.WriteUInt32LittleEndian(info.AsSpan(MaximumWaveOffset), maximum);
         info[StageOffset] = (byte)kind;
+
         BinaryPrimitives.WriteUInt32LittleEndian(info.AsSpan(ThreadsOffset), (uint)threads.X);
         BinaryPrimitives.WriteUInt32LittleEndian(info.AsSpan(ThreadsOffset + sizeof(uint)), (uint)threads.Y);
         BinaryPrimitives.WriteUInt32LittleEndian(info.AsSpan(ThreadsZOffset), (uint)threads.Z);
 
         var output = new List<byte>();
-        Add(output, RuntimeInfoBytes);
+        AppendWords(output, RuntimeInfoBytes);
         output.AddRange(info);
-        Add(output, (uint)bindings.Count);
+        AppendWords(output, (uint)bindings.Count);
 
         if (bindings.Count > 0)
         {
-            Add(output, BindingBytes);
+            AppendWords(output, BindingBytes);
 
             foreach (var binding in bindings)
             {
-                Add(output, binding.Type, binding.Space, binding.Register, binding.Register, binding.Kind, 0);
+                AppendWords(output, binding.Type, binding.Space, binding.Register, binding.Register, binding.Kind, 0);
             }
         }
 
-        Add(output, EmptyStringTable, 0);
-        Add(output, 0);
+        AppendWords(output, EmptyStringTable, 0);
+        AppendWords(output, 0);
 
         return [.. output];
     }
 
-    private static void Add(List<byte> output, params uint[] values)
+    private static void AppendWords(List<byte> output, params uint[] values)
     {
         Span<byte> word = stackalloc byte[sizeof(uint)];
 

@@ -47,6 +47,7 @@ public sealed class StatementParser
     {
         var attributes = Attributes();
         var statement = Unattributed();
+
         if (attributes.Count > 0)
         {
             statement.Attributes.AddRange(attributes);
@@ -297,6 +298,7 @@ public sealed class StatementParser
         node.Children.Add(Optional(";"));
         _tokens.Expect(";");
         node.Children.Add(Optional(")"));
+
         _tokens.Expect(")");
         node.Children.Add(Statement());
 

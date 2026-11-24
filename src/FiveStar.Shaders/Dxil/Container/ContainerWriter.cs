@@ -25,6 +25,7 @@ public static class ContainerWriter
         "DXBC"u8.CopyTo(bytes);
         BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(HashedFrom), MajorVersion);
         BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(SizeOffset), (uint)total);
+
         BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(PartCountOffset), (uint)parts.Count);
         var offset = table;
 

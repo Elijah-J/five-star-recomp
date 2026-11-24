@@ -58,7 +58,9 @@ public sealed class DxilModule
 
     public Constant Bool(bool value)
     {
-        return Int(Types.Bool, value ? 1 : 0);
+        long bit = value ? 1 : 0;
+
+        return Int(Types.Bool, bit);
     }
 
     public Constant Float(float value)

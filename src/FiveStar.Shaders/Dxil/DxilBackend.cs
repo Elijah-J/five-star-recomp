@@ -27,6 +27,12 @@ public static class DxilBackend
     /// <summary>The DXIL container of <paramref name="hlsl"/>, compiled for <paramref name="profile"/>.</summary>
     public static byte[] Compile(string hlsl, string profile)
     {
+        return Compile(hlsl, profile, RuntimeIncludes.Read);
+    }
+
+    /// <summary>The same with included files found by <paramref name="includes"/> (by name; null when missing).</summary>
+    public static byte[] Compile(string hlsl, string profile, Func<string, string?> includes)
+    {
         if (!Supports(profile))
         {
             throw new DxilBackendException($"profile {profile} is not supported");
@@ -39,7 +45,7 @@ public static class DxilBackend
             {
                 try
                 {
-                    result = CompileCompute(hlsl);
+                    result = CompileCompute(hlsl, includes);
                 }
                 catch (Exception exception)
                 {
@@ -63,9 +69,9 @@ public static class DxilBackend
         return result!;
     }
 
-    private static byte[] CompileCompute(string hlsl)
+    private static byte[] CompileCompute(string hlsl, Func<string, string?> includes)
     {
-        var tokens = Preprocessor.Run(hlsl, RuntimeIncludes.Read);
+        var tokens = Preprocessor.Run(hlsl, includes);
         var declarations = Parser.Parse(tokens);
         var (module, main, description) = ShaderLowering.Compute(declarations);
 

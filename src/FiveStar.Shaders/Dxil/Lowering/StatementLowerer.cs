@@ -12,6 +12,10 @@ namespace FiveStar.Shaders.Dxil.Lowering;
 /// </summary>
 public sealed class StatementLowerer
 {
+    private const int ElseBranch = 2;
+    private const int ForStep = 2;
+    private const int ForBody = 3;
+
     private readonly LoweringContext _context;
 
     public StatementLowerer(LoweringContext context)
@@ -179,7 +183,7 @@ public sealed class StatementLowerer
         var merge = Flow.NewBlock();
         var whenFalse = merge;
 
-        if (statement.Children.Count > 2)
+        if (statement.Children.Count > ElseBranch)
         {
             whenFalse = Flow.NewBlock();
         }
@@ -190,13 +194,14 @@ public sealed class StatementLowerer
         Flow.Seal(whenTrue);
         Flow.Enter(whenTrue);
         Lower(statement[1]);
+
         Flow.Jump(merge);
 
-        if (statement.Children.Count > 2)
+        if (statement.Children.Count > ElseBranch)
         {
             Flow.Seal(whenFalse);
             Flow.Enter(whenFalse);
-            Lower(statement[2]);
+            Lower(statement[ElseBranch]);
             Flow.Jump(merge);
         }
 
@@ -209,14 +214,14 @@ public sealed class StatementLowerer
     {
         _context.Scope.Push();
         Lower(statement[0]);
-        SyntaxNode? step = statement[2];
+        SyntaxNode? step = statement[ForStep];
 
         if (step.Kind == SyntaxKind.Empty)
         {
             step = null;
         }
 
-        Loop(statement[1], statement[3], step);
+        Loop(statement[1], statement[ForBody], step);
         _context.Scope.Pop();
     }
 
@@ -237,6 +242,7 @@ public sealed class StatementLowerer
         var exit = Flow.NewBlock();
         Flow.Jump(header);
         Flow.Enter(header);
+
         _context.Ssa.BeginRegion();
 
         if (condition.Kind == SyntaxKind.Empty)
@@ -254,6 +260,7 @@ public sealed class StatementLowerer
         Lower(body);
         Flow.PopLoop();
         Flow.Jump(next);
+
         Flow.Seal(next);
         Flow.Enter(next);
 
@@ -277,12 +284,14 @@ public sealed class StatementLowerer
         Flow.Jump(body);
         Flow.Enter(body);
         _context.Ssa.BeginRegion();
+
         Flow.PushLoop(exit, test);
         Lower(statement[0]);
         Flow.PopLoop();
         Flow.Jump(test);
         Flow.Seal(test);
         Flow.Enter(test);
+
         Flow.Branch(Expressions.Condition(statement[1]), body, exit);
         Flow.Seal(body);
         _context.Ssa.EndRegion(body, exit);
@@ -298,6 +307,7 @@ public sealed class StatementLowerer
         var cases = statement.Children.Skip(1).ToList();
         var blocks = cases.Select(_ => Flow.NewBlock()).ToList();
         var exit = Flow.NewBlock();
+
         var fallback = exit;
         var labels = new List<(Constant Value, BasicBlock Target)>();
 
@@ -323,6 +333,7 @@ public sealed class StatementLowerer
         Flow.PushLoop(exit, null);
         Cases(cases, blocks, exit);
         Flow.PopLoop();
+
         _context.Ssa.EndRegion(start, exit);
         Flow.Seal(exit);
         Flow.Enter(exit);

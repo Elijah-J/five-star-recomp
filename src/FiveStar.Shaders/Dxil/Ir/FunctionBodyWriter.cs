@@ -12,6 +12,7 @@ namespace FiveStar.Shaders.Dxil.Ir;
 internal sealed class FunctionBodyWriter
 {
     private const int Width = 4;
+    private const int ThirdOperand = 2;
 
     private readonly BitstreamWriter _out;
     private readonly IrFunction _function;
@@ -217,7 +218,7 @@ internal sealed class FunctionBodyWriter
                 _out.Record((int)FunctionCode.Compare, [Relative(operands[0]), Relative(operands[1]), (ulong)instruction.Code]);
                 break;
             case Opcode.Select:
-                _out.Record((int)FunctionCode.Select, [Relative(operands[1]), Relative(operands[2]), Relative(operands[0])]);
+                _out.Record((int)FunctionCode.Select, [Relative(operands[1]), Relative(operands[ThirdOperand]), Relative(operands[0])]);
                 break;
             case Opcode.ExtractValue:
                 _out.Record((int)FunctionCode.ExtractValue, [Relative(operands[0]), (ulong)instruction.Code]);
@@ -244,7 +245,7 @@ internal sealed class FunctionBodyWriter
                 _out.Record((int)FunctionCode.AtomicRmw, [Relative(operands[0]), Relative(operands[1]), (ulong)instruction.Code, 0, ModuleWriter.Records.Ordering, ModuleWriter.Records.Scope]);
                 break;
             case Opcode.CompareExchange:
-                _out.Record((int)FunctionCode.CompareExchange, [Relative(operands[0]), Relative(operands[1]), Relative(operands[2]), 0, ModuleWriter.Records.Ordering, ModuleWriter.Records.Scope, ModuleWriter.Records.Ordering, 0]);
+                _out.Record((int)FunctionCode.CompareExchange, [Relative(operands[0]), Relative(operands[1]), Relative(operands[ThirdOperand]), 0, ModuleWriter.Records.Ordering, ModuleWriter.Records.Scope, ModuleWriter.Records.Ordering, 0]);
                 break;
             case Opcode.GetElementPtr:
                 _out.Record((int)FunctionCode.GetElementPtr, [1, (ulong)instruction.SourceType!.Id, .. operands.Select(Relative)]);

@@ -63,6 +63,7 @@ public sealed class Parser
         {
             var function = Function(type, line);
             SyntaxNode.AddModifiers(function, modifiers);
+
             if (attributes.Count > 0)
             {
                 function.Attributes.AddRange(attributes);
@@ -163,6 +164,7 @@ public sealed class Parser
         var name = _tokens.Identifier();
         var parameter = new SyntaxNode(SyntaxKind.Parameter, line) { Text = name, Type = type.WithDimensions(_expressions.Dimensions()) };
         SyntaxNode.AddModifiers(parameter, modifiers);
+
         parameter.Semantic = _statements.Semantic();
 
         if (_tokens.Accept("="))

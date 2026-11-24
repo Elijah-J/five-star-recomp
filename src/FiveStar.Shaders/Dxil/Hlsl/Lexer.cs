@@ -10,6 +10,7 @@ public sealed class Lexer
 {
     private const int HexBase = 16;
     private const string HexPrefix = "0x";
+    private const int ExponentDigit = 2;
 
     private static readonly string[] ThreeCharacter = [">>=", "<<="];
 
@@ -234,7 +235,7 @@ public sealed class Lexer
                 real = true;
                 _position++;
             }
-            else if ((character is 'e' or 'E') && (char.IsDigit(Peek(1)) || ((Peek(1) is '+' or '-') && char.IsDigit(Peek(2)))))
+            else if ((character is 'e' or 'E') && (char.IsDigit(Peek(1)) || ((Peek(1) is '+' or '-') && char.IsDigit(Peek(ExponentDigit)))))
             {
                 real = true;
                 _position += sizeof(char);

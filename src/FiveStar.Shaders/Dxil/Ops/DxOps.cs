@@ -32,6 +32,7 @@ public sealed class DxOps
         Properties = types.Struct("dx.types.ResourceProperties", [types.Int32, types.Int32]);
         Binding = types.Struct("dx.types.ResBind", [types.Int32, types.Int32, types.Int32, types.Int8]);
         CbufferResult = types.Struct("dx.types.CBufRet.i32", [types.Int32, types.Int32, types.Int32, types.Int32]);
+
         Int32Result = types.Struct("dx.types.ResRet.i32", [types.Int32, types.Int32, types.Int32, types.Int32, types.Int32]);
         FourInt32 = types.Struct("dx.types.fouri32", [types.Int32, types.Int32, types.Int32, types.Int32]);
         Dimensions = types.Struct("dx.types.Dimensions", [types.Int32, types.Int32, types.Int32, types.Int32]);
@@ -149,6 +150,6 @@ public sealed class DxOps
         var mask = (byte)((1 << values.Count) - 1 & FullMask);
         Overloaded(
             DxOpCode.RawBufferStore, "rawBufferStore", AttributeSet.NoUnwind, Types.Int32, Types.Void,
-            handle, offset, undefined, data[0], data[1], data[2], data[3], Module.Int8(mask), Module.Int32(DwordAlignment));
+            [handle, offset, undefined, .. data, Module.Int8(mask), Module.Int32(DwordAlignment)]);
     }
 }

@@ -13,6 +13,8 @@ namespace FiveStar.Shaders.Dxil.Lowering;
 /// </summary>
 public sealed class ExpressionLowerer
 {
+    private const int FalseArm = 2;
+
     private readonly LoweringContext _context;
     private readonly Operators _operators;
     private readonly Purity _purity;
@@ -464,6 +466,7 @@ public sealed class ExpressionLowerer
         _context.Ssa.Write(slot, Builder.Block, Condition(node[1]));
         flow.Jump(merge);
         _context.Ssa.EndRegion(start, merge);
+
         flow.Seal(merge);
         flow.Enter(merge);
 
@@ -528,9 +531,9 @@ public sealed class ExpressionLowerer
     {
         var condition = Lower(node[0]);
 
-        if (condition.Type.Count > 1 || (_purity.IsPure(node[1]) && _purity.IsPure(node[2])))
+        if (condition.Type.Count > 1 || (_purity.IsPure(node[1]) && _purity.IsPure(node[FalseArm])))
         {
-            return Select(condition, Lower(node[1]), Lower(node[2]));
+            return Select(condition, Lower(node[1]), Lower(node[FalseArm]));
         }
 
         return BranchingConditional(_context.Convert.Convert(condition, HlslType.Bool).Scalar, node);
@@ -601,12 +604,14 @@ public sealed class ExpressionLowerer
         flow.Branch(condition, whenTrue, whenFalse);
         _context.Ssa.BeginRegion();
         flow.Seal(whenTrue);
+
         flow.Seal(whenFalse);
         flow.Enter(whenTrue);
         var first = Lower(node[1]);
         var firstEnd = flow.Current;
         flow.Enter(whenFalse);
-        var second = Lower(node[2]);
+        var second = Lower(node[FalseArm]);
+
         var secondEnd = flow.Current;
         var type = CommonType(first.Type, second.Type);
         var slots = Variables.DeclareSlots("?:", type);

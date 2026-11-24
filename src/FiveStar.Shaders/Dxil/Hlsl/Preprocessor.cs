@@ -11,6 +11,7 @@ namespace FiveStar.Shaders.Dxil.Hlsl;
 public sealed class Preprocessor
 {
     private const int MaxIncludeDepth = 16;
+    private const int ParenthesizedName = 2;
 
     private readonly Func<string, string?> _includes;
     private readonly Dictionary<string, List<Token>> _macros = new(StringComparer.Ordinal);
@@ -214,7 +215,7 @@ public sealed class Preprocessor
             if (condition[index].Is("defined"))
             {
                 var parenthesized = index + 1 < condition.Count && condition[index + 1].Is("(");
-                var nameIndex = parenthesized ? index + 2 : index + 1;
+                var nameIndex = parenthesized ? index + ParenthesizedName : index + 1;
                 ulong defined = _macros.ContainsKey(condition[nameIndex].Text) ? 1UL : 0UL;
                 expanded.Add(new Token(TokenKind.Integer, "defined", number, false) { Integer = defined });
                 index = parenthesized ? nameIndex + 1 : nameIndex;

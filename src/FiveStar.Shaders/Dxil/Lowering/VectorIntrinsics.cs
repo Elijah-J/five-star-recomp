@@ -32,6 +32,7 @@ public sealed class VectorIntrinsics
         handlers["normalize"] = Normalize;
         handlers["distance"] = Distance;
         handlers["any"] = call => Reduce(call, BinaryOp.Or);
+
         handlers["all"] = call => Reduce(call, BinaryOp.And);
     }
 

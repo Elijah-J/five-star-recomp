@@ -23,6 +23,7 @@ public static class ShaderLowering
         var placeholder = module.NewBlock();
         var context = new LoweringContext(module, placeholder);
         var entry = context.Ssa.NewBlock();
+
         context.Ssa.Seal(entry);
         context.Builder.Block = entry;
         context.EntryBlock = entry;
@@ -39,6 +40,7 @@ public static class ShaderLowering
         context.Scope.Push();
         computeEntry.BindParameters(source);
         Body(context, source);
+
         context.Scope.Pop();
 
         context.Ssa.Finish();
@@ -67,6 +69,7 @@ public static class ShaderLowering
         flow.PushFrame(new FunctionFrame(exit, HlslType.Void, []));
         context.Statements.LowerBlockContents(body);
         flow.Jump(exit);
+
         flow.PopFrame();
         flow.Seal(exit);
         flow.Enter(exit);

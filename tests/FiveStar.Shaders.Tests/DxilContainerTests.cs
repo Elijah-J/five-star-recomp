@@ -53,12 +53,14 @@ public sealed class DxilContainerTests : IClassFixture<WarpFixture>
         var entry = module.NewBlock();
         main.Blocks.Add(entry);
         var builder = new IrBuilder(module, entry);
+
         var ops = new DxOps(builder);
         var thread = ops.ThreadIdComponent(DxOpCode.ThreadId, "threadId", 0);
         var value = builder.Binary(BinaryOp.Add, builder.Binary(BinaryOp.Mul, thread, module.Int32(3)), module.Int32(7));
         var handle = ops.HeapHandle(module.Int32(OutputSlot), sampler: false, DxOps.RawBufferKind | DxOps.UavBit, 0);
         ops.RawStore(handle, builder.Binary(BinaryOp.Shl, thread, module.Int32(2)), [value]);
         builder.Return();
+
         var flags = ShaderFlagBits.ResourceDescriptorHeapIndexing;
 
         return ShaderContainer.Write(module, main, new ShaderDescription((Threads, 1, 1), null, flags, 0));
