@@ -91,7 +91,7 @@ With an empty save folder the game shows a black screen that waits for a press (
 (default Off), brightness calibration, a controls notice, the legal and photosensitivity screens, and a privacy
 policy and terms of service screen, before it loads story mode (a spinner on dark blue). Keys of the
 keyboard-and-mouse gamepad: A (Space) confirms, a short press too; arrows move the focus. The photosensitivity item
-keeps the focus for about 15 s. The two terms items are check boxes that A toggles (scrolling their text with the right
+keeps the focus for 4 s. The two terms items are check boxes that A toggles (scrolling their text with the right
 stick, the mouse, is not required); with both checked Confirm is enabled. The terms screen drops the first press it gets. While pipelines compile the game can miss a
 0.2 s press, and an arrow held 0.5 s or longer repeats. With the input script followed while
 running ([loader.md](loader.md#running-the-executable)) these can be answered from a second shell;

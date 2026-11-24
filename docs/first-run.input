@@ -8,15 +8,15 @@
 # pipelines compile the game can miss 0.2 s presses, and from about 0.5 s a held arrow repeats.
 #
 # Black "press a button" screen, logos, intro art and the option screens (minimap, text size, the Off option,
-# brightness, controls notice): a Space tap every 3 s until the legal screen shows. A tap does nothing on the legal
+# brightness, controls notice): a Space tap every 1.5 s until the legal screen shows. A tap does nothing on the legal
 # screen while its Copyright item has the focus.
-0 Space hold 0.3 repeat 400 every 3
+0 Space hold 0.3 repeat 800 every 1.5
 
-# Legal notices, focus on Copyright: Down to the photosensitivity warning, which keeps the focus for about 15 s, then
-# Down until Next has the focus.
+# Legal notices, focus on Copyright: Down to the photosensitivity warning, which keeps the focus for 4 s, then
+# Down every 1.5 s until Next has the focus.
 screen legal
 1 Down hold 0.3
-+15 Down hold 0.3 repeat 10 every 3
++4.5 Down hold 0.3 repeat 20 every 1.5
 
 # Legal notices, focus on Next: Space until the terms screen shows (the first press after the focus moved can be
 # dropped).
@@ -26,11 +26,11 @@ screen legal-next
 # Privacy policy and terms of service: two check boxes that Space toggles, then Confirm. The policy text scrolls by
 # itself, so the screen allows 100 changed cells.
 screen terms 100
-2 Space hold 0.3
-+1 Down hold 0.3
-+1 Space hold 0.3
-+1 Down hold 0.3
-+1 Space hold 0.3
+1 Space hold 0.3
++0.8 Down hold 0.3
++0.8 Space hold 0.3
++0.8 Down hold 0.3
++0.8 Space hold 0.3
 
 # The story load (a spinner on dark blue): nothing to press, the log names the time.
 screen story-load
