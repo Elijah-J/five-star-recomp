@@ -628,7 +628,12 @@ E_INVALIDARG on a compute list even on a fresh allocator (the game then breaks a
 had failed on a graphics state in a compute-list barrier, see Spare allocators under
 [Game memory on the GPU](#game-memory-on-the-gpu); now avoided), once a silent end at 115 of 123 GB of commit (debug layer on, cold pipeline cache), once an access violation at 0x144e9b4b2: the game's
 transient-memory allocator (0x140188430 on context +0x12780, block from 0x14005c280) walks a list at block +0x48 whose
-nodes hold garbage (0xa, 0x200000009). Boot 2 had the same fault after its GPU hang. The loops' inputs are wrong on
+nodes hold garbage (0xa, 0x200000009). Boot 2 had the same fault after its GPU hang. The nodes live inside the
+pool's blocks, which the GPU can also write through the address map; `fivestar-loader --watch-transient`
+([debugging.md](debugging.md#transient-pool-watch)) logs the first bad node and the root descriptors that pointed
+into its block. VIctory (a GPL-3.0 port) met a crash in the same function (0x144e9b54a) from copying shader-written
+buffers back over the game's newer CPU writes; the shim makes no such copy (game memory is the desktop buffer), and
+fence cells follow the desktop completed value, so neither cause applies here as such. The loops' inputs are wrong on
 the PC, and something writes over CPU data in title memory; both were before the root-descriptor address map.
 
 The game's five command signatures are DRAW (stride 16), DRAW_INDEXED (20), 0x69, DISPATCH and DISPATCH_MESH (12

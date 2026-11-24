@@ -14,6 +14,13 @@ game's executable or shaders before use (docs/d3d12x-shim.md, docs/raytracing.md
 needs the four Zen 2 instruction families emulated was the lead for docs/cpu.md; the census and the emulation are our
 own. No code was copied.
 
+## VIctory
+
+https://github.com/marvisak/victory, revision `ffe310eb2098e52169f4c44db5ffdabf43a72622`, GPL-3.0-or-later. Its
+crash in the transient-pool walk (0x144e9b54a, from stale copy-backs of shader-written memory) and its command-list
+object layout (state written up to +0x564) were leads for docs/d3d12x-shim.md, checked against our shim and the
+executable. No code was copied.
+
 ## GTA6-Asset-Info
 
 https://github.com/TrinitronClient/GTA6-Asset-Info, revision `0f649eba78cdd6e053d7aefd333fb6e3abe9739a`, GPL-3.0.
