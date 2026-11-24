@@ -97,7 +97,9 @@ work that wrote the node to that window. Each marked draw, dispatch and ExecuteI
 searched for dword pairs whose 48-bit value reaches into the pool (a root descriptor's address, or a V#'s base with
 its stride and record count in the next dwords); a ring keeps 65,536 of them with the operation and its pipeline, and
 the report lists those of the window's operations that reach the corrupted block, then the newest of any operation.
-Descriptor tables are not searched.
+Buffer UAVs in descriptor tables count too: each UAV's game range is kept by the desktop index its record names,
+and a user dword that points at the window's view records is read as a table whose first 16 records are checked;
+their entries show the record's words as the program reads them (desktop index, stride, num_records, OOB_SELECT).
 
 ## Hang watchdog
 

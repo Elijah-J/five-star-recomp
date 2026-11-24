@@ -4,6 +4,7 @@
 using System.Runtime.InteropServices;
 using FiveStar.Loader.Native;
 using FiveStar.Loader.Shims.D3D12X.Binding;
+using FiveStar.Loader.Shims.D3D12X.DebugLayer;
 using FiveStar.Loader.Shims.D3D12X.Resources;
 
 namespace FiveStar.Loader.Shims.D3D12X;
@@ -144,8 +145,35 @@ internal static unsafe class XboxDescriptorMethods
         }
 
         desktop = BufferViewRanges.Fit(resource, desktop, description, copy, true, out void* fitted);
-        var destination = D3D12X.DescriptorHeaps.Destination(handle, BufferRecords.UnorderedAccess(description));
+        var record = BufferRecords.UnorderedAccess(description);
+        var destination = D3D12X.DescriptorHeaps.Destination(handle, record);
+
+        if (TransientPoolViews.Enabled)
+        {
+            NoteUnorderedAccess(resource, description, handle, record);
+        }
+
         create(inner, desktop, objects.Unwrap(counter), TargetViewDescriptions.UnorderedAccessView(desktop, fitted, copy), destination);
+    }
+
+    /// <summary>With --watch-transient: the game range of a buffer UAV, by the desktop index its record names.</summary>
+    private static void NoteUnorderedAccess(nint resource, void* description, nint handle, BufferRecord record)
+    {
+        var buffer = D3D12X.Objects.AsResource(resource);
+
+        if (description == null || D3D12X.DescriptorHeaps.Find(handle, out _) is null)
+        {
+            return;
+        }
+
+        ulong game = 0;
+
+        if (buffer != null && record.Records != 0)
+        {
+            game = buffer->GameAddress;
+        }
+
+        TransientPoolViews.Note(handle, game, ((BufferViewDescription*)description)->UavFirstElement, record);
     }
 
     private static void WarnNullUnorderedAccessView(ResourceDescription desc)

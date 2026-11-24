@@ -12,8 +12,8 @@ namespace FiveStar.Loader.Shims.D3D12X.DebugLayer;
 /// its user data searched for addresses in the transient pool. Every dword pair whose 48-bit value (a root
 /// descriptor's address, or a V#'s base: dword 0 and the low 16 bits of dword 1) reaches into the pool is kept in a
 /// ring with the four dwords from there (a V#'s stride in bits 16 to 29 of dword 1, its record count in dword 2), the
-/// operation's recording and index and its pipeline. A report names the operations whose ranges reach a block.
-/// Descriptor tables are not searched.
+/// operation's recording and index and its pipeline. Buffer UAVs the operation's descriptor tables name are added by
+/// <see cref="TransientPoolViews"/>. A report names the operations whose ranges reach a block.
 /// </summary>
 internal static unsafe class TransientPoolHits
 {
@@ -49,6 +49,9 @@ internal static unsafe class TransientPoolHits
         public uint D1;
         public uint D2;
         public uint D3;
+
+        /// <summary>The descriptor's position in the table the user dword points at; -1 for a user-data pair.</summary>
+        public int TableSlot;
     }
 
     /// <summary>The pool's range, once the game has set it up; searching starts then.</summary>
@@ -72,12 +75,50 @@ internal static unsafe class TransientPoolHits
         if (kind != MarkedKind.Draw)
         {
             Search(bindings->Compute, serial, index, pipeline, true);
+            TransientPoolViews.Search(bindings->Compute, serial, index, pipeline, true);
         }
 
         if (kind != MarkedKind.Dispatch)
         {
             Search(bindings->Graphics, serial, index, pipeline, false);
+            TransientPoolViews.Search(bindings->Graphics, serial, index, pipeline, false);
         }
+    }
+
+    /// <summary>Whether [<paramref name="start"/>, +<paramref name="bytes"/>) overlaps the pool.</summary>
+    [HotPath]
+    public static bool InPool(ulong start, ulong bytes)
+    {
+        ulong end = start + bytes;
+
+        if (bytes == 0)
+        {
+            end = start + 1;
+        }
+
+        return start < Volatile.Read(ref _poolEnd) && end > _poolStart;
+    }
+
+    /// <summary>A buffer UAV in a descriptor table (<see cref="TransientPoolViews"/>): its game range and the window record's words.</summary>
+    [HotPath]
+    public static void AddTable(uint serial, int index, nint pipeline, bool compute, uint dword, int tableSlot, ulong start, ulong bytes, uint* record)
+    {
+        long slot = Interlocked.Increment(ref _count) - 1;
+        Hits[slot % Ring] = new Hit
+        {
+            Serial = serial,
+            Index = index,
+            Base = start,
+            Size = bytes,
+            Pipeline = pipeline,
+            Compute = compute,
+            Dword = dword,
+            D0 = record[0],
+            D1 = record[1],
+            D2 = record[RecordsDword],
+            D3 = record[LastDword],
+            TableSlot = tableSlot,
+        };
     }
 
     [HotPath]
@@ -119,6 +160,7 @@ internal static unsafe class TransientPoolHits
                 D1 = data[i + 1],
                 D2 = Dword(data, i + RecordsDword),
                 D3 = Dword(data, i + LastDword),
+                TableSlot = -1,
             };
         }
     }
@@ -168,7 +210,17 @@ internal static unsafe class TransientPoolHits
             }
 
             string stage = hit.Compute ? "compute" : "graphics";
-            text.Append(CultureInfo.InvariantCulture, $"\n    recording {hit.Serial} operation {hit.Index} ({stage}, user dword {hit.Dword}): 0x{hit.Base:x} + 0x{hit.Size:x} (block +0x{(long)(hit.Base - block):x}), dwords {hit.D0:x8} {hit.D1:x8} {hit.D2:x8} {hit.D3:x8}, pipeline {pipelineName(hit.Pipeline)}");
+            string where = $"user dword {hit.Dword}";
+
+            if (hit.TableSlot >= 0)
+            {
+                where = $"UAV {hit.TableSlot} of the table at user dword {hit.Dword}, desktop index {hit.D0}";
+            }
+
+            long offset = (long)hit.Base - (long)block;
+            string relative = offset >= 0 ? $"+0x{offset:x}" : $"-0x{-offset:x}";
+            ulong reaches = hit.Base + hit.Size;
+            text.Append(CultureInfo.InvariantCulture, $"\n    recording {hit.Serial} operation {hit.Index} ({stage}, {where}): 0x{hit.Base:x} to 0x{reaches:x} (block {relative}, 0x{hit.Size:x} bytes), dwords {hit.D0:x8} {hit.D1:x8} {hit.D2:x8} {hit.D3:x8}, pipeline {pipelineName(hit.Pipeline)}");
             printed++;
         }
 

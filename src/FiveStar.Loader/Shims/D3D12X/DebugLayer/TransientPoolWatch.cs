@@ -87,6 +87,7 @@ internal sealed unsafe class TransientPoolWatch
     /// <summary>Starts the watch thread; it waits for the game to set the pool up.</summary>
     public static void Start(LoaderLog log)
     {
+        TransientPoolViews.Enable();
         var watch = new TransientPoolWatch(log);
         var thread = new Thread(watch.Run) { IsBackground = true, Name = "fivestar transient watch" };
         thread.Start();
