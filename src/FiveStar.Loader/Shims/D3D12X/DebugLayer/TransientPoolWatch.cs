@@ -117,6 +117,11 @@ internal sealed unsafe class TransientPoolWatch
                 _poolStart = pool;
                 Volatile.Write(ref _poolEnd, pool + ((ulong)count * size));
                 TransientPoolHits.Pool(pool, pool + ((ulong)count * size));
+
+                if (GpuBreadcrumbs.Active)
+                {
+                    TransientPoolLifetime.Setup(pool, count, size, _log);
+                }
             }
 
             TakeMarkers();
@@ -152,6 +157,7 @@ internal sealed unsafe class TransientPoolWatch
         for (uint i = 0; i < count; i++)
         {
             byte* record = (byte*)(table + ((ulong)i * RecordSize));
+            TransientPoolLifetime.Check(i, record);
             ulong node = *(ulong*)(record + ListOffset);
             ulong previous = (ulong)(record + ListOffset);
 

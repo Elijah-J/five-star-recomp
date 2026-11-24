@@ -101,6 +101,8 @@ Buffer UAVs in descriptor tables count too: each UAV's game range is kept by the
 and a user dword that points at the window's view records is read as a table whose first 16 records are checked;
 their entries show the record's words as the program reads them (desktop index, stride, num_records, OOB_SELECT).
 
+**Lifetime check.** With both flags, each recording whose operations reach a transient block (root addresses, user-data V#s, table UAVs) is kept per block, and a range over more than 8 blocks (the game's whole-pool raw view) in a separate ring. When a block record's retire token (+0x18) changes, the game has taken the block again; every kept recording of it that has not completed on its queue's shim fence, or was never submitted, is logged as `[lifetime]` with its queue, how many submissions behind it is, the last slot-74 retire write and its pipelines (the first 24), and counts follow every 10 s.
+
 ## Hang watchdog
 
 The game ends itself when its main loop stops for 30 s. A watchdog thread (0x142215a60) checks once a second that

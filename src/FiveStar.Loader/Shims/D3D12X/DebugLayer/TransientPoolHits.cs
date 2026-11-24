@@ -85,6 +85,23 @@ internal static unsafe class TransientPoolHits
         }
     }
 
+    /// <summary>The distinct pipelines of the kept hits of recording <paramref name="serial"/>, with their operation indices.</summary>
+    public static void DescribeRecording(StringBuilder text, uint serial, Func<nint, string> pipelineName)
+    {
+        long count = Interlocked.Read(ref _count);
+        var seen = new HashSet<nint>();
+
+        for (long i = count - 1; i >= 0 && i >= count - Ring; i--)
+        {
+            var hit = Hits[i % Ring];
+
+            if (hit.Serial == serial && seen.Add(hit.Pipeline))
+            {
+                text.Append(CultureInfo.InvariantCulture, $" operation {hit.Index} {pipelineName(hit.Pipeline)};");
+            }
+        }
+    }
+
     /// <summary>Whether [<paramref name="start"/>, +<paramref name="bytes"/>) overlaps the pool.</summary>
     [HotPath]
     public static bool InPool(ulong start, ulong bytes)
@@ -119,6 +136,7 @@ internal static unsafe class TransientPoolHits
             D3 = record[LastDword],
             TableSlot = tableSlot,
         };
+        TransientPoolLifetime.Touch(serial, start, bytes);
     }
 
     [HotPath]
@@ -162,6 +180,7 @@ internal static unsafe class TransientPoolHits
                 D3 = Dword(data, i + LastDword),
                 TableSlot = -1,
             };
+            TransientPoolLifetime.Touch(serial, start, size);
         }
     }
 
