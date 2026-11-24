@@ -54,7 +54,13 @@ internal sealed class FunctionBodyWriter
                 referenced.Add(instruction.Callee);
             }
 
-            referenced.UnionWith(instruction.Operands.OfType<GlobalVariable>());
+            foreach (var operand in instruction.Operands)
+            {
+                if (operand is GlobalVariable global)
+                {
+                    referenced.Add(global);
+                }
+            }
         }
 
         return referenced;

@@ -29,12 +29,17 @@ public static class DeadCode
         }
 
         FoldEmptyBlocks(function);
-        var live = Live(function);
+        MarkLive(function);
 
         foreach (var block in function.Blocks)
         {
-            block.Phis.RemoveAll(phi => !live.Contains(phi));
-            block.Body.RemoveAll(instruction => !live.Contains(instruction));
+            block.Phis.RemoveAll(phi => !phi.Live);
+            block.Body.RemoveAll(instruction => !instruction.Live);
+
+            // The writer marks again from scratch.
+            block.Phis.ForEach(phi => phi.Live = false);
+            block.Body.ForEach(instruction => instruction.Live = false);
+            block.Terminator!.Live = false;
         }
     }
 
@@ -149,19 +154,16 @@ public static class DeadCode
         return reachable;
     }
 
-    private static HashSet<Instruction> Live(IrFunction function)
+    /// <summary>Sets <see cref="Instruction.Live"/> on everything with an effect and everything it reads.</summary>
+    private static void MarkLive(IrFunction function)
     {
-        var live = new HashSet<Instruction>();
         var work = new Stack<Instruction>();
 
         foreach (var block in function.Blocks)
         {
             foreach (var instruction in block.Body.Where(instruction => instruction.HasEffect).Append(block.Terminator!))
             {
-                if (live.Add(instruction))
-                {
-                    work.Push(instruction);
-                }
+                Mark(instruction, work);
             }
         }
 
@@ -169,13 +171,20 @@ public static class DeadCode
         {
             foreach (var operand in work.Pop().Operands)
             {
-                if (operand is Instruction instruction && live.Add(instruction))
+                if (operand is Instruction instruction)
                 {
-                    work.Push(instruction);
+                    Mark(instruction, work);
                 }
             }
         }
+    }
 
-        return live;
+    private static void Mark(Instruction instruction, Stack<Instruction> work)
+    {
+        if (!instruction.Live)
+        {
+            instruction.Live = true;
+            work.Push(instruction);
+        }
     }
 }
