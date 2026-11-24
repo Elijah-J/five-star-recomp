@@ -41,19 +41,22 @@ internal static unsafe class DepthViewDescriptions
     /// <summary>MipLevels -1: every mip from the most detailed.</summary>
     private const int AllMips = -1;
 
-    /// <summary>The desc to pass for a clear value: <paramref name="clear"/>, or <paramref name="copy"/> with the desktop format.</summary>
+    /// <summary>
+    /// The desc to pass for a clear value on a resource created in <paramref name="resourceFormat"/>:
+    /// <paramref name="clear"/>, or <paramref name="copy"/> with the desktop depth format or render-target substitute.
+    /// </summary>
     [HotPath]
-    public static void* ClearValue(void* clear, byte* copy)
+    public static void* ClearValue(void* clear, byte* copy, int resourceFormat)
     {
-        if (clear == null || !DepthFormats.IsConsoleDepth(*(int*)clear))
+        if (clear == null)
         {
-            return clear;
+            return null;
         }
 
-        Buffer.MemoryCopy(clear, copy, ClearValueSize, ClearValueSize);
-        *(int*)copy = DepthFormats.D32S8;
+        int format = *(int*)clear;
+        int desktop = DepthFormats.IsConsoleDepth(format) ? DepthFormats.D32S8 : TargetFormats.View(format, resourceFormat);
 
-        return copy;
+        return Patched(clear, copy, ClearValueSize, desktop);
     }
 
     /// <summary>The desc to pass for a depth-stencil view of <paramref name="resource"/> (a desktop resource).</summary>

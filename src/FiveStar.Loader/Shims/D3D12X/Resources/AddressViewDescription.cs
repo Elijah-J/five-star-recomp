@@ -26,6 +26,10 @@ internal struct AddressViewDescription
     [FieldOffset(4)]
     public int ViewDimension;
 
+    /// <summary>Shader4ComponentMapping (desktop SRV desc field 2).</summary>
+    [FieldOffset(8)]
+    public int ComponentMapping;
+
     [FieldOffset(DesktopViewSize)]
     public ulong Address;
 

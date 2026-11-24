@@ -243,15 +243,23 @@ internal static unsafe class CommandListBindingMethods
         var objects = ShimContext.Runtime.D3D12X.Objects;
         nint inner = self->Inner;
         var execute = (delegate* unmanaged<nint, nint, uint, nint, ulong, nint, ulong, void>)ComObject.Slot(inner, DesktopExecuteIndirect);
-        execute(inner, objects.Unwrap(signature), maxCount, objects.Unwrap(arguments), argumentOffset, objects.Unwrap(count), countOffset);
+
+        nint argumentBuffer = BufferCopies.Desktop(arguments, ref argumentOffset);
+        nint countBuffer = BufferCopies.Desktop(count, ref countOffset);
+        execute(inner, objects.Unwrap(signature), maxCount, argumentBuffer, argumentOffset, countBuffer, countOffset);
     }
 
-    /// <summary>True while the list's pipeline is a stand-in the driver has not built: its draw or dispatch is skipped and counted.</summary>
+    /// <summary>
+    /// True while the list's pipeline is a stand-in the driver has not built: its draw or dispatch is skipped and
+    /// counted; otherwise it is counted as recorded.
+    /// </summary>
     [HotPath]
     private static bool PipelinePending(XboxObject* self)
     {
         if (CommandListBindings.Of(self)->PipelinePending == 0)
         {
+            ShimContext.Runtime.D3D12X.Pipelines?.StandIns.Recorded();
+
             return false;
         }
 
@@ -276,8 +284,16 @@ internal static unsafe class CommandListBindingMethods
         }
 
         ShimContext.Runtime.D3D12X.Rectangles.Reset(self, pipeline);
+        nint desktop = objects.Unwrap(allocator);
+        int hr = reset(inner, desktop, pipeline);
 
-        return reset(inner, objects.Unwrap(allocator), pipeline);
+        // The allocator backs another recording list, which the console allows: record on a spare (SpareAllocators).
+        if (hr == HResult.InvalidArgument && desktop != 0)
+        {
+            hr = ShimContext.Runtime.D3D12X.SpareAllocators.Reset(inner, desktop, pipeline, reset);
+        }
+
+        return hr;
     }
 
     [HotPath]

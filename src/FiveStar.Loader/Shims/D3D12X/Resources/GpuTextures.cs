@@ -58,7 +58,7 @@ internal sealed unsafe class GpuTextures : IDisposable
         var desc = _descriptions.ToDesktop(device, description);
         state = ResourceStates.Home(desc.Dimension, desc.Flags, BarrierLayouts.ToState(initialLayout));
         byte* clearCopy = stackalloc byte[DepthViewDescriptions.ClearValueSize];
-        int hr = CreateCommitted(device, &desc, state, DepthViewDescriptions.ClearValue(clear, clearCopy), out desktop);
+        int hr = CreateCommitted(device, &desc, state, DepthViewDescriptions.ClearValue(clear, clearCopy, desc.Format), out desktop);
         Counters.Add(GpuResourceEvent.PlacedTexture);
 
         if (HResult.Failed(hr))
@@ -86,8 +86,10 @@ internal sealed unsafe class GpuTextures : IDisposable
             return null;
         }
 
-        var desc = _descriptions.ToDesktop(device, description);
-        desc.Flags &= ~GpuWrittenFlags;
+        // Read-only: without the GPU-written flags, so a render-target format keeps its own bytes (no substitute).
+        var readOnly = *description;
+        readOnly.Flags &= ~GpuWrittenFlags;
+        var desc = _descriptions.ToDesktop(device, &readOnly);
         desc.Format = ViewFormats.ForTexture(desc.Format, viewFormat);
 
         if (HResult.Failed(CreateCommitted(device, &desc, ShaderResourceState, null, out nint desktop)))

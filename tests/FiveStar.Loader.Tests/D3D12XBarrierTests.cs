@@ -4,6 +4,7 @@
 using FiveStar.Loader.Shims.D3D12X;
 using FiveStar.Loader.Shims.D3D12X.Pipelines;
 using FiveStar.Loader.Shims.D3D12X.Present;
+using FiveStar.Loader.Shims.D3D12X.States;
 using FiveStar.Loader.Tests.Support;
 using Xunit;
 
@@ -33,6 +34,7 @@ public sealed unsafe class D3D12XBarrierTests
     private const int Texture2D = 3;
     private const int Rgba8Unorm = 28;
     private const int RenderTargetAndUav = 0x5;
+    private const int DepthStencilFlag = 0x2;
     private const int RtvHeapType = 2;
     private const int UnorderedAccess = 0x8;
     private const int RenderTarget = 0x4;
@@ -98,6 +100,15 @@ public sealed unsafe class D3D12XBarrierTests
         Assert.Equal(resource, DepthFormats.Resource(console));
         Assert.Equal(depthView, DepthFormats.Desktop(console));
         Assert.Equal(shaderView, DepthFormats.ShaderView(console));
+    }
+
+    [Theory]
+    [InlineData(UnorderedAccess, DepthStencilFlag, 0)]
+    [InlineData(UnorderedAccess | CopySource, DepthStencilFlag, CopySource)]
+    [InlineData(RenderTarget, RenderTargetAndUav, RenderTarget)]
+    public void A_barrier_leaves_out_write_states_the_desktop_flags_do_not_allow(int state, int flags, int expected)
+    {
+        Assert.Equal(expected, ResourceStates.Allowed(state, flags));
     }
 
     private static nint Texture(XboxDevice device, int flags, int state)

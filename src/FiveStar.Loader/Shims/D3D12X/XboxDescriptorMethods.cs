@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Five Star Recomp contributors.
+// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Runtime.InteropServices;
@@ -98,7 +98,9 @@ internal static unsafe class XboxDescriptorMethods
         nint desktop = D3D12X.Objects.Unwrap(resource);
         D3D12X.DrawTrace?.ShaderResourceView(desktop, Destination(handle));
         byte* copy = stackalloc byte[DepthViewDescriptions.ShaderResourceViewSize];
-        CreateDesktopView(self, CreateShaderResourceViewSlot, desktop, DepthViewDescriptions.ShaderResourceView(desktop, description, copy), handle);
+        desktop = BufferViewRanges.Fit(resource, desktop, description, copy, false, out void* fitted);
+        void* view = TargetViewDescriptions.ShaderResourceView(desktop, fitted, copy);
+        CreateDesktopView(self, CreateShaderResourceViewSlot, desktop, DepthViewDescriptions.ShaderResourceView(desktop, view, copy), handle);
     }
 
     [HotPath]
@@ -106,7 +108,9 @@ internal static unsafe class XboxDescriptorMethods
     public static void CreateRenderTargetView(XboxObject* self, nint resource, void* description, nint handle)
     {
         D3D12X.DrawTrace?.RenderTargetView(resource, Destination(handle));
-        CreateView(self, CreateRenderTargetViewSlot, resource, description, handle);
+        nint desktop = D3D12X.Objects.Unwrap(resource);
+        byte* copy = stackalloc byte[TargetViewDescriptions.RenderTargetViewSize];
+        CreateDesktopView(self, CreateRenderTargetViewSlot, desktop, TargetViewDescriptions.RenderTargetView(desktop, description, copy), handle);
     }
 
     [HotPath]
@@ -124,8 +128,25 @@ internal static unsafe class XboxDescriptorMethods
     {
         nint inner = self->Inner;
         var objects = D3D12X.Objects;
+        nint desktop = objects.Unwrap(resource);
+        byte* copy = stackalloc byte[TargetViewDescriptions.UnorderedAccessViewSize];
         var create = (delegate* unmanaged<nint, nint, nint, void*, nint, void>)ComObject.Slot(inner, CreateUnorderedAccessViewSlot);
-        create(inner, objects.Unwrap(resource), objects.Unwrap(counter), description, Destination(handle));
+
+        if (!TargetViewDescriptions.TakesUnorderedAccess(desktop, out var desc))
+        {
+            WarnNullUnorderedAccessView(desc);
+            create(inner, 0, 0, TargetViewDescriptions.NullUnorderedAccessView(description, copy), Destination(handle));
+
+            return;
+        }
+
+        desktop = BufferViewRanges.Fit(resource, desktop, description, copy, true, out void* fitted);
+        create(inner, desktop, objects.Unwrap(counter), TargetViewDescriptions.UnorderedAccessView(desktop, fitted, copy), Destination(handle));
+    }
+
+    private static void WarnNullUnorderedAccessView(ResourceDescription desc)
+    {
+        D3D12X.Warnings.Warn("uav-no-flag", $"[d3d12_xs] CreateUnorderedAccessView: a texture made without ALLOW_UNORDERED_ACCESS ({desc.Width}x{desc.Height}, format {desc.Format}, flags 0x{desc.Flags:x}); null view written");
     }
 
     [HotPath]
@@ -285,12 +306,6 @@ internal static unsafe class XboxDescriptorMethods
     private static uint Increment(nint device, int type)
     {
         return ((delegate* unmanaged<nint, int, uint>)ComObject.Slot(device, IncrementSlot))(device, type);
-    }
-
-    [HotPath]
-    private static void CreateView(XboxObject* self, int slot, nint resource, void* description, nint handle)
-    {
-        CreateDesktopView(self, slot, D3D12X.Objects.Unwrap(resource), description, handle);
     }
 
     [HotPath]
