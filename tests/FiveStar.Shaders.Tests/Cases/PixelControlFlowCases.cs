@@ -12,6 +12,7 @@ public static class PixelControlFlowCases
         [
             If(),
             IfElse(),
+            LongJumps(),
             ScalarLoop(),
             DivergentLoop(),
             NestedExecSave(),
@@ -69,6 +70,45 @@ public static class PixelControlFlowCases
             """;
 
         return new PixelCase("cf_if_else", Program, 2, IfElseResult) { Raw = true };
+    }
+
+    // A relaxed branch into far code that returns through long jumps: the forward one as the hardware computes it, the
+    // backward one with the console compiler's offset measured from the end of its s_sub_u32 (8 bytes early).
+    private static PixelCase LongJumps()
+    {
+        const string Program = """
+            v_cvt_u32_f32_e32 v10, v2
+            v_mov_b32 v20, 0
+            s_mov_b32 s15, exec_lo
+            v_cmpx_gt_u32_e32 3, v10
+            s_cbranch_execz .LBB_else
+            s_branch .LBB_then
+            s_nop 0
+            .LBB_else:
+            s_andn2_b32 exec_lo, s15, exec_lo
+            s_cbranch_execz .LBB_end
+            v_mov_b32 v20, 2
+            .LBB_end:
+            s_mov_b32 exec_lo, s15
+            v_mov_b32 v21, 1
+            {EXPORT}
+            s_endpgm
+            .LBB_then:
+            v_add_nc_u32_e32 v20, 10, v10
+            s_getpc_b64 s[8:9]
+            .Lpc_out:
+            s_add_u32 s8, s8, .Lreturn-.Lpc_out
+            s_addc_u32 s9, s9, 0
+            s_setpc_b64 s[8:9]
+            .Lreturn:
+            s_getpc_b64 s[8:9]
+            .Lpc_back:
+            s_sub_u32 s8, s8, .Lpc_back-.LBB_else+8
+            s_subb_u32 s9, s9, 0
+            s_setpc_b64 s[8:9]
+            """;
+
+        return new PixelCase("cf_long_jumps", Program, 2, LongJumpResult) { Raw = true };
     }
 
     private static PixelCase ScalarLoop()
@@ -244,6 +284,16 @@ public static class PixelControlFlowCases
         }
 
         return [2000 + pixel.Y, 1];
+    }
+
+    private static Expected[] LongJumpResult(PixelContext pixel)
+    {
+        if (pixel.X < 3)
+        {
+            return [10 + pixel.X, 1];
+        }
+
+        return [2, 1];
     }
 
     private static Expected[] ExecSavedResult(PixelContext pixel)
