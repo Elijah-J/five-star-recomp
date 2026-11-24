@@ -214,7 +214,14 @@ internal static unsafe class XboxDeviceCreation
         nint inner = self->Inner;
         var create = (delegate* unmanaged<nint, CommandSignatureDescription*, nint, Guid*, nint*, int>)ComObject.Slot(inner, CreateCommandSignatureSlot);
 
-        return Objects.WrapResult(create(inner, &desktop, rootSignature, iid, signature), XboxInterfaceKind.CommandSignature, signature);
+        int hr = Objects.WrapResult(create(inner, &desktop, rootSignature, iid, signature), XboxInterfaceKind.CommandSignature, signature);
+
+        if (!HResult.Failed(hr) && signature != null)
+        {
+            CommandSignatures.Created(*signature, description, rootSignature);
+        }
+
+        return hr;
     }
 
     /// <summary>

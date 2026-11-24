@@ -15,7 +15,8 @@ namespace FiveStar.Shaders.Translation.Structure;
 /// that do not join before it is emitted once per path. When that copying makes a scope (the region's top level or a
 /// loop body) larger than its limit, the scope is emitted guarded instead: its blocks in topological order, each under
 /// <c>if (flowN == k)</c>, each setting <c>flowN</c> to its successor; nested loops stay structured. Every branch condition
-/// is wave-uniform, so all lanes take the same arm, exactly as with the dispatch loop.
+/// is wave-uniform, so all lanes take the same arm, exactly as with the dispatch loop. Every loop leaves after
+/// <see cref="LoopGuard"/> iterations (through its first exit).
 /// </summary>
 internal sealed class RegionEmitter
 {
@@ -39,6 +40,7 @@ internal sealed class RegionEmitter
     private readonly List<ScopeFrame> _frames = [];
     private int _emitted;
     private int _loops;
+    private int _loopGuards;
     private int _guards;
     private int _frameCount;
     private bool _earlyEnd;
@@ -372,7 +374,12 @@ internal sealed class RegionEmitter
             Add(depth, $"uint {selector} = 0;");
         }
 
+        string guard = "loop_guard" + Hlsl.Number(_loopGuards);
+        _loopGuards++;
+        Add(depth, $"uint {guard} = 0;");
+
         Add(depth, "[loop] for (;;) {");
+        Add(depth + 1, $"if (++{guard} > {LoopGuard.Hex}) {{ break; }}");
         EmitScope(scope, selector, depth + 1);
         Add(depth, "}");
 
