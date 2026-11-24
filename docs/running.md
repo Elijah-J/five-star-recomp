@@ -88,9 +88,11 @@ focus. The photosensitivity item keeps the focus for about 15 s. Each terms item
 was scrolled to the end with the right stick (move the mouse down); then Confirm is enabled. With the input script
 followed while running ([loader.md](loader.md#running-the-executable)) these can be answered from a second shell.
 Quick taps of A also pass the option screens; B (C) goes back to the previous one. The screens' text, headings and
-logos render in full; the brightness-calibration symbol is still missing (black at every brightness level). Each
-frame's first draw uses a stream pipeline (slot 86) whose program (key `7f2680d5a629ff03...`) is not among the
-extracted programs, so it is skipped; whether that draw is the symbol is not confirmed.
+logos render in full; the brightness-calibration symbol is still missing (every pixel right of the panel is 0 at
+level 15). It is not the frame's first draw: that is the executable's `VS_Clear` + `PS_Clear`
+([shader-containers.md](shader-containers.md#executable)), which now runs but changes no pixel, since it reads its
+rectangle through a root SRV whose GPU address translated programs take as a heap index. The next draw
+(`PS_BlitColour` with a zero colour) fills the target black, and the UI is drawn over it.
 
 ## Work folder
 
