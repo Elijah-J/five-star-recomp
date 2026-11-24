@@ -24,6 +24,9 @@ internal static unsafe class WarmMemoryGuard
     /// <summary>Physical memory left to the game while pipelines build during a run.</summary>
     public const ulong PhysicalReserveBytes = 4UL << 30;
 
+    /// <summary>What one compile of a translated program may grow to in the driver, for the count that may run at once.</summary>
+    public const ulong BuildBytes = 2UL << 30;
+
     private const int PauseMilliseconds = 2000;
 
     /// <summary>Waits until <see cref="ReserveBytes"/> of commit is available or <paramref name="stopping"/> says so.</summary>
@@ -42,20 +45,22 @@ internal static unsafe class WarmMemoryGuard
     }
 
     /// <summary>
-    /// Whether a pipeline may start while the game runs: <see cref="ReserveBytes"/> of commit and
-    /// <see cref="PhysicalReserveBytes"/> of physical memory available, so the compiles do not page the game out.
+    /// Whether another pipeline may start while the game runs, <paramref name="running"/> already compiling: the
+    /// reserves of commit and physical memory plus <see cref="BuildBytes"/> of each for every compile, the running
+    /// ones included, so the compiles do not page the game out or exhaust the commit limit.
     /// </summary>
-    public static bool RoomForBuild()
+    public static bool RoomForBuild(int running)
     {
         var status = Status();
+        ulong builds = (ulong)(running + 1) * BuildBytes;
 
-        return status.AvailablePageFile >= ReserveBytes && status.AvailablePhysical >= PhysicalReserveBytes;
+        return status.AvailablePageFile >= ReserveBytes + builds && status.AvailablePhysical >= PhysicalReserveBytes + builds;
     }
 
     /// <summary>Whether a heavy pipeline may start while the game runs.</summary>
-    public static bool RoomForHeavyBuild()
+    public static bool RoomForHeavyBuild(int running)
     {
-        return RoomForBuild() && RoomForHeavy();
+        return RoomForBuild(running) && RoomForHeavy();
     }
 
     private static ulong AvailableCommit()

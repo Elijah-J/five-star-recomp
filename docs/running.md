@@ -80,15 +80,15 @@ flowchart LR
 
 ## First run in the game
 
-With an empty save folder the game shows, after a black screen that waits for a press, the logos and the intro art: a
-minimap choice, a text-size choice, a third option screen (default Off), brightness calibration, a controls notice, the legal and photosensitivity screens, then a
-privacy policy and terms of service screen, before it loads story mode (a spinner on dark blue). Keys of the
-keyboard-and-mouse gamepad: A (Space) confirms, but the option screens need it held about 1.5 s; arrows move the
-focus. The photosensitivity item keeps the focus for about 15 s. Each terms item is checked only after its text
-was scrolled to the end with the right stick (move the mouse down); then Confirm is enabled. With the input script
-followed while running ([loader.md](loader.md#running-the-executable)) these can be answered from a second shell;
-`-- --input-script docs/first-run.input` answers them all unattended (the story load starts about 550 s in). The
-first screen, black, waits for a press; with a warm pipeline cache it shows 135 to 220 s after start.
+With an empty save folder the game shows a black screen that waits for a press (with a warm pipeline cache 45 to
+220 s after start), the logos and the intro art, then: a minimap choice, a text-size choice, a third option screen
+(default Off), brightness calibration, a controls notice, the legal and photosensitivity screens, and a privacy
+policy and terms of service screen, before it loads story mode (a spinner on dark blue). Keys of the
+keyboard-and-mouse gamepad: A (Space) confirms, a short press too; arrows move the focus. The photosensitivity item
+keeps the focus for about 15 s. Each terms item is checked only after its text was scrolled to the end with the right
+stick (move the mouse down) and some seconds passed; then Confirm is enabled. With the input script followed while
+running ([loader.md](loader.md#running-the-executable)) these can be answered from a second shell;
+`-- --input-script docs/first-run.input` answers them all unattended (the story load starts about 610 s in).
 
 ## Work folder
 

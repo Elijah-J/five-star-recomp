@@ -15,16 +15,17 @@ internal sealed class PipelineBuildQueue
 {
     private const int PauseMilliseconds = 2000;
 
-    /// <summary>For <see cref="PipelineBuildQueue(int, Func{bool})"/>: creations start whenever a thread is free.</summary>
-    public static readonly Func<bool> AnyTime = () => true;
+    /// <summary>For <see cref="PipelineBuildQueue(int, Func{int, bool})"/>: creations start whenever a thread is free.</summary>
+    public static readonly Func<int, bool> AnyTime = _ => true;
 
     private readonly BlockingCollection<PipelineBuild> _builds = [];
-    private readonly Func<bool> _room;
+    private readonly Func<int, bool> _room;
     private int _waiting;
+    private int _running;
 
     /// <param name="workers">Threads that call the driver; at least one.</param>
-    /// <param name="room">Whether a creation may start now; polled until it says so.</param>
-    public PipelineBuildQueue(int workers, Func<bool> room)
+    /// <param name="room">Whether a creation may start now, given the creations running; polled until it says so.</param>
+    public PipelineBuildQueue(int workers, Func<int, bool> room)
     {
         Workers = Math.Max(1, workers);
         _room = room;
@@ -63,20 +64,29 @@ internal sealed class PipelineBuildQueue
         foreach (var build in _builds.GetConsumingEnumerable())
         {
             WaitForRoom();
-            build.Done.SetResult(build.Create());
+            Interlocked.Increment(ref _running);
+
+            try
+            {
+                build.Done.SetResult(build.Create());
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _running);
+            }
         }
     }
 
     private void WaitForRoom()
     {
-        if (_room())
+        if (_room(Volatile.Read(ref _running)))
         {
             return;
         }
 
         Interlocked.Increment(ref _waiting);
 
-        while (!_room())
+        while (!_room(Volatile.Read(ref _running)))
         {
             Thread.Sleep(PauseMilliseconds);
         }

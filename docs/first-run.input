@@ -2,25 +2,24 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # fivestar-loader --input-script: answers the first-run screens of an empty save folder unattended, up to the story
-# load (docs/running.md#first-run-in-the-game). Times are seconds from loader start; the screens' own timing comes
-# from a warm pipeline cache on a 24-core PC, where the "press a button" screen shows 135 to 220 s in.
+# load (docs/running.md#first-run-in-the-game). Times are seconds from loader start. With a warm pipeline cache the
+# black "press a button" screen showed 45 to 220 s in.
 #
-# The "press a button" screen (black): short taps until it has surely passed. A tap does not confirm the option
-# screens behind it, which need A held.
-130 Space repeat 43 every 4
-# Minimap, text size, the Off option, brightness, controls notice: A held 1.5 s each.
-350 Space hold 1.5 repeat 5 every 15
+# A tap passes the black screen, skips the logos and confirms each option screen (minimap, text size, the Off
+# option, brightness, controls notice); on the legal screen it does nothing while the Legal item has the focus.
+40 Space repeat 91 every 4
 # Legal and photosensitivity: focus down twice (the photosensitivity item keeps the focus about 15 s), then Next.
-425 Down
-440 Down
-455 Space
-# Privacy policy and terms of service: scroll each text to its end with the right stick (cursor down at 800 px/s),
-# check it with A, move down; then Confirm.
-475 cursor 0 800 hold 30
-507 Space
-510 Down
-513 cursor 0 800 hold 30
-545 Space
-548 Down
-551 Space
-# The story load (a spinner on dark blue) starts about here.
+# The second Space is for a Next that took the focus late; on the privacy screen, unscrolled, it does nothing.
+410 Down
+430 Down
+450 Space
+470 Space
+# Privacy policy and terms of service: scroll each text to its end with the right stick (cursor down at 800 px/s);
+# A checks an item only some seconds after its text stopped, then focus down. Confirm starts the story load.
+485 cursor 0 800 hold 30
+530 Space
+540 Down
+545 cursor 0 800 hold 30
+590 Space
+600 Down
+605 Space
