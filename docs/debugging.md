@@ -86,7 +86,9 @@ story-load faults at 0x144e9b4b2 read such a list with garbage nodes (0x2, 0x200
 
 Every 5 ms a thread walks every list; a next pointer outside the pool or an object pointer outside user space, seen
 on three polls in a row, is logged once with the block, the node and the 0x60 bytes around it, followed by every
-queue as last seen ([queue progress](d3d12x-shim.md#queue-progress)). The game's code is read, never changed.
+queue as last seen ([queue progress](d3d12x-shim.md#queue-progress)). Root CBV, SRV and UAV addresses (list slots 41
+to 46) that fall in the pool are kept in a ring of 4,096 with the list's pipeline; the report lists the newest 24 in
+the corrupted block, which names the GPU work that used it. The game's code is read, never changed.
 
 ## Unknown
 

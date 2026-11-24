@@ -175,6 +175,7 @@ internal static unsafe class CommandListBindingMethods
     public static void SetComputeRootAddress(XboxObject* self, uint parameter, ulong address)
     {
         ShimContext.Runtime.D3D12X.GameMemory.TryFind(address, out _);
+        TransientPoolWatch.Note(address, ListActivity.Of(self)->Pipeline, true);
         UserData.WriteAddress(CommandListBindings.Of(self), true, parameter, address);
     }
 
@@ -183,6 +184,7 @@ internal static unsafe class CommandListBindingMethods
     public static void SetGraphicsRootAddress(XboxObject* self, uint parameter, ulong address)
     {
         ShimContext.Runtime.D3D12X.GameMemory.TryFind(address, out _);
+        TransientPoolWatch.Note(address, ListActivity.Of(self)->Pipeline, false);
         UserData.WriteAddress(CommandListBindings.Of(self), false, parameter, address);
     }
 

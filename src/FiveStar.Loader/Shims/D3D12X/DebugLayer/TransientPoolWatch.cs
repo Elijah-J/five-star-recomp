@@ -45,6 +45,17 @@ internal sealed unsafe class TransientPoolWatch
     /// <summary>A node must look corrupted on this many polls in a row (the game may be relinking it).</summary>
     private const int Confirmations = 3;
 
+    /// <summary>Root descriptor addresses inside the pool that the watch keeps (a ring).</summary>
+    private const int RootRing = 4096;
+
+    /// <summary>Root addresses printed per report.</summary>
+    private const int RootsPrinted = 24;
+
+    private static readonly RootAddress[] Roots = new RootAddress[RootRing];
+    private static ulong _poolStart;
+    private static ulong _poolEnd;
+    private static long _rootCount;
+
     private readonly LoaderLog _log;
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private ulong _suspect;
@@ -84,6 +95,8 @@ internal sealed unsafe class TransientPoolWatch
             {
                 _log.Info($"  [transient] watching the pool at 0x{pool:x}: {count} blocks of 0x{size:x} bytes, records at 0x{table:x}");
                 announced = true;
+                _poolStart = pool;
+                Volatile.Write(ref _poolEnd, pool + ((ulong)count * size));
             }
 
             if (Check(pool, table, count, size))
@@ -91,6 +104,22 @@ internal sealed unsafe class TransientPoolWatch
                 return;
             }
         }
+    }
+
+    /// <summary>
+    /// A root CBV, SRV or UAV address a list set (slots 41 to 46): kept when it lies in the pool, with the list's pipeline
+    /// at the time, so a report can name the GPU work that read or wrote the corrupted block.
+    /// </summary>
+    [HotPath]
+    public static void Note(ulong address, nint pipeline, bool compute)
+    {
+        if (address < _poolStart || address >= Volatile.Read(ref _poolEnd))
+        {
+            return;
+        }
+
+        long index = Interlocked.Increment(ref _rootCount) - 1;
+        Roots[index % RootRing] = new RootAddress(address, pipeline, compute, Stopwatch.GetTimestamp());
     }
 
     /// <summary>True once a corruption was confirmed and logged.</summary>
@@ -164,6 +193,7 @@ internal sealed unsafe class TransientPoolWatch
             Dump(text, shown, pool, end);
         }
 
+        Recent(text, block, size);
         _log.Error(text.ToString());
         QueueProgress.Report("transient pool corrupted");
 
@@ -179,6 +209,27 @@ internal sealed unsafe class TransientPoolWatch
         for (ulong row = first; row < last; row += DumpRow)
         {
             text.Append($"\n    0x{row:x}: {*(ulong*)row:x16} {*(ulong*)(row + sizeof(ulong)):x16}");
+        }
+    }
+
+    /// <summary>The newest root addresses that fell inside the block at <paramref name="block"/>.</summary>
+    private static void Recent(StringBuilder text, ulong block, uint size)
+    {
+        long count = Interlocked.Read(ref _rootCount);
+        int printed = 0;
+        text.Append($"\n  root addresses in the pool so far: {count}; in this block, newest first:");
+
+        for (long i = count - 1; i >= 0 && i >= count - RootRing && printed < RootsPrinted; i--)
+        {
+            var root = Roots[i % RootRing];
+
+            if (root.Address >= block && root.Address < block + size)
+            {
+                double age = Stopwatch.GetElapsedTime(root.At).TotalMilliseconds;
+                string kind = root.Compute ? "compute" : "graphics";
+                text.Append($"\n    +0x{root.Address - block:x} {kind} {age:F0} ms ago, {QueueProgress.PipelineName(root.Pipeline)}");
+                printed++;
+            }
         }
     }
 

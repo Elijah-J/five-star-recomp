@@ -290,7 +290,7 @@ internal static unsafe class QueueProgress
     }
 
     /// <summary>A desktop pipeline by the programs it was built from, or its address.</summary>
-    private static string PipelineName(nint pipeline)
+    public static string PipelineName(nint pipeline)
     {
         if (pipeline == 0)
         {
