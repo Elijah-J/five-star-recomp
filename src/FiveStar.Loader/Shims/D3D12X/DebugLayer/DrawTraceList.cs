@@ -18,4 +18,7 @@ internal sealed class DrawTraceList
 
     /// <summary>The vertex buffers as trace lines.</summary>
     public string VertexBuffers { get; set; } = "\n      no vertex buffers set";
+
+    /// <summary>How often the list was reset (Reset, slots 10 and 139).</summary>
+    public long Resets { get; set; }
 }

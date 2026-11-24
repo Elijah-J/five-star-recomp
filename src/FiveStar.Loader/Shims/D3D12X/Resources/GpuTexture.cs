@@ -47,6 +47,9 @@ internal sealed class GpuTexture
     /// <summary>Bytes the texture spans in console memory.</summary>
     public ulong Size => Layout.Size;
 
+    /// <summary>Whether the CPU maps the texture's memory, so it is checked for new bytes every frame (<see cref="GpuTextures.Watch"/>).</summary>
+    public bool Watched { get; set; }
+
     /// <summary>The content hash of the bytes last uploaded; 0 before the first upload.</summary>
     public ulong UploadedHash { get; set; }
 
