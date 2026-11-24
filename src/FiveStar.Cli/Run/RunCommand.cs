@@ -76,10 +76,10 @@ internal static class RunCommand
     {
         if (options.PrebuiltShaders)
         {
-            return [new VerifyStep(), new GdkAbiStep()];
+            return [new VerifyStep(), new BcPackTablesStep(), new GdkAbiStep()];
         }
 
-        return [new VerifyStep(), new ShaderExtractStep(), new ShaderTranslateStep(), new RectangleShaderStep(), new GdkAbiStep()];
+        return [new VerifyStep(), new ShaderExtractStep(), new ShaderTranslateStep(), new RectangleShaderStep(), new BcPackTablesStep(), new GdkAbiStep()];
     }
 
     private static int Start(RunOptions options, DumpIdentity identity, bool checkOnly)
