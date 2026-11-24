@@ -154,11 +154,13 @@ internal sealed class CommandLineParser
         }
     }
 
-    /// <summary>The pipeline-cache, warm-up and DirectStorage options.</summary>
+    /// <summary>The pipeline-cache, warm-up and DirectStorage options, and <c>--watch-transient</c>.</summary>
     private bool ApplyCacheAndStorage(string option)
     {
         switch (option)
         {
+            case "--watch-transient":
+                return SetWatchTransient();
             case "--bcpack-missing":
                 return SetBcPackMissing();
             case "--pipeline-cache":
@@ -436,6 +438,13 @@ internal sealed class CommandLineParser
     private bool SetBreadcrumbs()
     {
         _options.D3D12Breadcrumbs = true;
+
+        return true;
+    }
+
+    private bool SetWatchTransient()
+    {
+        _options.WatchTransient = true;
 
         return true;
     }

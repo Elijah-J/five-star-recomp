@@ -386,6 +386,7 @@ fivestar-loader --load $dump\XboxBvhBuilder.dll --load $dump\Bink2Scarlett.dll -
 | `--d3d12-debug`, `--d3d12-gpu-validation` | the D3D12 debug layer (and GPU-based validation) and DRED, with their messages and the removal report in the log ([d3d12x-shim.md](d3d12x-shim.md)); needs the Graphics Tools optional feature |
 | `--d3d12-skip <i:n,...>` | D3D12.X slots that do nothing and return 0 (`list:20`, `queue:35`, `device:127`), to bisect GPU faults ([d3d12x-shim.md](d3d12x-shim.md#debug-layer)) |
 | `--d3d12-breadcrumbs` | a GPU marker before every draw and dispatch, so a stalled queue names the operation and pipeline it stopped at ([d3d12x-shim.md](d3d12x-shim.md#queue-progress)) |
+| `--watch-transient` | checks the game's transient-memory pool every 5 ms and logs the first corrupted node list with the memory around it and the queues ([debugging.md](debugging.md#transient-pool-watch)) |
 | `--d3d12-trace-queues` | the first queue submissions, queue signals and waits and CPU fence signals in the log |
 | `--present-test` | present moving color bars instead of the game's frame, to check the swap chain on its own ([d3d12x-shim.md](d3d12x-shim.md#present)) |
 | `--raytracing` | XboxBvhBuilder.dll's CPU paths: console acceleration-structure sizes and BLAS rehydration into game memory ([raytracing.md](raytracing.md)) |
