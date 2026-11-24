@@ -69,7 +69,11 @@ void TRACE_ADDR(uint lo, uint hi, uint v) {
     }
 #endif
 }
-void TRACE_VIEW(uint heap_index, uint off, uint v) {
+void TRACE_GUARD(uint guard) {   // a structured loop that reached the loop guard
+#ifdef FIVESTAR_STORE_TRACE
+    trace_entry(0u, 0x40000000u | guard, 0u);
+#endif
+}void TRACE_VIEW(uint heap_index, uint off, uint v) {
 #ifdef FIVESTAR_STORE_TRACE
     ByteAddressBuffer m = ResourceDescriptorHeap[GPU_MEM_HEAP];
     for (uint r = 0u; r < 8u; r++) {
