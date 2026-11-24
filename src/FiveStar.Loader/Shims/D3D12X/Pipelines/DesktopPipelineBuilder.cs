@@ -16,13 +16,13 @@ internal static unsafe class DesktopPipelineBuilder
     public static int Graphics(
         nint device2, nint rootSignature, GraphicsPipelineDescription description, IReadOnlyList<TranslatedProgram> programs, Guid* iid, nint* result)
     {
-        using var stream = GraphicsStream(rootSignature, description, programs);
+        using var stream = GraphicsStream(device2, rootSignature, description, programs);
 
         return stream.Create(device2, iid, result);
     }
 
     /// <summary>The desktop stream of a graphics pipeline; the caller disposes it.</summary>
-    public static DesktopStream GraphicsStream(nint rootSignature, GraphicsPipelineDescription description, IReadOnlyList<TranslatedProgram> programs)
+    public static DesktopStream GraphicsStream(nint device2, nint rootSignature, GraphicsPipelineDescription description, IReadOnlyList<TranslatedProgram> programs)
     {
         var stream = new DesktopStream();
         stream.AddPointer(PipelineStateSubObjectType.RootSignature, rootSignature);

@@ -125,7 +125,7 @@ internal sealed unsafe class PipelineFactory
 
         var names = string.Join(" + ", programs.Select(program => program.Name));
 
-        return new PipelineRecipe(DesktopPipelineBuilder.GraphicsStream(_rootSignature, desktop, programs), desktop, programs, names);
+        return new PipelineRecipe(DesktopPipelineBuilder.GraphicsStream(_device2, _rootSignature, desktop, programs), desktop, programs, names);
     }
 
     /// <summary>The desktop stream of a compute description; null when its shader has no translation.</summary>
