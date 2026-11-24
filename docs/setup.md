@@ -7,7 +7,7 @@ with the same state before it starts the game.
 
 ```
 fivestar setup <dump folder> [--work <dir>] [--only <step,...>] [--force] [--limit N] [--step K] [--jobs N]
-                             [--dxc <dxc.exe>] [--gdk-lib <xgameruntime.lib>] [--loader <fivestar-loader.exe>]
+                             [--mesh-fallbacks] [--dxc <dxc.exe>] [--gdk-lib <xgameruntime.lib>] [--loader <fivestar-loader.exe>]
 fivestar setup <dump folder> --status
 fivestar setup <dump folder> --clean-cache
 ```
@@ -30,7 +30,7 @@ flowchart LR
 |---|---|---|
 | `verify` | reads the title id and version from `MicrosoftGame.Config`; checks `shaders.rpf` and the texture page files exist. Another title fails; another version gives a warning | none |
 | `shader-extract` | `fivestar shader extract` of `shaders.rpf` and the executable | `shaders/dxbc`, `shaders/fssm` |
-| `shader-translate` | `fivestar shader translate --mesh-fallbacks` of every program, compiled with dxc through the shader cache | `shaders/hlsl` (HLSL, DXIL, `results.json`, `variants.json`), `shader-cache` |
+| `shader-translate` | `fivestar shader translate` of every program, compiled with dxc through the shader cache; with `--mesh-fallbacks` only when a GPU of the machine has no mesh shaders, or when setup gets `--mesh-fallbacks` | `shaders/hlsl` (HLSL, DXIL, `results.json`, `variants.json`), `shader-cache` |
 | `rect-gs` | `fivestar shader rect-gs` of the translated vertex programs: the geometry shaders the loader draws rectangle lists with | `shaders/hlsl/rect-gs` |
 | `pipeline-cache` | `fivestar shader psocache` of the console pipeline cache, matched to the programs | `pipelines` (`pipelines.json`, `code/`) |
 | `textures` | `fivestar texture extract` of every page file | `textures/<page file path>/*.dds` |
@@ -40,7 +40,9 @@ flowchart LR
 `variants.json` lists every compiled program with its DXIL forms (native, wave32 variant or mesh superstep form, mesh fallback) and wave
 floor, so the runtime picks the form for the GPU without reading HLSL (see
 [shader-translation.md](shader-translation.md#wave-size), Variant selection). Mesh fallbacks are compiled for every
-mesh program, for GPUs without mesh shaders.
+mesh program only when the machine has a GPU without mesh shaders (they double the mesh programs' dxc work and a
+mesh-shader GPU never loads them); a program dxc rejects as a mesh shader gets its fallback either way. Whether
+fallbacks are on is part of the step's inputs, so a new GPU redoes the step (from the cache).
 
 A failed step stops the steps that depend on it; the others still run. `--only` runs the named steps (their
 dependencies must be done); `--force` redoes them even when they are up to date.
