@@ -67,8 +67,22 @@ internal sealed unsafe class PipelineFactory
     /// <summary>The creations running now (<see cref="PipelineSlots"/> marks them).</summary>
     public PipelineCreationsInFlight InFlight { get; } = new();
 
+    /// <summary>
+    /// Where the pipelines the game uses are recorded, for the warm-up and the next boot; null for none. A pipeline is
+    /// recorded when a command list first sets it, or at creation without <see cref="Lazy"/>.
+    /// </summary>
+    public PipelineJournal? Journal { get; init; }
+
+    /// <summary>
+    /// Whether, of the pipelines the cache does not have, only the journal's are built at creation and the others when
+    /// a command list first sets them: the game creates tens of thousands while loading and draws with a small part of
+    /// them. Otherwise every one is built at creation.
+    /// </summary>
+    public bool Lazy { get; init; }
+
     public int Graphics(GraphicsPipelineDescription description, Guid* iid, nint* result)
     {
+        var deferral = Deferral(Journal?.Contains(description) ?? false, () => Journal?.Record(description));
         var recipe = PrepareGraphics(description);
 
         if (recipe is null)
@@ -78,13 +92,14 @@ internal sealed unsafe class PipelineFactory
 
         InFlight.Describe(recipe.Names);
         Action<nint> built = pipeline => _rectangles?.Remember(pipeline, recipe.Desktop!, recipe.Programs);
-        var hr = Create(recipe.Stream, iid, result, recipe.Names, built);
+        var hr = Create(recipe.Stream, iid, result, recipe.Names, built, deferral);
 
         return Remember(description, hr, result, recipe.Names);
     }
 
     public int Compute(ComputePipelineDescription description, Guid* iid, nint* result)
     {
+        var deferral = Deferral(Journal?.Contains(description) ?? false, () => Journal?.Record(description));
         var recipe = PrepareCompute(description);
 
         if (recipe is null)
@@ -93,7 +108,7 @@ internal sealed unsafe class PipelineFactory
         }
 
         InFlight.Describe(recipe.Names);
-        var hr = Create(recipe.Stream, iid, result, recipe.Names, null);
+        var hr = Create(recipe.Stream, iid, result, recipe.Names, null, deferral);
         Report(hr, recipe.Names);
 
         return hr;
@@ -200,7 +215,7 @@ internal sealed unsafe class PipelineFactory
     /// build threads (<see cref="StandInPipelines"/>) and stored in the cache. Takes ownership of the stream, whose
     /// native copy is freed while it waits for a build thread.
     /// </summary>
-    private int Create(DesktopStream stream, Guid* iid, nint* result, string names, Action<nint>? built)
+    private int Create(DesktopStream stream, Guid* iid, nint* result, string names, Action<nint>? built, Action? deferral)
     {
         Action<nint> named = pipeline =>
         {
@@ -220,11 +235,40 @@ internal sealed unsafe class PipelineFactory
         var wanted = *iid;
         stream.Release();
 
-        return StandIns.Create(() => Build(stream, wanted), result, names, named, stream.ShaderBytes >= HeavyShaderBytes);
+        var heavy = stream.ShaderBytes >= HeavyShaderBytes;
+
+        if (deferral is not null)
+        {
+            return StandIns.Deferred(() => Build(stream, wanted), result, names, named, heavy, deferral);
+        }
+
+        return StandIns.Create(() => Build(stream, wanted), result, names, named, heavy);
     }
 
     /// <summary>
-    /// Builds the pipeline of <paramref name="stream"/> on this thread and stores it in the cache; disposes the stream.
+    /// What runs on the first use of a pipeline built then: <paramref name="record"/>. Null (build at creation) without
+    /// <see cref="Lazy"/>, which records at once, or for a pipeline an earlier boot used.
+    /// </summary>
+    private Action? Deferral(bool used, Action record)
+    {
+        if (!Lazy)
+        {
+            record();
+
+            return null;
+        }
+
+        if (used)
+        {
+            return null;
+        }
+
+        return record;
+    }
+
+    /// <summary>
+    /// Builds the pipeline of <paramref name="stream"/> on this thread and stores it in the cache, or loads it when an
+    /// earlier build stored it meanwhile; disposes the stream.
     /// Pipelines with <see cref="HeavyShaderBytes"/> of DXIL or more are built one at a time, and no build starts while
     /// the machine is short of commit (<see cref="WarmMemoryGuard"/>), since one driver compile can take gigabytes.
     /// </summary>
@@ -232,6 +276,15 @@ internal sealed unsafe class PipelineFactory
     {
         using (stream)
         {
+            // The game asks for the same desktop pipeline again while its first build waits in the queue (game
+            // pipelines that differ only in what the desktop form drops): the build of the first one stored it.
+            nint cached = 0;
+
+            if (Cache is not null && !HResult.Failed(Cache.Load(stream, &iid, &cached)))
+            {
+                return new PipelineResult(HResult.Ok, cached);
+            }
+
             WarmMemoryGuard.WaitForRoom(static () => false);
 
             if (stream.ShaderBytes < HeavyShaderBytes)

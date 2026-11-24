@@ -395,10 +395,12 @@ cost tens of minutes.
 ```
 fivestar shader translate <program.fssm | folder> <out> [--cache <dir>] [--retry results.json]
                           [--stages ps,vs,cs,ms,gs] [--jobs N] [--limit N] [--step K] [--no-compile] [--dispatch]
-                          [--native-waves] [--mesh-fallbacks] [--llvm-disassembler] [--llvm <folder>] [--dxc <path>]
+                          [--native-waves] [--mesh-fallbacks] [--waves min-max,...] [--first-used <pipelines-used.bin>]
+                          [--llvm-disassembler] [--llvm <folder>] [--dxc <path>]
 ```
 
-Translates every `*.fssm` (in name order; `--step K` takes every K-th, `--limit N` the first N), writes
+Translates every `*.fssm` (selected in name order; `--step K` takes every K-th, `--limit N` the first N; worked on
+largest file first, so the few programs dxc needs minutes for do not run on alone at the end), writes
 `<out>/<name>.hlsl`, compiles it to `<name>.dxil` and writes `<out>/results.json`. `--cache` keeps translations and
 DXIL between runs (see Cache). `--retry` re-runs only programs whose status in that file is not final and merges the
 results. `--no-compile` skips dxc. `--dispatch` emits the dispatch form instead of structured control flow (see Control
@@ -408,7 +410,23 @@ results.json says so (`wave32 variant ok`). `--mesh-fallbacks` also compiles the
 that compiles (reason `fallback ok`, after `; ` when there is a superstep form), for GPUs without mesh shaders. A compiling
 run ends by writing `variants.json` (see Variant selection). `--llvm-disassembler` disassembles with
 llvm-mc/llvm-objdump instead of `RdnaDecoder` (see Disassembly). Every 10 seconds the command prints programs done,
-elapsed time, estimated time left and finish time, and the cache counts.
+elapsed time, estimated time left and finish time, and the cache counts. Every compile that runs (not one the cache
+answers) appends a line to `<out>/compile-times.tsv`: source file, profile, `-O3` or `-Od`, source characters, DXIL
+bytes, milliseconds and `ok`, `fail` or `timeout`. The next run into the same folder orders the programs by these times
+(the others by size at the logged rate) and measures its time left in them, so the few programs that take minutes
+count for what they cost.
+
+`--waves 32-32,32-64` names the GPUs the translation is for by their hardware wave sizes; of a program with a wave
+variant only the forms one of them picks are compiled (see Variant selection): a mesh program's native form only
+where a GPU's narrowest wave reaches its floor, its superstep form only where one does not; a pinned compute program's
+native form only where a GPU offers the pin, its wave32 variant only where one does not. A program whose native form
+is left out has the note `native form not compiled`, and an older run's native DXIL of it is deleted. On an RTX 4090
+(32-32) this leaves out the native form of the 2,511 mesh programs with a floor of 64, 4.2 of 36.1 hours of dxc
+time. Without `--waves` every form is compiled.
+
+`--first-used` takes the loader's pipeline journal ([d3d12x-pipelines.md](d3d12x-pipelines.md#warm-up)): the programs
+it names are translated first and get their `results.json` and `variants.json`, so a game can start on them; then the
+rest follows and both files are rewritten. Until then the other programs load what an earlier run left in the folder.
 
 dxc runs as `dxc.exe -T <stage>_6_7 -E main -HV 2021 -I <out> -Fo <name>.dxil`, one process per compile, with a 180 s
 limit; a timed-out compile is retried with `-Od` for 300 s (900 s with `--retry`); fallback compiles have 600 s.

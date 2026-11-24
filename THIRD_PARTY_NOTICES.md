@@ -29,6 +29,10 @@ our `mdu_models.json` (silicon-rans, below); its BC1 2x2 rank table gives the sa
 its BC1 dictionary differs from `bc1_window.json` in 54 of 255 slots, by at most 3 in a field. With the tables, BC1 decodes through
 their dictionary; our fitted tables remain the fallback without them.
 
+Its pipeline handling (a host pipeline made on the first draw rather than at creation, and a list of the last run's
+pipelines started during loading) was the idea behind building pipelines on first use and the pipeline journal
+(docs/d3d12x-pipelines.md). The design and code are our own; no code was copied.
+
 ## GTA6-Asset-Info
 
 https://github.com/TrinitronClient/GTA6-Asset-Info, revision `0f649eba78cdd6e053d7aefd333fb6e3abe9739a`, GPL-3.0.

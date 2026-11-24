@@ -33,8 +33,12 @@ internal static class HostUsage
           --translated-dir <dir> translated DXIL programs (fivestar shader translate)
           --pipeline-cache <dir> disk cache of built pipelines (default: <work-dir>\pipeline-cache)
           --no-pipeline-cache    build every pipeline anew and store none
-          --warm-pipelines <shaders.rpf|blob>  no game: build every pipeline of the console pipeline cache into
-                                 the disk cache (with --shader-dir, --translated-dir), resuming where a run stopped
+          --eager-pipelines      build every pipeline the cache lacks at creation; default: those earlier boots
+                                 used (pipelines-used.bin) at creation, the others when first set
+          --warm-pipelines <shaders.rpf|blob>  no game: build the pipelines earlier boots asked for (first-use order),
+                                 then every pipeline of the console pipeline cache, into the disk cache (with
+                                 --shader-dir, --translated-dir), resuming where a run stopped
+          --warm-used-only       warm-up: only the pipelines earlier boots asked for
           --warm-jobs <n>        pipelines the warm-up builds at once (default 4)
           --warm-step <k>        warm-up: every k-th pipeline only
           --warm-match <text>    warm-up: only pipelines with a program whose name contains text (repeatable)

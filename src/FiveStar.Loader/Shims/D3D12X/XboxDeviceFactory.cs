@@ -247,9 +247,34 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         var standIns = new StandInPipelines(PipelineSlots.CreationBudget, builds, heavyBuilds, warnings);
 
         var cache = OpenCache(device2);
-        Pipelines = new PipelineSlots(new PipelineFactory(device2, root, library, new ProgramSignatures(programs), warnings, rectangles, standIns, cache), warnings);
+        var factory = new PipelineFactory(device2, root, library, new ProgramSignatures(programs), warnings, rectangles, standIns, cache) { Journal = OpenJournal(), Lazy = !_pipelineFolders.EagerBuilds };
+        Pipelines = new PipelineSlots(factory, warnings);
         PipelineSlotHandlers.Register(Objects);
         _log.Detail($"  [d3d12_xs] pipeline slots on: programs {programs}, translated {translated}");
+    }
+
+    /// <summary>The journal of the pipelines the game asks for, beside the disk cache; null without a cache folder.</summary>
+    private PipelineJournal? OpenJournal()
+    {
+        var folder = _pipelineFolders.Cache;
+
+        if (folder is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(folder);
+
+            return PipelineJournal.Open(folder);
+        }
+        catch (IOException exception)
+        {
+            _log.Warn($"[d3d12_xs] pipeline journal off: {exception.Message}");
+
+            return null;
+        }
     }
 
     /// <summary>The pipeline disk cache of --pipeline-cache, saving in the background; null without one.</summary>
