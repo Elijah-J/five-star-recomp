@@ -34,7 +34,7 @@ internal static class TranslateCommand
         if (arguments.Positional.Count != TwoPaths)
         {
             throw new ArgumentException(
-                "translate <fssm-or-folder> <out> [--cache <dir>] [--retry results.json] [--stages ps,vs,cs,ms,gs] [--jobs N] [--dispatch] [--native-waves] [--mesh-fallbacks] [--waves min-max,...] [--first-used pipelines-used.bin] [--llvm-disassembler]");
+                "translate <fssm-or-folder> <out> [--cache <dir>] [--retry results.json] [--stages ps,vs,cs,ms,gs] [--jobs N] [--dispatch] [--native-waves] [--mesh-fallbacks] [--waves min-max,...] [--first-used pipelines-used.bin] [--llvm-disassembler] [--backend hlsl|dxil|dxil-only]");
         }
 
         var programs = Programs(arguments);
@@ -162,7 +162,17 @@ internal static class TranslateCommand
             return null;
         }
 
-        return ShaderTools.Compiler(arguments, retry);
+        var dxc = ShaderTools.Compiler(arguments, retry);
+
+        // --backend dxil: compute programs through the DXIL backend, the rest (and what it cannot lower) through dxc;
+        // dxil-only: no dxc at all, for measuring the backend.
+        return arguments.Option("backend") switch
+        {
+            null or "hlsl" => dxc,
+            "dxil" => new DxilBackendCompiler(dxc.Options, dxc),
+            "dxil-only" => new DxilBackendCompiler(dxc.Options, null),
+            var other => throw new ArgumentException($"--backend {other}: expected hlsl, dxil or dxil-only"),
+        };
     }
 
     /// <summary>The compiler that logs each compile it runs to compile-times.tsv in the output folder.</summary>

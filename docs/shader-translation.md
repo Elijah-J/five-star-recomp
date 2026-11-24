@@ -423,14 +423,14 @@ cost tens of minutes.
 fivestar shader translate <program.fssm | folder> <out> [--cache <dir>] [--retry results.json]
                           [--stages ps,vs,cs,ms,gs] [--jobs N] [--limit N] [--step K] [--no-compile] [--dispatch]
                           [--native-waves] [--mesh-fallbacks] [--waves min-max,...] [--first-used <pipelines-used.bin>]
-                          [--llvm-disassembler] [--llvm <folder>] [--dxc <path>]
+                          [--llvm-disassembler] [--llvm <folder>] [--dxc <path>] [--backend hlsl|dxil|dxil-only]
 ```
 
 Translates every `*.fssm` (selected in name order; `--step K` takes every K-th, `--limit N` the first N; worked on
 largest file first, so the few programs dxc needs minutes for do not run on alone at the end), writes
 `<out>/<name>.hlsl`, compiles it to `<name>.dxil` and writes `<out>/results.json`. `--cache` keeps translations and
 DXIL between runs (see Cache). `--retry` re-runs only programs whose status in that file is not final and merges the
-results. `--no-compile` skips dxc. `--dispatch` emits the dispatch form instead of structured control flow (see Control
+results. `--no-compile` skips dxc. `--backend dxil` compiles compute programs with the DXIL backend instead of dxc and the rest with dxc; `dxil-only` uses no dxc (see [dxil-backend.md](dxil-backend.md)). `--dispatch` emits the dispatch form instead of structured control flow (see Control
 flow). `--native-waves` turns wave emulation off (see Wave size). A compute program pinned to 64 lanes, and a mesh program
 with a floor above 4 (its superstep form), also gets `<name>.w32.hlsl`/`.dxil` where possible; its reason in
 results.json says so (`wave32 variant ok`). `--mesh-fallbacks` also compiles the mesh fallback of every mesh program
