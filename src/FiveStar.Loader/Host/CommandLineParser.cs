@@ -154,13 +154,15 @@ internal sealed class CommandLineParser
         }
     }
 
-    /// <summary>The pipeline-cache, warm-up and DirectStorage options, and <c>--watch-transient</c>.</summary>
+    /// <summary>The pipeline-cache, warm-up and DirectStorage options, <c>--watch-transient</c> and <c>--screens</c>.</summary>
     private bool ApplyCacheAndStorage(string option)
     {
         switch (option)
         {
             case "--watch-transient":
                 return SetWatchTransient();
+            case "--screens":
+                return SetScreensFile();
             case "--bcpack-missing":
                 return SetBcPackMissing();
             case "--bcpack-tables":
@@ -404,6 +406,13 @@ internal sealed class CommandLineParser
     private bool SetInputScript()
     {
         _options.InputScript = Path.GetFullPath(Next());
+
+        return true;
+    }
+
+    private bool SetScreensFile()
+    {
+        _options.ScreensFile = Path.GetFullPath(Next());
 
         return true;
     }

@@ -16,9 +16,7 @@ internal sealed class ScriptedDesktopInput : IDesktopSource
     private readonly IDesktopSource _inner;
     private readonly Stopwatch _clock;
     private readonly LoaderLog _log;
-    private volatile InputScript _script;
-    private InputScript? _announcedScript;
-    private int _announced;
+    private volatile ScriptState _state;
 
     /// <param name="inner">The real keyboard and mouse.</param>
     /// <param name="script">The presses.</param>
@@ -27,16 +25,23 @@ internal sealed class ScriptedDesktopInput : IDesktopSource
     public ScriptedDesktopInput(IDesktopSource inner, InputScript script, Stopwatch clock, LoaderLog log)
     {
         _inner = inner;
-        _script = script;
         _clock = clock;
         _log = log;
-        _announcedScript = script;
+        _state = new ScriptState(script, new bool[script.Presses.Count]);
     }
 
     /// <summary>Uses <paramref name="script"/> from the next poll on; any thread.</summary>
     public void Replace(InputScript script)
     {
-        _script = script;
+        double seconds = _clock.Elapsed.TotalSeconds;
+        var announced = new bool[script.Presses.Count];
+
+        for (int i = 0; i < announced.Length; i++)
+        {
+            announced[i] = script.Started(i, seconds);
+        }
+
+        _state = new ScriptState(script, announced);
     }
 
     [HotPath]
@@ -44,36 +49,22 @@ internal sealed class ScriptedDesktopInput : IDesktopSource
     {
         _inner.ReadKeys(keys);
         double seconds = _clock.Elapsed.TotalSeconds;
-        var script = _script;
-
-        if (!ReferenceEquals(script, _announcedScript))
-        {
-            _announcedScript = script;
-            _announced = script.StartedBefore(seconds);
-        }
-
-        script.Apply(keys, seconds);
-
-        if (_announced < script.Presses.Count && script.Presses[_announced].Start <= seconds)
-        {
-            Announce(script, seconds);
-        }
+        var state = _state;
+        state.Script.Apply(keys, seconds);
+        Announce(state, seconds);
     }
 
-    private void Announce(InputScript script, double seconds)
+    /// <summary>Fills <paramref name="keys"/> with the keys held for real, without the script's.</summary>
+    public void ReadRealKeys(PressedKeys keys)
     {
-        while (_announced < script.Presses.Count && script.Presses[_announced].Start <= seconds)
-        {
-            var press = script.Presses[_announced++];
-            _log.Info($"  [input] script: {press.Name} down at {seconds:F1} s for {press.Hold} s");
-        }
+        _inner.ReadKeys(keys);
     }
 
     [HotPath]
     public CursorPosition ReadCursor()
     {
         var cursor = _inner.ReadCursor();
-        var offset = _script.CursorOffset(_clock.Elapsed.TotalSeconds);
+        var offset = _state.Script.CursorOffset(_clock.Elapsed.TotalSeconds);
 
         return new CursorPosition(cursor.X + offset.X, cursor.Y + offset.Y);
     }
@@ -82,5 +73,23 @@ internal sealed class ScriptedDesktopInput : IDesktopSource
     public uint ScanCode(int virtualKey)
     {
         return _inner.ScanCode(virtualKey);
+    }
+
+    [HotPath]
+    private void Announce(ScriptState state, double seconds)
+    {
+        for (int i = 0; i < state.Announced.Length; i++)
+        {
+            if (!state.Announced[i] && state.Script.Started(i, seconds))
+            {
+                state.Announced[i] = true;
+                Log(state.Script.Presses[i], seconds);
+            }
+        }
+    }
+
+    private void Log(ScriptedPress press, double seconds)
+    {
+        _log.Info($"  [input] script: {press.Name} down at {seconds:F1} s for {press.Hold} s");
     }
 }

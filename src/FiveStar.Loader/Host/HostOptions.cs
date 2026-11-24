@@ -56,6 +56,9 @@ internal sealed record HostOptions
     /// <summary>Timed key presses added to the desktop input (<c>--input-script</c>).</summary>
     public string? InputScript { get; set; }
 
+    /// <summary>The learned screens of the input script (<c>--screens</c>); null: %LOCALAPPDATA%\FiveStar\screens.txt.</summary>
+    public string? ScreensFile { get; set; }
+
     /// <summary>Extracted FSSM programs (`fivestar shader extract`) for pipeline creation.</summary>
     public string? ShaderDirectory { get; set; }
 

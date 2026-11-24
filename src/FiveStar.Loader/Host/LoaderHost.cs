@@ -117,6 +117,17 @@ internal sealed class LoaderHost
         _log.Info($"cpu self-test: {result.Cases - result.Failures.Count} of {result.Cases} cases agree with the CPU and the reference");
     }
 
+    /// <summary>The input script, its learned screens and the present signatures its screen blocks wait for.</summary>
+    private void UseInputScript(string path, FrameCapture? capture)
+    {
+        string screensFile = _options.ScreensFile ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "FiveStar", "screens.txt");
+        var screens = new ScreenStore(screensFile);
+        var sampler = new ScreenSampler(signature => _runtime.Input.Seen(signature), _log);
+        _runtime.D3D12X.Presenter.Screens = sampler;
+        var script = _runtime.Input.UseScript(path, System.Diagnostics.Stopwatch.StartNew(), () => capture?.RequestNext(), sampler.Request, screens);
+        _log.Info($"  [input] {script.Presses.Count} scripted presses, {script.Marks.Count} captures and learns, {script.Screens.Count - 1} screens from {path} (followed while running); {screens.Count} learned screens in {screensFile}");
+    }
+
     private void LoadAbiTable()
     {
         if (_options.GdkAbiTable is not null)
@@ -144,8 +155,7 @@ internal sealed class LoaderHost
 
         if (_options.InputScript is not null)
         {
-            var script = _runtime.Input.UseScript(_options.InputScript, System.Diagnostics.Stopwatch.StartNew(), () => capture?.RequestNext());
-            _log.Info($"  [input] {script.Presses.Count} scripted presses, {script.Captures.Count} captures from {_options.InputScript} (followed while running)");
+            UseInputScript(_options.InputScript, capture);
         }
 
         if (_options.D3D12Debug)
