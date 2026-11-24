@@ -15,6 +15,12 @@ internal static class SetupCommand
     private const string CleanCacheFlag = "clean-cache";
     private const string ForceFlag = "force";
 
+    /// <summary>Also translate every program ahead of time (the steps the loader otherwise does on first use).</summary>
+    public const string TranslateAheadFlag = "translate-ahead";
+
+    /// <summary>The steps of the ahead-of-time translation, selected only with <see cref="TranslateAheadFlag"/>.</summary>
+    public static readonly IReadOnlyList<string> AheadSteps = [ShaderTranslateStep.StepName, RectangleShaderStep.StepName, PipelineWarmStep.StepName];
+
     private static readonly string[] Usage =
     [
         "usage: fivestar setup <dump folder> [options]",
@@ -22,6 +28,8 @@ internal static class SetupCommand
         "  --status             what is done, what is stale, and the disk use",
         "  --clean-cache        remove shader-cache entries of older builds",
         "  --only <a,b>         run only these steps; --force redoes them even when up to date",
+        "  --translate-ahead    also translate every program now (shader-translate, rect-gs, pipeline-warm); without it",
+        "                       the loader translates each program when the game first uses it",
         "  --limit N --step K   a sample: the first N programs of every K-th, N textures per page file",
         "  --jobs N             programs translated at once (default: every processor)",
         "  --mesh-fallbacks     compile the mesh fallbacks even when every GPU here has mesh shaders",
@@ -35,7 +43,7 @@ internal static class SetupCommand
     {
         try
         {
-            return Start(new CommandArguments(args, new HashSet<string> { StatusFlag, CleanCacheFlag, ForceFlag, ShaderTranslateStep.MeshFallbacksFlag, ShaderTranslateStep.AllFormsFlag, PipelineWarmStep.WarmAllFlag }));
+            return Start(new CommandArguments(args, new HashSet<string> { StatusFlag, CleanCacheFlag, ForceFlag, TranslateAheadFlag, ShaderTranslateStep.MeshFallbacksFlag, ShaderTranslateStep.AllFormsFlag, PipelineWarmStep.WarmAllFlag }));
         }
         catch (ArgumentException exception)
         {
@@ -96,9 +104,23 @@ internal static class SetupCommand
             return Code(CacheCleanup.Run(runner, context, Console.Out));
         }
 
-        var only = Only(arguments, runner.Steps);
+        var only = Only(arguments, runner.Steps) ?? Default(arguments, runner.Steps);
 
         return Code(runner.Run(context, only, arguments.Flag(ForceFlag)));
+    }
+
+    /// <summary>
+    /// The steps a run without <c>--only</c> selects: all but the ahead-of-time translation and what needs it, which
+    /// the loader does on first use (docs/d3d12x-pipelines.md#programs-on-demand), unless <c>--translate-ahead</c>.
+    /// </summary>
+    private static HashSet<string>? Default(CommandArguments arguments, IReadOnlyList<ISetupStep> steps)
+    {
+        if (arguments.Flag(TranslateAheadFlag))
+        {
+            return null;
+        }
+
+        return steps.Select(step => step.Name).Except(AheadSteps).ToHashSet(StringComparer.Ordinal);
     }
 
     private static SetupContext Context(string dump, DumpIdentity identity, CommandArguments arguments)
