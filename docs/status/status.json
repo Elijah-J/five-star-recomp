@@ -74,7 +74,7 @@
           "done": 0,
           "partial": 1,
           "todo": 0,
-          "note": "GPU hang bounded; game memory overwritten during the load"
+          "note": "reached the intro title card; GPU writes overrun game memory"
         },
         {
           "name": "In game",
@@ -210,7 +210,7 @@
       "items": [
         {
           "name": "Story load",
-          "note": "endless shader loops bounded; full retranslation, then a memory overwrite"
+          "note": "buffer bounds checks, so GPU writes stay inside their buffers"
         },
         {
           "name": "Brightness symbol",
