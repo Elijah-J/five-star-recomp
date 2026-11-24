@@ -117,7 +117,12 @@ internal static unsafe class TlsSlotZeroThreads
             nint block = array[index];
             nint* saved = (nint*)(block + saveOffset);
 
-            return enter ? Enter(array, block, saved) : Leave(array, saved);
+            if (enter)
+            {
+                return Enter(array, block, saved);
+            }
+
+            return Leave(array, saved);
         }
         finally
         {

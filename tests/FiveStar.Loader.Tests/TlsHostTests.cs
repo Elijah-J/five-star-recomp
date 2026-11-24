@@ -83,6 +83,7 @@ public sealed unsafe class TlsHostTests
         var heap = new CodeHeap();
         var readArray = (delegate* unmanaged<nint*>)heap.Write(ReadTlsArray);
         heap.Seal();
+
         uint index = 0;
         var slotZero = new nint[3];
         nint block = 0;
@@ -97,18 +98,12 @@ public sealed unsafe class TlsHostTests
                 ask.Wait();
                 nint* array = readArray();
                 slotZero[step] = array[0];
-
-                if (index != 0)
-                {
-                    block = array[index];
-                }
-
+                block = array[index];
                 answered.Release();
             }
         });
         thread.Start();
-        ask.Release();
-        answered.Wait();
+        Ask(ask, answered);
 
         nint host;
 
@@ -121,12 +116,11 @@ public sealed unsafe class TlsHostTests
         index = *(uint*)(host + (nint)(TlsHostBuilder.DataRva + TlsHostBuilder.HostIndexOffset));
         int saveOffset = TlsSlotZero.SaveOffset(template);
         int entered = TlsSlotZeroThreads.EnterExisting(index, saveOffset);
-        ask.Release();
-        answered.Wait();
+        Ask(ask, answered);
+
         nint saved = *(nint*)(block + saveOffset);
         TlsSlotZeroThreads.LeaveExisting(index, saveOffset);
-        ask.Release();
-        answered.Wait();
+        Ask(ask, answered);
         thread.Join();
         _ = FreeLibrary(host);
         File.Delete(path);
@@ -135,5 +129,11 @@ public sealed unsafe class TlsHostTests
         Assert.Equal(block, slotZero[1]);
         Assert.Equal(slotZero[0], saved);
         Assert.Equal(slotZero[0], slotZero[2]);
+    }
+
+    private static void Ask(SemaphoreSlim ask, SemaphoreSlim answered)
+    {
+        ask.Release();
+        answered.Wait();
     }
 }
