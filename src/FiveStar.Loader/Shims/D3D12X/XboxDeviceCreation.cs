@@ -98,6 +98,8 @@ internal static unsafe class XboxDeviceCreation
         var create = (delegate* unmanaged<nint, void*, int, ResourceDescription*, int, void*, Guid*, nint*, int>)ComObject.Slot(inner, CreateCommittedResourceSlot);
         int hr = create(inner, properties, flags, &desktop, home, DepthViewDescriptions.ClearValue(clear, clearCopy, desktop.Format), iid, resource);
 
+        LogCreation("Slot27 CreateCommittedResource", (int*)properties, description, hr);
+
         return WrapResource(hr, resource, desktop, home);
     }
 
@@ -111,6 +113,8 @@ internal static unsafe class XboxDeviceCreation
         var create = (delegate* unmanaged<nint, nint, ulong, ResourceDescription*, int, void*, Guid*, nint*, int>)ComObject.Slot(inner, CreatePlacedResourceSlot);
         int hr = create(inner, Objects.Unwrap(heap), offset, &desktop, home, DepthViewDescriptions.ClearValue(clear, clearCopy, desktop.Format), iid, resource);
 
+        LogCreation("Slot29 CreatePlacedResource", null, description, hr);
+
         return WrapResource(hr, resource, desktop, home);
     }
 
@@ -123,6 +127,8 @@ internal static unsafe class XboxDeviceCreation
         byte* clearCopy = stackalloc byte[DepthViewDescriptions.ClearValueSize];
         var create = (delegate* unmanaged<nint, ResourceDescription*, int, void*, Guid*, nint*, int>)ComObject.Slot(inner, CreateReservedResourceSlot);
         int hr = create(inner, &desktop, home, DepthViewDescriptions.ClearValue(clear, clearCopy, desktop.Format), iid, resource);
+
+        LogCreation("Slot30 CreateReservedResource", null, description, hr);
 
         return WrapResource(hr, resource, desktop, home);
     }
@@ -291,5 +297,23 @@ internal static unsafe class XboxDeviceCreation
         }
 
         return hr;
+    }
+
+    /// <summary>A detail line per resource created through the desktop-order slots (heap type 0 without heap properties).</summary>
+    private static void LogCreation(string call, int* properties, ResourceDescription* description, int hr)
+    {
+        var log = ShimContext.Runtime.Log;
+
+        if (log.DetailEnabled)
+        {
+            int heapType = 0;
+
+            if (properties != null)
+            {
+                heapType = *properties;
+            }
+
+            log.Detail($"  [d3d12_xs] ID3D12Device.X::{call}(heap type {heapType}, dimension {description->Dimension}, {description->Width}x{description->Height}x{description->DepthOrArraySize}, format {description->Format}, flags 0x{description->Flags:x}, layout 0x{description->Layout:x}) -> {HResult.Format(hr)}");
+        }
     }
 }

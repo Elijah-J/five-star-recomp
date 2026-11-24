@@ -31,9 +31,12 @@ internal sealed unsafe class GpuTextures : IDisposable
 
     private static readonly Guid ResourceIid = new("696442be-a72e-4059-bc79-5b5c98040fad");
 
+    private readonly object _watchGate = new();
     private readonly GameMemorySource _source;
     private readonly DesktopResourceDescriptions _descriptions;
     private readonly LoaderLog _log;
+    private GpuTexture[] _watched = [];
+    private long _checkedFrame = -1;
 
     public GpuTextures(GameMemorySource source, DesktopResourceDescriptions descriptions, LoaderLog log)
     {
@@ -132,6 +135,50 @@ internal sealed unsafe class GpuTextures : IDisposable
         {
             texture.UploadedHash = hash;
             Counters.Add(GpuResourceEvent.Upload);
+        }
+    }
+
+    /// <summary>
+    /// The game mapped the texture at <paramref name="address"/> (resource Map): the CPU writes its bytes whenever it
+    /// likes (video frames decoded into it, for one), so from now on it is checked once a frame.
+    /// </summary>
+    public void Watch(ulong address)
+    {
+        var texture = Registry.Find(address);
+
+        if (texture is null || texture.GpuWritten || texture.Watched || texture.Address != address)
+        {
+            return;
+        }
+
+        lock (_watchGate)
+        {
+            if (texture.Watched)
+            {
+                return;
+            }
+
+            texture.Watched = true;
+            Volatile.Write(ref _watched, [.. _watched, texture]);
+        }
+
+        _log.Detail($"  [d3d12_xs] texture at 0x{address:x} mapped by the CPU: checked for new bytes every frame ({_watched.Length} such)");
+    }
+
+    /// <summary>Refreshes the watched textures still registered, once per <paramref name="frame"/> (the present count).</summary>
+    public void RefreshWatched(nint device, long frame)
+    {
+        if (Volatile.Read(ref _checkedFrame) == frame || Interlocked.Exchange(ref _checkedFrame, frame) == frame)
+        {
+            return;
+        }
+
+        foreach (var texture in Volatile.Read(ref _watched))
+        {
+            if (Registry.Find(texture.Address) == texture)
+            {
+                Refresh(device, texture);
+            }
         }
     }
 
