@@ -313,6 +313,19 @@ ALLOW_UNORDERED_ACCESS and ALLOW_SIMULTANEOUS_ACCESS (the console sets UAV on de
 any texture made without the flag becomes a null view (it would remove the device). Render-target and UAV textures in
 B5G6R5, B5G5R5A1 or B4G4R4A4 take a substitute format; see [gpu-resources.md](gpu-resources.md#render-target-formats).
 
+**Allocation info (slots 25, 108).** A texture desc in a console layout (0x100 + swizzle mode), or with layout
+UNKNOWN and none of ALLOW_RENDER_TARGET, ALLOW_DEPTH_STENCIL, ALLOW_UNORDERED_ACCESS, gets the XG layout's size and
+alignment ([xg.md](xg.md); UNKNOWN takes the suggested mode), as the console reports it, not the desktop driver's
+(`ConsoleAllocationSizes`; other descs, or a query mixing them, keep the desktop answer). The game sizes streamed
+textures without size fields in their header this way (0x1451fb8f3 through 0x140343e80, desc built without a
+layout), stores the size in 4 KiB units in its streaming table (0x149c3e1d0, 0x38-byte entries, words +0x18 offsets
+and +0x20 sizes) and reads exactly that many bytes from the archive (0x1443c4850); the archive's compressed chunks
+were cut to the console size, and a read that ends inside one breaks at 0x144ffd879. At the pad pairing that was a
+128x4 R16G16B16A16 texture: 0x2000 bytes on the desktop, four 4 KB blocks (0x4000) on the console and in its chunk. The chunk table entry (8 bytes)
+holds the compressed offset in 256-byte units (bits 0-25), the codec (bits 26-29, 0 = stored), the uncompressed
+offset in 4 KiB units (bits 30-51) and the padding bytes after the compressed data (bits 52-63); a compressed
+chunk is read whole.
+
 **Resource Map (slots 8, 9).** A resource the game placed (slot 133) maps to its own memory, as on the console;
 0x145121891 maps a texture and writes a mip at its XG offset. Others map on the desktop.
 

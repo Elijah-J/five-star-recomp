@@ -1,7 +1,9 @@
 // Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Native;
+using FiveStar.Loader.Shims.Storage;
 using FiveStar.Loader.Tests.Support;
 using Xunit;
 
@@ -148,6 +150,41 @@ public sealed unsafe class PhysicalMemoryTests : IDisposable
             Assert.Same(chunk, next);
             Assert.Equal(offset + ((ulong)page * Page), nextOffset);
         }
+    }
+
+    [Fact]
+    public void A_page_list_storage_destination_writes_through_the_frames_into_every_mapping()
+    {
+        const ulong PageListOptions = 0x200001;
+        const int OptionsWord = 0;
+        const int DestinationWord = 1;
+        const int FirstPageOffsetWord = 2;
+        const int SizeWord = 3;
+        const int Offset = 0xFFF0;
+
+        // Mapped in reverse, so the write must follow the frame list, not the address order.
+        var pages = stackalloc ulong[2];
+        AllocatePages(pages, 2);
+        var reversed = stackalloc ulong[] { pages[1], pages[0] };
+        nint range = Reserve(2);
+        Assert.Equal(range, _map(range, 2, reversed));
+
+        RequestBlock block = default;
+        Span<ulong> words = block;
+        words[OptionsWord] = PageListOptions;
+        words[DestinationWord] = (ulong)pages;
+        words[FirstPageOffsetWord] = Offset;
+        words[SizeWord] = 0x20;
+
+        var data = new byte[0x20];
+        data[0] = 1;
+        data[0x10] = 2;
+
+        var sink = new PhysicalPageSink(_test.Runtime.XMemPhysical, new UnsupportedDestinationSink(new LoaderLog(TextWriter.Null, null, false)));
+        Assert.Equal(HResult.Ok, sink.Write(new StorageRequest(block), data));
+
+        Assert.Equal(1, *(byte*)(range + (nint)Page + Offset));
+        Assert.Equal(2, *(byte*)range);
     }
 
     public void Dispose()
