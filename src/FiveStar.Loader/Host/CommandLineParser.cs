@@ -161,7 +161,7 @@ internal sealed class CommandLineParser
     {
         switch (option)
         {
-            case "--watch-transient" or "--watch-hang":
+            case "--watch-transient" or "--watch-hang" or "--skip-compute-chains":
                 return SetWatch(option);
             case "--screens":
                 return SetScreensFile();
@@ -541,12 +541,16 @@ internal sealed class CommandLineParser
         return true;
     }
 
-    /// <summary><c>--watch-transient</c> or <c>--watch-hang</c>.</summary>
+    /// <summary><c>--watch-transient</c>, <c>--watch-hang</c> or <c>--skip-compute-chains</c>.</summary>
     private bool SetWatch(string option)
     {
         if (option == "--watch-hang")
         {
             _options.WatchHang = true;
+        }
+        else if (option == "--skip-compute-chains")
+        {
+            _options.SkipComputeChains = true;
         }
         else
         {

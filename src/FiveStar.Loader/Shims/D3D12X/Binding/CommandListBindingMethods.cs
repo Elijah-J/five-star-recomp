@@ -306,9 +306,12 @@ internal static unsafe class CommandListBindingMethods
         return true;
     }
 
+    /// <summary>With <c>--skip-compute-chains</c>: a skipped dispatch skips the rest of its recording's compute (off by default).</summary>
+    public static bool SkipComputeChains { get; set; }
+
     /// <summary>
-    /// Whether a dispatch or ExecuteIndirect is skipped: its pipeline is a stand-in, or an earlier one of the recording
-    /// was. The game's compute chains (culling, argument building) prepare counters and arguments for the passes after
+    /// Whether a dispatch or ExecuteIndirect is skipped: its pipeline is a stand-in, or, with
+    /// <see cref="SkipComputeChains"/>, an earlier one of the recording was. The game's compute chains (culling, argument building) prepare counters and arguments for the passes after
     /// them, and the whole 174 MB transient pool is one raw UAV, so a pass that runs after a skipped initialiser can
     /// write records anywhere in it; skipping the rest of the chain for a frame is harmless.
     /// </summary>
@@ -329,7 +332,10 @@ internal static unsafe class CommandListBindingMethods
             return false;
         }
 
-        bindings->ComputeSkipped = 1;
+        if (SkipComputeChains)
+        {
+            bindings->ComputeSkipped = 1;
+        }
 
         return true;
     }

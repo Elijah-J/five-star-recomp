@@ -329,6 +329,7 @@ internal sealed class LoaderHost
         StartMemoryWatch();
 
         GpuBreadcrumbs.Enable(_options.D3D12Breadcrumbs);
+        Shims.D3D12X.Binding.CommandListBindingMethods.SkipComputeChains = _options.SkipComputeChains;
 
         if (_options.WatchTransient)
         {
