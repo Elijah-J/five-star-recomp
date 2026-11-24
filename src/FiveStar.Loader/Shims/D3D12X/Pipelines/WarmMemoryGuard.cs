@@ -78,6 +78,18 @@ internal static unsafe class WarmMemoryGuard
     }
 
     /// <summary>The commit available now plus the page files' remaining growth.</summary>
+    public static ulong CommitAvailable()
+    {
+        return AvailableCommit();
+    }
+
+    /// <summary>The machine's free physical memory.</summary>
+    public static ulong AvailablePhysical()
+    {
+        return Status().AvailablePhysical;
+    }
+
+    /// <summary>The commit available now plus the page files' remaining growth.</summary>
     private static ulong CommitHeadroom(MemoryStatusEx status)
     {
         if (status.AvailablePageFile == ulong.MaxValue)

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Five Star Recomp contributors.
+﻿// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Runtime.InteropServices;
@@ -116,6 +116,17 @@ internal static unsafe class Kernel32
 
     [DllImport(Library)]
     public static extern int K32GetProcessMemoryInfo(nint process, ProcessMemoryCountersEx* counters, uint size);
+
+    [DllImport(Library)]
+    public static extern int ReadProcessMemory(nint process, nint address, void* buffer, nuint size, nuint* read);
+
+    /// <summary>GetProcessHeaps: the number of heaps; fills at most <paramref name="count"/> handles.</summary>
+    [DllImport(Library)]
+    public static extern uint GetProcessHeaps(uint count, nint* heaps);
+
+    /// <summary>HeapSummary: <paramref name="summary"/> is a HEAP_SUMMARY with cb set.</summary>
+    [DllImport(Library)]
+    public static extern int HeapSummary(nint heap, uint flags, HeapSummaryInfo* summary);
 
     [DllImport(Library)]
     public static extern uint TlsAlloc();

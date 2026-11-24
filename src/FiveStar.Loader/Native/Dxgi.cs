@@ -31,7 +31,11 @@ internal static unsafe class Dxgi
     /// <summary>DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020: the desktop runs in HDR10.</summary>
     public const uint ColorSpaceHdr10 = 12;
 
+    /// <summary>IDXGIAdapter3::QueryVideoMemoryInfo(node, DXGI_MEMORY_SEGMENT_GROUP, DXGI_QUERY_VIDEO_MEMORY_INFO*).</summary>
+    public const int QueryVideoMemoryInfoSlot = 14;
+
     public static readonly Guid Factory1Id = new("770aae78-f26f-4dba-a829-253c83d1b387");
+    public static readonly Guid Adapter3Id = new("645967a4-1392-4310-a798-8053ce3e93fd");
     public static readonly Guid Output6Id = new("068346e8-aaec-4b84-add7-137f513f77a1");
 
     [DllImport("dxgi")]
