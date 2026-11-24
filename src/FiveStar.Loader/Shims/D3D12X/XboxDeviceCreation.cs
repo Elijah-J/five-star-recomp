@@ -263,6 +263,13 @@ internal static unsafe class XboxDeviceCreation
             NativeMemory.Free(desktop);
         }
 
+        ulong desktopSize = result->Size;
+
+        if (ConsoleAllocationSizes.TryApply(descriptions, count, result, (ResourceAllocationInfo1*)infos) && desktopSize != result->Size)
+        {
+            ShimContext.Runtime.Log.Detail($"  [d3d12_xs] allocation info: {count} console textures (first {descriptions->Width}x{descriptions->Height}x{descriptions->DepthOrArraySize}, {descriptions->MipLevels} mips, format {descriptions->Format}, layout 0x{descriptions->Layout:x}): 0x{result->Size:x} bytes (desktop 0x{desktopSize:x})");
+        }
+
         return result;
     }
 
