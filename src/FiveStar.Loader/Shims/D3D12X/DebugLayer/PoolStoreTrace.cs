@@ -31,7 +31,8 @@ internal static unsafe class PoolStoreTrace
     private const int MaxSlots = 8;
     private const uint ViewKind = 0x80000000;
     private const uint GuardKind = 0x40000000;
-    private const uint KindMask = 0xC0000000;
+    private const uint ConstantKind = 0x20000000;
+    private const uint KindMask = 0xE0000000;
     private const int HighShift = 32;
     private const int OutsideLogged = 64;
     private const int PerProgram = 3;
@@ -49,6 +50,7 @@ internal static unsafe class PoolStoreTrace
     private static readonly ConcurrentDictionary<uint, string> Programs = new();
     private static readonly ConcurrentDictionary<uint, int> Outside = new();
     private static readonly ConcurrentDictionary<uint, long> Guards = new();
+    private static readonly ConcurrentDictionary<uint, int> Constants = new();
     private static readonly uint[] Views = new uint[MaxSlots];
     private static readonly (ulong Start, ulong Bytes)[] Ranges = new (ulong, ulong)[MaxSlots];
     private static int _nextId;
@@ -194,6 +196,13 @@ internal static unsafe class PoolStoreTrace
                 continue;
             }
 
+            if ((entry[HighWord] & KindMask) == ConstantKind)
+            {
+                LogConstant(log, entry);
+
+                continue;
+            }
+
             bool global = (entry[HighWord] & ViewKind) == 0;
 
             if (global && _outsideLogged < OutsideLogged && address != 0 && (address < pool.Start || address >= pool.Start + pool.Bytes) && Outside.AddOrUpdate(entry[0], 1, static (_, seen) => seen + 1) <= PerProgram)
@@ -216,6 +225,18 @@ internal static unsafe class PoolStoreTrace
             string program = Programs.GetValueOrDefault(entry[0], $"program {entry[0]}");
             log.Warn($"[store trace] loop {entry[HighWord] & ~KindMask} reached the loop guard in {program} ({hits} hits)");
         }
+    }
+
+    /// <summary>An s_buffer_load past its descriptor's range (it reads 0): the first <see cref="PerProgram"/> per program.</summary>
+    private static void LogConstant(LoaderLog log, uint* entry)
+    {
+        if (Constants.AddOrUpdate(entry[0], 1, static (_, seen) => seen + 1) > PerProgram)
+        {
+            return;
+        }
+
+        string program = Programs.GetValueOrDefault(entry[0], $"program {entry[0]}");
+        log.Warn($"[store trace] s_buffer_load of {entry[HighWord] & ~KindMask} bytes at offset 0x{entry[LowWord]:x} past the descriptor's 0x{entry[ValueWord]:x} bytes reads 0 in {program}");
     }
 
     private static uint* Entry(byte* header, uint index)

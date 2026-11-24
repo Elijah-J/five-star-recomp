@@ -50,7 +50,9 @@ internal sealed class ScalarMemoryEmitter
             var checkedOffset = _operands.SnapOne(offsetValue);
             var limit = _operands.SnapOne($"sbuf_limit({_operands.Read(pointer, StrideDword)}, {_operands.Read(pointer, RecordsDword)})");
 
-            // Out of range (past prelude sbuf_limit) reads 0.
+            // Out of range (past prelude sbuf_limit) reads 0; --trace-pool-stores logs such a load.
+            _state.Emit($"  TRACE_SBUF({checkedOffset}, {count * BytesPerDword}u, {limit});");
+
             for (var dword = 0; dword < count; dword++)
             {
                 _operands.Write(a[Destination], $"select({checkedOffset} + {dword * BytesPerDword}u < {limit}, BufLoad({view}.x, {start} + {dword}u * 4u), 0u)", dword);
