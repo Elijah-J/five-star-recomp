@@ -37,6 +37,7 @@ internal sealed unsafe class StandInPipelines
     private int _smallMade;
     private int _smallNotReady;
     private int _smallProgramsInline;
+    private int _smallOverBudget;
 
     private readonly object _gate = new();
     private readonly HashSet<nint> _live = [];
@@ -71,7 +72,7 @@ internal sealed unsafe class StandInPipelines
     }
 
     /// <summary>Stand-ins handed out, how many have their pipeline, the work skipped meanwhile and the work recorded.</summary>
-    public string Summary => $"{Volatile.Read(ref _created)} stand-in pipelines ({Volatile.Read(ref _deferred)} built on first use, {Volatile.Read(ref _used)} of them used, {Volatile.Read(ref _onDemand)} with programs made on demand, {Volatile.Read(ref _ready)} built since, {Count(queue => queue.Backlog)} queued, {Count(queue => queue.WaitingForMemory)} build threads waiting for memory), {Interlocked.Read(ref _skipped)} draws and dispatches skipped, {Interlocked.Read(ref _recorded)} recorded, {SkippedBeforeSummary()}, {Volatile.Read(ref _smallMade)} small compute pipelines made at first use ({Volatile.Read(ref _smallProgramsInline)} with programs made inline or found ready,{Volatile.Read(ref _smallNotReady)} not waited for: programs not made)";
+    public string Summary => $"{Volatile.Read(ref _created)} stand-in pipelines ({Volatile.Read(ref _deferred)} built on first use, {Volatile.Read(ref _used)} of them used, {Volatile.Read(ref _onDemand)} with programs made on demand, {Volatile.Read(ref _ready)} built since, {Count(queue => queue.Backlog)} queued, {Count(queue => queue.WaitingForMemory)} build threads waiting for memory), {Interlocked.Read(ref _skipped)} draws and dispatches skipped, {Interlocked.Read(ref _recorded)} recorded, {SkippedBeforeSummary()}, {Volatile.Read(ref _smallMade)} small compute pipelines made at first use ({Volatile.Read(ref _smallProgramsInline)} with programs made inline or found ready,{Volatile.Read(ref _smallNotReady)} not waited for: programs not made, {Volatile.Read(ref _smallOverBudget)} over the first-use budget)";
 
     /// <summary>
     /// Runs <paramref name="create"/> and writes its pipeline to <paramref name="result"/>; when it takes longer than
@@ -312,9 +313,29 @@ internal sealed unsafe class StandInPipelines
 
         if (firstUse && IsSmall(pipeline))
         {
-            desktop = MakeNow(pipeline);
+            desktop = MakeWithinBudget(pipeline);
             pending = desktop == 0;
         }
+
+        return desktop;
+    }
+
+    /// <summary>
+    /// <see cref="MakeNow"/> while the game's threads have first-use time left (<see cref="FirstUseBudget"/>), the time
+    /// it took spent from it; otherwise the stand-in stays.
+    /// </summary>
+    private nint MakeWithinBudget(nint pipeline)
+    {
+        if (!FirstUseBudget.Available())
+        {
+            Interlocked.Increment(ref _smallOverBudget);
+
+            return 0;
+        }
+
+        long started = Stopwatch.GetTimestamp();
+        nint desktop = MakeNow(pipeline);
+        FirstUseBudget.Spend(Stopwatch.GetTimestamp() - started);
 
         return desktop;
     }
@@ -471,8 +492,9 @@ internal sealed unsafe class StandInPipelines
                 continue;
             }
 
-            // Never on this thread while the build would wait for memory (Build waits without a limit).
-            if (WarmMemoryGuard.RoomForBuild(0))
+            // Never on this thread while the build would wait for memory (Build waits without a limit), nor while other
+            // compiles wait in the compile budget: the game's thread would queue behind them for seconds.
+            if (CompileBudget.Waiting == 0 && WarmMemoryGuard.RoomForBuild(0))
             {
                 creation.Value.Queue.RunNow(creation.Value.Build);
             }
