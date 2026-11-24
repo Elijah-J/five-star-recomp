@@ -77,6 +77,23 @@ flowchart LR
 The game frees reservations with its own `VirtualFree` import, which the loader does not see; a new reservation drops
 every table entry it overlaps.
 
+## The streaming pool
+
+A boot allocates pages three times: 11,360 and 2,960 pages with flags 0x280 (the GPU pool of 0x141E86400) and 99,776
+pages with flags 0x380 (6.1 GiB) right before a reservation of exactly that size (flags 0x23), into which the pool is
+mapped first, so its frames bind in address order. The game then maps pool pages again, one call per page
+(`XMemMapPhysicalPages`, about 57,000 calls in the ten seconds after the pad pairs), into a second 3.5 GiB reservation
+where its resources live. There a resource's pages are whichever pool pages the game picked: consecutive frames on
+the console are not needed, since its GPU translates every 64 KiB page. A slot-133 buffer there whose pages are not
+consecutive in the section is several desktop buffers ([d3d12x-shim.md](d3d12x-shim.md#game-memory-on-the-gpu)); no
+binding of frames to section pages can make both reservations contiguous, and the desktop refuses tile mappings onto
+these heaps.
+
+DirectStorage writes into the streaming heap by page list: a request with option bit 0x200000 (0x144ffd6bc) has as
+destination a pointer into the game's page table, one frame number per 64 KiB page (0x144ffd8c0), and the byte
+offset into the first page in the 16-bit field at request offset 0x10. `PhysicalPageSink` copies the data into those
+frames through the store (`XMemPhysicalMemory.WriteFrames`).
+
 ## Working set statistics
 
 The structure is 0x78 bytes (callers zero that much). One caller (flags 0x20000001) takes qword 0 minus qword 1 and

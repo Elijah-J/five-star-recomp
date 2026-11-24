@@ -67,7 +67,7 @@ internal sealed class LoaderRuntime : IDisposable
         Network = new NetworkSeal(log);
         Gdk = CreateGdk(gdk, environment.Time);
         Overlay = new FileOverlay(Gdk.Config, log);
-        Storage = new DStorageFactory(Stubs, CodeHeap, Overlay, new UnsupportedDestinationSink(log), log);
+        Storage = new DStorageFactory(Stubs, CodeHeap, Overlay, new PhysicalPageSink(XMemPhysical, new UnsupportedDestinationSink(log)), log);
         RecipeAllocator = new RecipeAllocator();
         Input = new GameInputService(new XInputGamepads(), new DesktopInput(), InputConfigFile.Defaults(), environment.Time, Stubs, CodeHeap, log);
 

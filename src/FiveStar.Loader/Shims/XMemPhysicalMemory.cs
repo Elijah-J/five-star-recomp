@@ -181,6 +181,33 @@ internal sealed unsafe class XMemPhysicalMemory : IDisposable
     }
 
     /// <summary>
+    /// Copies <paramref name="data"/> into physical pages by frame number, as the console's DirectStorage does for a
+    /// page-list destination: from byte <paramref name="offset"/> of the page <paramref name="frames"/>[0] names, on
+    /// through the next frames one 64 KiB page each. False when a frame is not one the store handed out.
+    /// </summary>
+    public bool WriteFrames(ulong* frames, ulong offset, ReadOnlySpan<byte> data)
+    {
+        ulong index = offset / PageSize;
+        ulong inPage = offset % PageSize;
+
+        while (!data.IsEmpty)
+        {
+            if (!_pages.TryLocate(frames[index], out var chunk, out ulong pageOffset))
+            {
+                return false;
+            }
+
+            int length = (int)Math.Min((ulong)data.Length, PageSize - inPage);
+            data[..length].CopyTo(new Span<byte>((void*)(chunk.Window + (nint)(pageOffset + inPage)), length));
+            data = data[length..];
+            inPage = 0;
+            index++;
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// Where the CPU reads <paramref name="address"/>: the same offset in the paired CPU reservation for an address in
     /// a GPU-only alias (<see cref="XMemReservation.CpuView"/>), else the address itself.
     /// </summary>
