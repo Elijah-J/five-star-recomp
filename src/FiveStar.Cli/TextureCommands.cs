@@ -26,6 +26,17 @@ internal static class TextureCommands
         }
 
         var arguments = new CommandArguments(args.Skip(1).ToList(), Flags);
+
+        if (!BcPackTableSource.Install(BcPackTableSource.Named(arguments.Option(BcPackTableSource.Option)), Console.Error))
+        {
+            return Failure;
+        }
+
+        if (args[0] != "help")
+        {
+            Console.Error.WriteLine(BcPackTableSource.Describe());
+        }
+
         using var output = ConsoleOutput.Open();
 
         switch (args[0])
@@ -157,5 +168,7 @@ internal static class TextureCommands
         output.WriteLine("                                     decode every BCPack BC1 page on all cores: convergence and speed");
         output.WriteLine("  bcpack-bench <file|dir>... [--pages N] [--seconds S] [--engine E]");
         output.WriteLine("                                     single-core BC1 decode speed on sampled pages, by page size");
+        output.WriteLine("  every command: --bcpack-tables <file>   the BCPack tables (bcpack-tables.bin, not shipped; also");
+        output.WriteLine("                                     FIVESTAR_BCPACK_TABLES); without them " + BcPackTableSource.Fallback);
     }
 }

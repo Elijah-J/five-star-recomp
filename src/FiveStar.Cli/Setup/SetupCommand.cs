@@ -27,6 +27,7 @@ internal static class SetupCommand
         "  --mesh-fallbacks     compile the mesh fallbacks even when every GPU here has mesh shaders",
         "  --all-forms          compile every wave form of every program, not only those the GPUs here pick",
         "  --warm-all           pipeline-warm builds every console pipeline, not only those earlier boots used",
+        "  --bcpack-tables <file>  import the BCPack tables (bcpack-tables.bin, not shipped) into the work folder",
         "  --dxc <dxc.exe> --gdk-lib <xgameruntime.lib> --loader <fivestar-loader.exe>   tool locations",
     ];
 
@@ -47,7 +48,7 @@ internal static class SetupCommand
     /// <summary>The steps in dependency order.</summary>
     public static IReadOnlyList<ISetupStep> Steps()
     {
-        return [new VerifyStep(), new ShaderExtractStep(), new ShaderTranslateStep(), new RectangleShaderStep(), new PipelineCacheStep(), new TextureStep(), new GdkAbiStep(), new PipelineWarmStep()];
+        return [new VerifyStep(), new BcPackTablesStep(), new ShaderExtractStep(), new ShaderTranslateStep(), new RectangleShaderStep(), new PipelineCacheStep(), new TextureStep(), new GdkAbiStep(), new PipelineWarmStep()];
     }
 
     private static int Start(CommandArguments arguments)

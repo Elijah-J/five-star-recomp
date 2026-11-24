@@ -10,7 +10,7 @@ using Xunit;
 
 namespace FiveStar.Formats.Tests;
 
-/// <summary>BCPack pages of the dump: the entropy layer of every codec converges, with the same symbols on every engine.</summary>
+/// <summary>BCPack pages of the dump: every codec converges to the same symbols on every engine, and with the user's tables to blocks.</summary>
 public sealed class BcPackDumpTests
 {
     private const int PagesPerCodec = 3;
@@ -37,6 +37,40 @@ public sealed class BcPackDumpTests
                 Assert.Equal(expected, symbols);
             }
         }
+    }
+
+    [TablesFact]
+    public void With_the_tables_pages_of_every_codec_decode_to_valid_blocks_on_every_engine()
+    {
+        var tables = BcPackTables.Load(TablesFactAttribute.Path!);
+        var engines = Enum.GetValues<BcPackEngine>().Where(BcPackDecoder.IsSupported).ToList();
+
+        foreach (var (codec, page, stored) in SamplePages())
+        {
+            var expected = new byte[page.VirtualSize];
+            var scalar = BcPackPageDecoder.Decode((int)codec, stored, page.VirtualSize, expected, tables, BcPackEngine.Scalar);
+
+            Assert.True(scalar.Success, $"{codec} page at {page.FileOffset:x}: {scalar.Describe()}");
+            Assert.Contains(expected, value => value != 0);
+
+            foreach (var engine in engines)
+            {
+                var blocks = new byte[page.VirtualSize];
+
+                Assert.True(BcPackPageDecoder.Decode((int)codec, stored, page.VirtualSize, blocks, tables, engine).Success);
+                Assert.Equal(expected, blocks);
+            }
+        }
+    }
+
+    [Fact]
+    public void A_table_file_with_other_content_is_refused()
+    {
+        var other = new byte[BcPackTables.FileSize];
+
+        Assert.NotNull(BcPackTables.Check(other));
+        Assert.NotNull(BcPackTables.Check(other.AsSpan(1)));
+        Assert.Throws<InvalidDataException>(() => BcPackTables.Parse(other));
     }
 
     /// <summary>The first pages of each codec in the dump's page files.</summary>

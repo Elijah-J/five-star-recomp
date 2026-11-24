@@ -16,10 +16,22 @@ own. No code was copied.
 
 ## VIctory
 
-https://github.com/marvisak/victory, GPL-3.0. Its pipeline handling (a host pipeline made on the first draw rather
-than at creation, and a list of the last run's pipelines started during loading) was the idea behind building
-pipelines on first use and the pipeline journal (docs/d3d12x-pipelines.md). The design and code are our own; no code
-was copied.
+https://github.com/marvisak/victory, revision `ffe310eb2098e52169f4c44db5ffdabf43a72622`, GPL-3.0. The BCPack block
+layer of every codec in `src/FiveStar.Formats/Ttpf/BcPack` (`BcPackTables`, `BlockRecord`, `PlainBlockAssembler`,
+`Bc6HBlockAssembler`, `Bc7BlockAssembler`) follows the mechanism of its decoder (`crates/victory-formats/src/bcpack.rs`):
+the layout of its table file, the two back references and the dictionaries, the rank tables, the BC7 control words
+and the lane meanings of BC3, BC6H and BC7. It is written in our own design on our lane decoder.
+
+The tables themselves (`bcpack-tables.bin`) are not covered by VIctory's licence; they are format data of Microsoft's
+BCPack. Five Star Recomp does not distribute them in any form. The user supplies the file (`fivestar setup
+--bcpack-tables <file>`), and without it BC3, BC6H and BC7 do not decode. The rANS model frequencies in that file equal
+our `mdu_models.json` (silicon-rans, below); its BC1 2x2 rank table gives the same codes as `bc1_quad_table.json`, and
+its BC1 dictionary differs from `bc1_window.json` in 54 of 255 slots, by at most 3 in a field. With the tables, BC1 decodes through
+their dictionary; our fitted tables remain the fallback without them.
+
+Its pipeline handling (a host pipeline made on the first draw rather than at creation, and a list of the last run's
+pipelines started during loading) was the idea behind building pipelines on first use and the pipeline journal
+(docs/d3d12x-pipelines.md). The design and code are our own; no code was copied.
 
 ## GTA6-Asset-Info
 

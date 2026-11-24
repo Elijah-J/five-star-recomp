@@ -14,7 +14,8 @@ namespace FiveStar.Loader.Tests;
 
 /// <summary>
 /// DirectStorage requests of BCPack pages: the compression byte is the page's codec times two (BC1 2, BC7 14), and the
-/// destination gets the page's BC blocks, or placeholder blocks for a codec without a block decoder.
+/// destination gets the page's BC blocks, or placeholder blocks for a codec without a block decoder. The tests run one
+/// after another, so the one that installs the user's tables does not change what the others see.
 /// </summary>
 public sealed unsafe class DirectStorageBcPackTests
 {
@@ -65,6 +66,36 @@ public sealed unsafe class DirectStorageBcPackTests
         AssertPlaceholder(bc7);
         Assert.Equal(0, bc1Result);
         Assert.Equal(pages.PageData(bc1Index), bc1);
+    }
+
+    [TablesFact]
+    public void With_the_bcpack_tables_the_bc7_page_of_ttdb_graphics_gets_its_real_blocks()
+    {
+        const long Bc7PageOffset = 0x8dbd00;
+
+        string path = Path.Combine(DumpFactAttribute.Folder!, "data", "ttdb", "graphics", "ttdb_graphics.ttpf");
+        using var source = new FileByteSource(path);
+        var pages = new TexturePageFile(source, new ZlibInflater());
+        var page = pages.Pages[Index(pages, page => page.FileOffset == Bc7PageOffset && page.Codec == (int)BcPackCodec.Bc7)];
+        var tables = BcPackTables.Load(TablesFactAttribute.Path!);
+        byte[] expected = new byte[page.VirtualSize];
+
+        Assert.True(BcPackPageDecoder.Decode(page.Codec, source.Read(page.FileOffset, (int)page.FileLength).ToArray(), page.VirtualSize, expected, tables, BcPackEngine.Scalar).Success);
+
+        using var test = TestRuntime.Create();
+        byte[] bc7 = new byte[page.VirtualSize];
+        BcPackPageDecoder.Install(tables);
+
+        try
+        {
+            Assert.Equal(0, RunPage(test, path, page, bc7));
+        }
+        finally
+        {
+            BcPackPageDecoder.Install(null);
+        }
+
+        Assert.Equal(expected, bc7);
     }
 
     /// <summary>One queue: each request reads the same stored range as a page of its codec, then one status entry.</summary>

@@ -93,8 +93,9 @@ smoother than `y0y1` on all 24 textures that are not flat, and the volume bricks
 ## Page codecs
 
 zlib pages decode with any zlib inflater. Codecs 1 and 3 to 7 are the console's BCPack format, one per BC format (the
-codec equals `DSTORAGE_BCPACK_MODE`). BC1 (codec 1) decodes; BC4 and BC5 (codecs 4 and 5) decode approximately; pages
-of the other codecs read as missing.
+codec equals `DSTORAGE_BCPACK_MODE`). With the user's BCPack tables ([below](#bcpack-tables)) every codec decodes
+exactly. Without them BC1 decodes with our fitted tables, BC4 and BC5 approximately, and pages of BC3, BC6H and BC7
+read as missing.
 
 Every codec uses the same entropy layer (below) with its own lanes. Each lane emits one symbol per 8 bytes of output:
 one per block for BC1 and BC4, two (E, then O) per 16-byte block for the others. A lane's alphabet index is its symbol
@@ -169,28 +170,48 @@ The endpoints of block i start from 128 when d is 0, from block i - d, or, when 
 (i - d) mod 256 of the codec's preset table. Each codec has a 64-entry pair table: symbol s gives the 3-bit indices of
 the two pixels, first pixel first.
 
-The pair tables and preset slots (`Tables/bc4_tables.json`, `Tables/bc5_tables.json`) are not published anywhere; they
-were fitted to the reference dump against the textures' smaller mips, so BC4 and BC5 output is approximate and
+Without the user's tables ([below](#bcpack-tables)), BC4 and BC5 use pair tables and preset slots
+(`Tables/bc4_tables.json`, `Tables/bc5_tables.json`) fitted to the reference dump against the textures' smaller
+mips, so their output is approximate and
 `texture coverage` counts those textures as `approx_codec4` and `approx_codec5`. Because BCPack is lossless, a pair
 table is a bijection onto the 64 index pairs, and the fit is constrained to one.
 
-### BCPack BC7 (no block decoder yet)
+### BCPack tables
 
-Checked on the dump with the BC7 anchor rule (an anchor index never has its top bit set), on every block whose index
-chain starts inside its page: 0 violations in 12.6 million anchor reads of modes 1 and 3 to 7.
+The block layer of every codec needs constant tables: per-codec dictionaries of 255 entries that back references
+before block 0 read, the index rank tables and the BC7 control words. They are Microsoft's format data and cannot be
+derived from the dump, so the project does not ship them in any form. The user supplies the file (`bcpack-tables.bin`,
+77,982 bytes, SHA-256 `1F1D4760419202BB5672F0C428CE51E456B5D08FBAEC8F371D043FD94E01C36B`; VIctory's repository
+carries it). `fivestar setup <dump> --bcpack-tables <file>` checks size and hash and copies it to
+`<work>/loader/bcpack-tables.bin`, which the `textures` step and `fivestar run` (as `fivestar-loader --bcpack-tables`)
+use. The `fivestar texture` commands take `--bcpack-tables <file>` or `FIVESTAR_BCPACK_TABLES`. Without the file, or
+with any other file, they say so and decode as before.
 
-| Part | Layout |
+| Offset | Bytes | Content |
+|---|---|---|
+| 0 | 2,304 | 128 models x 9 u16 frequencies: the rANS models (equal to `mdu_models.json`) |
+| 2,304 | 704 | rank tables: BC1 256, BC3 alpha 64, BC3 colour 256, BC4 64, BC5 64 |
+| 3,008 | 1,024 | 512 u16 BC7 control words |
+| 4,032 | 73,950 | 255 dictionary entries each of BC1, BC3, BC4, BC5, BC6H and BC7 |
+
+The mechanism follows VIctory (`THIRD_PARTY_NOTICES.md`). Each block's record is its lane symbols, lane by lane (E
+then O). Lanes 0 and 1 give an index reference ix and an endpoint reference ix + zigzag(d) (on 16-byte blocks each is
+E and O interleaved). A reference r of block i is nothing (0), block i - r, or dictionary entry r - i - 1 before block
+0. Endpoints and indices add zigzag residuals to the referenced values, modulo their width.
+
+| Codec | Lanes after the references |
 |---|---|
-| Distances | index distance di = lane 1 E and O interleaved (E on the even bits); endpoint distance (di + zigzag(lane 0 E, O interleaved)) mod 256 |
-| Header | lane 15 (E, O); its rank r among all pairs a < 32, b < 16 sorted by ((a + 1)(b + 1), a); the dump uses ranks 0-284 |
-| Ranks | 0-63 mode 7, partition 63 - r; 64 mode 6; 65-68 mode 5; 69-76 mode 4; 77-140 mode 3, partition 140 - r; 141-162 mode 2; 163-226 mode 1, partition 226 - r; 227-240 mode 0; 241-282 mode 2; 283-284 mode 0 |
-| Indices | lanes 11-14 = rows 0-3, E columns 0-1, O columns 2-3; a symbol's odd bits are the left pixel's residual and its even bits the right's (row 3: the other way round); index = reference block's index + zigzag residual modulo 2^bits, kept MSB-aligned in 4 bits; di = 0 starts from 0 |
-| Mode 4 | lanes 11-14 carry its 3-bit index set |
+| BC1 | 2-7 R0 G0 B0 R1 G1 B1; 8-11 a 2x2 index group each through the BC1 rank table |
+| BC3 | 2 alpha e0, e1; 3-6 two alpha indices per symbol (alpha rank table); 7-9 R, G, B (E endpoint 0, O endpoint 1); 10-11 colour 2x2 groups |
+| BC4 | 2-3 e0, e1; 4-11 two indices per symbol |
+| BC5 | 2-3 channel 0 and 1 (E e0, O e1); 4-11 two indices per symbol |
+| BC6H | 15: E + 1 is the mode, O the partition; 2-4 endpoint 0 and 5-7 endpoint 1 as 16-bit residuals (E and O interleaved); 8-10 endpoints 2 and 3; 11-14 two 4-bit index residuals per symbol |
+| BC7 | 15 (E low 5 bits, O low 4) picks the control word (mode, rotation, index selection, subsets, partition); 2-4, 6-8 and 10 the subsets' R G B, 5 and 9 alpha or the third subset; 11-14 the primary indices; 6-8 and 10 the secondary set of modes 4 and 5 |
 
-The anchor rule fixes which mode-0 and mode-2 ranks are which, and narrows each to the partitions that share its
-anchor pixels; the partition within such a group, the endpoint layer and the 256-slot endpoint and index presets are
-not fitted here.
-
+With the tables all 108,605 BCPack pages of the dump decode, none with an invalid record (an unused BC7 control word
+or BC6H mode), and exported BC3, BC6H and BC7 textures look right. The BC1 output differs from that of our fitted
+tables on 13,426 pages, because the fitted window is off in 54 slots: in the first 3,000 such pages, the changed blocks
+hold 489,862 3-colour blocks with a transparent index under our tables and 1,671 under the user's.
 ## Duplicate table
 
 `textures.rpf` holds one entry (archive offset 0xB6CA000 in the reference dump, 327,680 bytes) that starts with
@@ -217,12 +238,15 @@ fivestar texture bcpack-scan  <file|dir>... [--codec 1|3|4|5|6|7] [--every N] [-
 fivestar texture bcpack-bench <file|dir>... [--pages N] [--seconds S] [--engine avx512|avx2|scalar]
 ```
 
+Every `texture` command takes `--bcpack-tables <file>` (or `FIVESTAR_BCPACK_TABLES`) and prints on standard error
+whether it decodes with them.
+
 Statuses: `ok`, `skip_fmt_N` (format not supported), `skip_modeN` (no swizzle known), `skip_kindN`, `skip_size`
 (layout longer than the span), `skip_cube_copies` (more copies than units), `skip_unsupported_codec` (mip 0 on a
 BCPack page without a block decoder), and in `coverage` `bcpack_codecN` (blocked by such a page) and
 `approx_codecN` (extracts, through an approximate BCPack codec). On the reference dump every texture's layout fits
-its span; 354,998 of 357,115 have a mip 0 that decodes exactly, 132 more decode approximately (BC4 40, BC5 92), and
-the rest (1,985) sit on BCPack pages of codecs 3, 6 and 7.
+its span. With the user's BCPack tables all 357,115 have a mip 0 that decodes. Without them 354,998 do, 132 more
+decode approximately (BC4 40, BC5 92), and the rest (1,985) sit on BCPack pages of codecs 3, 6 and 7.
 
 `bcpack-scan` decodes every page of one codec (BC1 by default) on all cores and prints, per file and in total, the
 pages that converge, fail or reach an unfitted preset slot, with the decode speed. `--hashes` writes one line per page
@@ -232,10 +256,8 @@ sampled pages, by page size.
 
 ## Unknown
 
-- The BCPack block layers of codecs 3, 6 and 7.
-- The exact BC4 and BC5 pair tables and preset slots (ours are fits), and the slots that no fitted texture reads (4
-  BC4 and 58 BC5 pages reach one; they decode as zeros and are reported).
-- Values of the BC1 preset window and codebook that no page of this dump tests.
+- Without the user's BCPack tables: the BC3, BC6H and BC7 block layers, and exact BC1, BC4 and BC5 tables (ours are
+  fits; 4 BC4 and 58 BC5 pages reach a preset slot no fit covers).
 - What separates bases 1, 2 and 3.
 - Volumes with mips, and volume bricks of 1-, 4- and 16-byte elements (none ship).
 - `o1`, `o0` bits 21-31 and the page tag.

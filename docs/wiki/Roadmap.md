@@ -28,7 +28,7 @@ The executable is in hand; `fivestar exe analyze` reports its imports and GDK ca
 
 | Item | State |
 |---|---|
-| BCPack | BC1 decodes exactly (all 102,725 pages); BC4 and BC5 decode approximately with tables fitted from the data; every codec's entropy layer decodes; BC7 (1,870 textures: mode headers and index layout confirmed, endpoint and preset tables not fitted), BC6H (98) and BC3 (17) are open ([details](Textures-and-BCPack.md)) |
+| BCPack | done with the format's constant tables, which the user supplies (`fivestar setup --bcpack-tables`; they are not part of this repository): all 108,605 pages of every codec (BC1, BC3, BC4, BC5, BC6H, BC7) decode, so every texture exports exactly, and the loader's DirectStorage path decodes real blocks instead of placeholders. Without the tables BC1 decodes from our own fitted tables and BC4/BC5 approximately. Open: speed (the table path is about 3x slower than the old BC1 path, not vectorised yet) ([details](Textures-and-BCPack.md)) |
 | Type names | PSO structures are identified by hashes; naming them needs lists of engine class names |
 | Geometry | drawables decode with tangents, four texture coordinate sets, skin influences and inverse binds; open: an export that carries skinning (glTF), the ped bone palette, head skin streams and the meshlet culling data ([details](https://github.com/ThatRecompDev/five-star-recomp/blob/main/docs/models.md)) |
 | BVH data | ray tracing needs acceleration structures in AMD's layout ([details](Shader-Translation.md#ray-tracing)) |
