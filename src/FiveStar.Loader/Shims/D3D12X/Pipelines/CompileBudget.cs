@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Native;
 
 namespace FiveStar.Loader.Shims.D3D12X.Pipelines;
@@ -49,6 +50,7 @@ internal static unsafe class CompileBudget
     {
         long estimate = Estimate(shaderBytes);
         bool counted = false;
+        using var wait = BlockingWaits.Enter("driver compile memory budget");
 
         while (!TryEnter(estimate, shaderBytes < TinyShaderBytes))
         {

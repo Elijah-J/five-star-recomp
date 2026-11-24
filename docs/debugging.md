@@ -116,6 +116,13 @@ frame (event 0x14A210CF8). That thread renders through 0x1443c38a0 and waits for
 workers (0x1443c4140). While it waits no heartbeat is written, so a loading-screen frame that takes more than 30 s
 ends the game with `GPU Loc Sig`.
 
+Two causes were seen. Workers that fault in the game's pool allocators (the transient-pool corruption) never return.
+And workers slept in the loader: a small compute stand-in waited up to 250 ms at its first use even while its
+programs were still being made on demand (55 to 73 s on average during the story load), and a loading-screen frame
+met hundreds of them, so all five workers slept for more than 30 s. A first use now waits only when the programs are
+ready. Waits a game thread can reach inside the loader register with `BlockingWaits`, so a stack that ends in JIT
+code still names the wait (`(waiting in ... for N ms)`), and the stall line sums the time spent in each.
+
 `fivestar-loader --watch-hang` reads these globals every 100 ms and logs the main state, the loading-screen flags,
 the session byte, the pause flag and the handler when they change, a heartbeat that moves again after 2 s or more, and
 the loader counters and every thread's stack (64 frames, with thread names) when the heartbeat has stood still for 5,

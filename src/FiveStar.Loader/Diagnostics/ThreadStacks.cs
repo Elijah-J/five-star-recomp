@@ -48,7 +48,13 @@ internal sealed unsafe class ThreadStacks
         {
             string name = Name(ids[i]);
             string stack = Format(frames.AsSpan(i * _maxFrames, counts[i]));
+            string wait = BlockingWaits.Describe(ids[i]);
             string key = name.Length == 0 ? stack : $"\"{name}\": {stack}";
+
+            if (wait.Length != 0)
+            {
+                key = $"({wait}) {key}";
+            }
 
             if (!groups.TryGetValue(key, out var members))
             {

@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Native;
 
 namespace FiveStar.Loader.Shims.D3D12X.Pipelines;
@@ -34,6 +35,7 @@ internal sealed unsafe class StandInPipelines
     private readonly ConcurrentDictionary<string, long> _skippedBefore = new(StringComparer.Ordinal);
     private readonly HashSet<nint> _small = [];
     private int _smallMade;
+    private int _smallNotReady;
 
     private readonly object _gate = new();
     private readonly HashSet<nint> _live = [];
@@ -68,7 +70,7 @@ internal sealed unsafe class StandInPipelines
     }
 
     /// <summary>Stand-ins handed out, how many have their pipeline, the work skipped meanwhile and the work recorded.</summary>
-    public string Summary => $"{Volatile.Read(ref _created)} stand-in pipelines ({Volatile.Read(ref _deferred)} built on first use, {Volatile.Read(ref _used)} of them used, {Volatile.Read(ref _onDemand)} with programs made on demand, {Volatile.Read(ref _ready)} built since, {Count(queue => queue.Backlog)} queued, {Count(queue => queue.WaitingForMemory)} build threads waiting for memory), {Interlocked.Read(ref _skipped)} draws and dispatches skipped, {Interlocked.Read(ref _recorded)} recorded, {SkippedBeforeSummary()}, {Volatile.Read(ref _smallMade)} small compute pipelines made at first use";
+    public string Summary => $"{Volatile.Read(ref _created)} stand-in pipelines ({Volatile.Read(ref _deferred)} built on first use, {Volatile.Read(ref _used)} of them used, {Volatile.Read(ref _onDemand)} with programs made on demand, {Volatile.Read(ref _ready)} built since, {Count(queue => queue.Backlog)} queued, {Count(queue => queue.WaitingForMemory)} build threads waiting for memory), {Interlocked.Read(ref _skipped)} draws and dispatches skipped, {Interlocked.Read(ref _recorded)} recorded, {SkippedBeforeSummary()}, {Volatile.Read(ref _smallMade)} small compute pipelines made at first use ({Volatile.Read(ref _smallNotReady)} not waited for: programs not ready)";
 
     /// <summary>
     /// Runs <paramref name="create"/> and writes its pipeline to <paramref name="result"/>; when it takes longer than
@@ -93,8 +95,14 @@ internal sealed unsafe class StandInPipelines
         long started = Stopwatch.GetTimestamp();
         var queued = queue.Queue(create, urgent: false);
         var build = queued.Done.Task;
+        bool done;
 
-        if (build.Wait(budget))
+        using (BlockingWaits.Enter("pipeline creation budget"))
+        {
+            done = build.Wait(budget);
+        }
+
+        if (done)
         {
             *result = build.Result.Pipeline;
 
@@ -413,14 +421,15 @@ internal sealed unsafe class StandInPipelines
     }
 
     /// <summary>
-    /// The first use of a small compute stand-in: its creation, once its programs are ready, runs on this thread
-    /// (claimed from the queue) within <see cref="SmallBudget"/>; the desktop pipeline, or 0 when the budget ran out and
-    /// the stand-in stays as before.
+    /// The first use of a small compute stand-in: when its programs are ready, its creation runs on this thread
+    /// (claimed from the queue) within <see cref="SmallBudget"/>; the desktop pipeline, or 0 when the programs are not
+    /// ready or the budget ran out, and the stand-in stays as before.
     /// </summary>
     private nint MakeNow(nint pipeline)
     {
         var standIn = (StandInPipelineObject*)pipeline;
         var deadline = Stopwatch.GetTimestamp() + (long)(SmallBudget.TotalSeconds * Stopwatch.Frequency);
+        using var wait = BlockingWaits.Enter("small compute pipeline at first use");
 
         while (Stopwatch.GetTimestamp() < deadline)
         {
@@ -443,8 +452,18 @@ internal sealed unsafe class StandInPipelines
                 }
             }
 
+            // Programs still being made: they take seconds to minutes, so waiting only holds up the game's thread. The
+            // Subrender workers of a loading-screen frame meeting hundreds of such stand-ins slept 250 ms on each, and
+            // the game's hang watchdog ended the story load (docs/debugging.md#hang-watchdog).
+            if (!creation.HasValue)
+            {
+                Interlocked.Increment(ref _smallNotReady);
+
+                break;
+            }
+
             // Never on this thread while the build would wait for memory (Build waits without a limit).
-            if (creation.HasValue && WarmMemoryGuard.RoomForBuild(0))
+            if (WarmMemoryGuard.RoomForBuild(0))
             {
                 creation.Value.Queue.RunNow(creation.Value.Build);
             }

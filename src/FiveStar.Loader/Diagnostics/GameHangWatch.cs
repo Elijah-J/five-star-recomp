@@ -106,7 +106,7 @@ internal sealed unsafe class GameHangWatch
             }
 
             dumps++;
-            _log.Info($"{Prefix}{now:F1} s: heartbeat still for {now - beatAt:F1} s; {_counters()}");
+            _log.Info($"{Prefix}{now:F1} s: heartbeat still for {now - beatAt:F1} s; {BlockingWaits.Summary()}; {_counters()}");
             _stacks.Log(_log, Prefix);
         }
     }
