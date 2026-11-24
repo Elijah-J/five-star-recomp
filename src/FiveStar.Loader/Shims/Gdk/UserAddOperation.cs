@@ -9,12 +9,14 @@ namespace FiveStar.Loader.Shims.Gdk;
 internal sealed class UserAddOperation : ManagedAsyncOperation
 {
     private readonly UserService _users;
+    private readonly TaskQueueService _taskQueues;
     private readonly NativeBoundary _boundary;
     private readonly uint _options;
 
-    public UserAddOperation(UserService users, NativeBoundary boundary, uint options)
+    public UserAddOperation(UserService users, TaskQueueService taskQueues, NativeBoundary boundary, uint options)
     {
         _users = users;
+        _taskQueues = taskQueues;
         _boundary = boundary;
         _options = options;
     }
@@ -29,6 +31,8 @@ internal sealed class UserAddOperation : ManagedAsyncOperation
     public override unsafe int Write(byte* buffer, nuint size)
     {
         *(nint*)buffer = _users.Reference();
+
+        _users.Added(_taskQueues, _boundary);
 
         return HResult.Ok;
     }
