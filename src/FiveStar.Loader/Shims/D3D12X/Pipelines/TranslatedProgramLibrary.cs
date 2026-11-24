@@ -86,6 +86,29 @@ internal sealed class TranslatedProgramLibrary : IProgramLibrary
         }
     }
 
+    /// <summary>Whether <paramref name="name"/> has a loadable form, without reading it.</summary>
+    public bool Has(string name)
+    {
+        lock (_gate)
+        {
+            if (_loaded.ContainsKey(name))
+            {
+                return true;
+            }
+        }
+
+        return PathOf(name) is not null;
+    }
+
+    /// <summary>The file of <paramref name="name"/> was written since it was found missing: the next load reads it.</summary>
+    public void Arrived(string name)
+    {
+        lock (_gate)
+        {
+            _missing.Remove(name);
+        }
+    }
+
     public IReadOnlyList<string> Names(ReadOnlySpan<byte> prefix)
     {
         return [.. _index.Find(prefix)];

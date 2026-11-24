@@ -3,6 +3,8 @@
   <PropertyGroup>
     <!-- Part of fivestar-loader: trim and AOT analysis on every build (docs/aot.md). -->
     <IsAotCompatible>true</IsAotCompatible>
+    <!-- DxcLibraryCompiler calls the DXC API through its COM vtables. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>

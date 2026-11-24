@@ -86,6 +86,18 @@ internal sealed record HostOptions
     /// <summary>Every pipeline the cache lacks is built at creation, not on first use.</summary>
     public bool EagerPipelines { get; set; }
 
+    /// <summary>The program cache folder of programs made on demand (<c>--program-cache</c>); null means the work folder's.</summary>
+    public string? ProgramCache { get; set; }
+
+    /// <summary><c>--no-on-demand</c>: only the ahead-of-time translation provides programs.</summary>
+    public bool NoOnDemand { get; set; }
+
+    /// <summary>dxc.exe, dxcompiler.dll or their folder (<c>--dxc</c>); null finds one.</summary>
+    public string? Dxc { get; set; }
+
+    /// <summary>Threads that make programs on demand (<c>--shader-jobs</c>); null for the default.</summary>
+    public int? ShaderJobs { get; set; }
+
     /// <summary>The PC FidelityFX API DLL the console FidelityFX calls are forwarded to; null leaves FidelityFX off.</summary>
     public string? FidelityFxLibrary { get; set; }
 

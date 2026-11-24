@@ -80,9 +80,24 @@ internal sealed unsafe class PipelineFactory
     /// </summary>
     public bool Lazy { get; init; }
 
+    /// <summary>
+    /// Makes the programs the library lacks when a pipeline needs them (the library is the same object); null when every
+    /// program comes from the ahead-of-time translation.
+    /// </summary>
+    public OnDemandPrograms? OnDemand { get; init; }
+
     public int Graphics(GraphicsPipelineDescription description, Guid* iid, nint* result)
     {
         var deferral = Deferral(Journal?.Contains(description) ?? false, () => Journal?.Record(description));
+        var lacking = Lacking(description.Shaders);
+
+        if (lacking is not null)
+        {
+            var waiting = Later(lacking, () => PrepareGraphics(description), iid, result, deferral);
+
+            return Remember(description, waiting, result, "programs made on demand");
+        }
+
         var recipe = PrepareGraphics(description);
 
         if (recipe is null)
@@ -100,6 +115,13 @@ internal sealed unsafe class PipelineFactory
     public int Compute(ComputePipelineDescription description, Guid* iid, nint* result)
     {
         var deferral = Deferral(Journal?.Contains(description) ?? false, () => Journal?.Record(description));
+        var lacking = Lacking([description.Shader]);
+
+        if (lacking is not null)
+        {
+            return Later(lacking, () => PrepareCompute(description), iid, result, deferral);
+        }
+
         var recipe = PrepareCompute(description);
 
         if (recipe is null)
@@ -264,6 +286,80 @@ internal sealed unsafe class PipelineFactory
         }
 
         return record;
+    }
+
+    /// <summary>
+    /// The programs of <paramref name="shaders"/> that <see cref="OnDemand"/> has to make, each as the extracted programs
+    /// of its prefix; null when every one is loadable now (or has no extracted program or no readable code, which
+    /// <see cref="Resolve"/> reports).
+    /// </summary>
+    private List<IReadOnlyList<string>>? Lacking(IEnumerable<ShaderSource> shaders)
+    {
+        if (OnDemand is null)
+        {
+            return null;
+        }
+
+        List<IReadOnlyList<string>>? lacking = null;
+
+        foreach (var source in shaders)
+        {
+            IReadOnlyList<string>? names;
+
+            try
+            {
+                names = OnDemand.Lacking(ProgramKeys.Prefix(source));
+            }
+            catch (InvalidDataException)
+            {
+                return null;
+            }
+
+            if (names is not null)
+            {
+                lacking ??= [];
+                lacking.Add(names);
+            }
+        }
+
+        return lacking;
+    }
+
+    /// <summary>
+    /// A stand-in for a pipeline whose programs are made on demand; once they are ready its recipe is made and built as
+    /// in <see cref="Create"/>. With a deferral this starts on first use.
+    /// </summary>
+    private int Later(List<IReadOnlyList<string>> lacking, Func<PipelineRecipe?> prepare, Guid* iid, nint* result, Action? deferral)
+    {
+        var wanted = *iid;
+        var onDemand = OnDemand!;
+        Func<bool, Task> programs = urgent => Task.WhenAll(lacking.Select(names => onDemand.Request(names, urgent)));
+
+        return StandIns.Waiting(programs, () => Prepared(prepare(), wanted), result, deferral);
+    }
+
+    /// <summary>The build of a recipe whose programs are ready; null when a program could not be made.</summary>
+    private PendingBuild? Prepared(PipelineRecipe? recipe, Guid iid)
+    {
+        if (recipe is null)
+        {
+            return null;
+        }
+
+        var stream = recipe.Stream;
+        stream.Release();
+
+        Action<nint> built = pipeline =>
+        {
+            QueueProgress.Name(pipeline, recipe.Names);
+
+            if (recipe.Desktop is not null)
+            {
+                _rectangles?.Remember(pipeline, recipe.Desktop, recipe.Programs);
+            }
+        };
+
+        return new PendingBuild(() => Build(stream, iid), stream.ShaderBytes >= HeavyShaderBytes, recipe.Names, built);
     }
 
     /// <summary>

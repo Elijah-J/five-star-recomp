@@ -215,9 +215,14 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         string? programs = _pipelineFolders.Programs;
         string? translated = _pipelineFolders.Translated;
 
-        if (programs is null || translated is null)
+        if (_pipelineFolders.OnDemandNote is not null)
         {
-            _log.Detail("  [d3d12_xs] pipeline slots stay stubs: no --shader-dir and --translated-dir");
+            _log.Info($"  [d3d12_xs] {_pipelineFolders.OnDemandNote}");
+        }
+
+        if (!_pipelineFolders.Enabled)
+        {
+            _log.Detail("  [d3d12_xs] pipeline slots stay stubs: no --shader-dir, or neither --translated-dir nor programs made on demand");
 
             return;
         }
@@ -235,8 +240,9 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
 
         var warnings = new OnceLog(_log);
         WaitForProgramIndex();
-        var library = TranslatedProgramLibrary.Open(_programIndex!, translated, device2, warnings, _log);
-        var rectangles = new RectanglePipelines(device2, root, Path.Combine(translated, RectangleGeometryShader.Folder), library, warnings);
+        var onDemand = _pipelineFolders.OnDemand?.Open(_programIndex!, programs!, translated, device2, warnings, _log);
+        IProgramLibrary library = onDemand ?? (IProgramLibrary)TranslatedProgramLibrary.Open(_programIndex!, translated!, device2, warnings, _log);
+        var rectangles = new RectanglePipelines(device2, root, RectangleFolder(translated), library, warnings) { Compiler = _pipelineFolders.OnDemand?.RectangleCompiler };
         Rectangles.Attach(rectangles);
 
         // Builds start only while the machine has the memory; heavy ones on their own thread (docs/d3d12x-pipelines.md#stand-ins).
@@ -247,10 +253,39 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         var standIns = new StandInPipelines(PipelineSlots.CreationBudget, builds, heavyBuilds, warnings);
 
         var cache = OpenCache(device2);
-        var factory = new PipelineFactory(device2, root, library, new ProgramSignatures(programs), warnings, rectangles, standIns, cache) { Journal = OpenJournal(), Lazy = !_pipelineFolders.EagerBuilds };
+        var factory = new PipelineFactory(device2, root, library, new ProgramSignatures(programs!), warnings, rectangles, standIns, cache) { Journal = OpenJournal(), Lazy = !_pipelineFolders.EagerBuilds, OnDemand = onDemand };
         Pipelines = new PipelineSlots(factory, warnings);
         PipelineSlotHandlers.Register(Objects);
-        _log.Detail($"  [d3d12_xs] pipeline slots on: programs {programs}, translated {translated}");
+        Prefetch(onDemand);
+        _log.Detail($"  [d3d12_xs] pipeline slots on: programs {programs}, translated {translated ?? "none"}");
+    }
+
+    /// <summary>The rectangle-list geometry shaders: in the translation, else in the program cache (made there on demand).</summary>
+    private string RectangleFolder(string? translated)
+    {
+        if (translated is not null && Directory.Exists(Path.Combine(translated, RectangleGeometryShader.Folder)))
+        {
+            return Path.Combine(translated, RectangleGeometryShader.Folder);
+        }
+
+        return Path.Combine(_pipelineFolders.OnDemand?.Root ?? translated ?? string.Empty, RectangleGeometryShader.Folder);
+    }
+
+    /// <summary>Queues the programs of the journal's pipelines, in first-use order, on a worker thread.</summary>
+    private void Prefetch(OnDemandPrograms? onDemand)
+    {
+        var folder = _pipelineFolders.Cache;
+
+        if (onDemand is null || folder is null)
+        {
+            return;
+        }
+
+        Task.Run(() =>
+        {
+            var queued = onDemand.Prefetch(PipelineJournalFile.ShaderPrefixes(Path.Combine(folder, PipelineJournal.FileName)));
+            _log.Info($"  [d3d12_xs] programs on demand: {queued} shaders of earlier boots' pipelines queued");
+        });
     }
 
     /// <summary>The journal of the pipelines the game asks for, beside the disk cache; null without a cache folder.</summary>
@@ -302,9 +337,15 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
     {
         string? programs = _pipelineFolders.Programs;
 
-        if (_programIndex is not null || programs is null || _pipelineFolders.Translated is null)
+        if (_programIndex is not null || programs is null || !_pipelineFolders.Enabled)
         {
             return;
+        }
+
+        if (_pipelineFolders.OnDemand is not null)
+        {
+            var identity = _pipelineFolders.OnDemand.Identity(out var hashed);
+            _log.Info($"  [d3d12_xs] program cache identity {identity}, waited {hashed.TotalMilliseconds:F0} ms for it");
         }
 
         var load = _pipelineFolders.Index;

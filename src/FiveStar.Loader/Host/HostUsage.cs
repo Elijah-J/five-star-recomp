@@ -29,8 +29,14 @@ internal static class HostUsage
                                  (default: first mapped exe, else the first --load)
           --patch-peb            also point PEB.ImageBaseAddress at the main image (off by default)
           --save-dir <dir>       XGameSave / local storage root (default: %LOCALAPPDATA%\FiveStar\GdkData\<TitleId>)
-          --shader-dir <dir>     extracted FSSM programs; with --translated-dir, D3D12.X pipeline creation is enabled
-          --translated-dir <dir> translated DXIL programs (fivestar shader translate)
+          --shader-dir <dir>     extracted FSSM programs: D3D12.X pipeline creation is enabled, programs are translated
+                                 and compiled on first use unless --translated-dir has them
+          --translated-dir <dir> translated DXIL programs (fivestar shader translate), optional
+          --program-cache <dir>  programs made on first use (default: <work-dir>\program-cache)
+          --no-on-demand         only --translated-dir provides programs
+          --dxc <path>           dxcompiler.dll (or dxc.exe, or their folder) for programs made on first use;
+                                 default: FIVESTAR_DXC, beside the loader, then the Windows SDK
+          --shader-jobs <n>      threads that make programs on first use (default: a quarter of the processors)
           --pipeline-cache <dir> disk cache of built pipelines (default: <work-dir>\pipeline-cache)
           --no-pipeline-cache    build every pipeline anew and store none
           --eager-pipelines      build every pipeline the cache lacks at creation; default: those earlier boots

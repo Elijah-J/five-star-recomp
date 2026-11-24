@@ -32,6 +32,7 @@ internal sealed unsafe class StandInPipelines
     private int _ready;
     private int _deferred;
     private int _used;
+    private int _onDemand;
     private long _skipped;
     private long _recorded;
 
@@ -50,7 +51,7 @@ internal sealed unsafe class StandInPipelines
     }
 
     /// <summary>Stand-ins handed out, how many have their pipeline, the work skipped meanwhile and the work recorded.</summary>
-    public string Summary => $"{Volatile.Read(ref _created)} stand-in pipelines ({Volatile.Read(ref _deferred)} built on first use, {Volatile.Read(ref _used)} of them used, {Volatile.Read(ref _ready)} built since, {Count(queue => queue.Backlog)} queued, {Count(queue => queue.WaitingForMemory)} build threads waiting for memory), {Interlocked.Read(ref _skipped)} draws and dispatches skipped, {Interlocked.Read(ref _recorded)} recorded";
+    public string Summary => $"{Volatile.Read(ref _created)} stand-in pipelines ({Volatile.Read(ref _deferred)} built on first use, {Volatile.Read(ref _used)} of them used, {Volatile.Read(ref _onDemand)} with programs made on demand, {Volatile.Read(ref _ready)} built since, {Count(queue => queue.Backlog)} queued, {Count(queue => queue.WaitingForMemory)} build threads waiting for memory), {Interlocked.Read(ref _skipped)} draws and dispatches skipped, {Interlocked.Read(ref _recorded)} recorded";
 
     /// <summary>
     /// Runs <paramref name="create"/> and writes its pipeline to <paramref name="result"/>; when it takes longer than
@@ -122,6 +123,73 @@ internal sealed unsafe class StandInPipelines
         *result = standIn;
 
         return HResult.Ok;
+    }
+
+    /// <summary>
+    /// Writes a stand-in whose programs are made on demand (<see cref="OnDemandPrograms"/>): <paramref name="programs"/>
+    /// starts making them (told whether a command list waits) and, once they are ready, <paramref name="prepare"/> gives
+    /// the build, queued as in <see cref="Create"/>; null leaves the stand-in unbuilt. With <paramref name="used"/> this
+    /// starts when a command list first sets the stand-in (as <see cref="Deferred"/>), else now.
+    /// </summary>
+    public int Waiting(Func<bool, Task> programs, Func<PendingBuild?> prepare, nint* result, Action? used)
+    {
+        nint standIn = NewStandIn();
+        Interlocked.Increment(ref _created);
+        Interlocked.Increment(ref _onDemand);
+
+        void Start(bool firstUse)
+        {
+            long started = Stopwatch.GetTimestamp();
+            programs(firstUse).ContinueWith(_ => Queue(standIn, prepare, started), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
+        }
+
+        if (used is null)
+        {
+            Start(firstUse: false);
+        }
+        else
+        {
+            ((StandInPipelineObject*)standIn)->Deferred = 1;
+            Interlocked.Increment(ref _deferred);
+
+            lock (_gate)
+            {
+                _waiting[standIn] = () =>
+                {
+                    used();
+                    Start(firstUse: true);
+                };
+            }
+        }
+
+        *result = standIn;
+
+        return HResult.Ok;
+    }
+
+    /// <summary>Queues the build of a stand-in whose programs are ready; logs a build that cannot be made.</summary>
+    private void Queue(nint standIn, Func<PendingBuild?> prepare, long started)
+    {
+        PendingBuild? build;
+
+        try
+        {
+            build = prepare();
+        }
+        catch (Exception exception) when (exception is InvalidDataException or NotSupportedException)
+        {
+            _warnings.Warn($"prepare-{exception.Message}", $"[d3d12_xs] pipeline with programs made on demand not built: {exception.Message}");
+
+            return;
+        }
+
+        if (build is null)
+        {
+            return;
+        }
+
+        var queue = build.Heavy ? _heavyBuilds : _builds;
+        queue.Enqueue(build.Create).ContinueWith(task => Complete(standIn, task.Result, build.What, started, build.Built), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
     }
 
     /// <summary>

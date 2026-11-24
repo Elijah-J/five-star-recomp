@@ -55,12 +55,18 @@ internal static class HostComposition
 
         var folders = new PipelineFolders(options.ShaderDirectory, options.TranslatedDirectory, cache) { EagerBuilds = options.EagerPipelines };
 
-        if (folders.Programs is null || folders.Translated is null)
+        if (folders.Programs is not null && !options.NoOnDemand)
+        {
+            var root = options.ProgramCache ?? Path.Combine(WorkDirectory(options), OnDemandStart.FolderName);
+            folders = folders with { OnDemand = OnDemandStart.Begin(root, options.Dxc, options.ShaderJobs, out var message), OnDemandNote = message };
+        }
+
+        if (!folders.Enabled)
         {
             return folders;
         }
 
-        return folders with { Index = ProgramIndexLoad.Start(folders.Programs) };
+        return folders with { Index = ProgramIndexLoad.Start(folders.Programs!) };
     }
 
     /// <summary>--work-dir, or the work folder beside the loader.</summary>

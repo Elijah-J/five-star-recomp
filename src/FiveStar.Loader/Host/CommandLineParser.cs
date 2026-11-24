@@ -185,6 +185,20 @@ internal sealed class CommandLineParser
                 _options.WarmUsedOnly = true;
 
                 return true;
+            case "--program-cache":
+                _options.ProgramCache = Path.GetFullPath(Next());
+
+                return true;
+            case "--no-on-demand":
+                _options.NoOnDemand = true;
+
+                return true;
+            case "--dxc":
+                _options.Dxc = Path.GetFullPath(Next());
+
+                return true;
+            case "--shader-jobs":
+                return SetShaderJobs();
             default:
                 throw new CommandLineException($"unknown argument {option}");
         }
@@ -214,6 +228,13 @@ internal sealed class CommandLineParser
     private bool SetWarmJobs()
     {
         _options.WarmJobs = int.Parse(Next(), CultureInfo.InvariantCulture);
+
+        return true;
+    }
+
+    private bool SetShaderJobs()
+    {
+        _options.ShaderJobs = int.Parse(Next(), CultureInfo.InvariantCulture);
 
         return true;
     }
