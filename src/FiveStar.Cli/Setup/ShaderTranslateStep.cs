@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using FiveStar.Cli.Shader;
+using FiveStar.Graphics;
 using FiveStar.Graphics.Programs;
 using FiveStar.Shaders.Compilation;
 using FiveStar.Shaders.Translation;
@@ -11,7 +12,7 @@ namespace FiveStar.Cli.Setup;
 
 /// <summary>
 /// Translates every extracted program to HLSL and compiles it with dxc through the shader cache: runs
-/// <c>fivestar shader translate --mesh-fallbacks</c> into <c>&lt;work&gt;/shaders/hlsl</c> with <c>--cache &lt;work&gt;/shader-cache</c>,
+/// <c>fivestar shader translate</c> (with <c>--mesh-fallbacks</c> where a GPU needs them) into <c>&lt;work&gt;/shaders/hlsl</c> with <c>--cache &lt;work&gt;/shader-cache</c>,
 /// which also writes the variant manifest <c>variants.json</c> there. An
 /// interrupted run keeps every finished translation and compile in the cache, so the next run resumes where it stopped.
 /// </summary>
@@ -36,9 +37,13 @@ internal sealed class ShaderTranslateStep : ISetupStep
 
     private const string ProgramPattern = "*.fssm";
 
+    /// <summary>The setup option that asks for mesh fallbacks whatever the GPUs.</summary>
+    public const string MeshFallbacksFlag = "mesh-fallbacks";
+
     private static readonly string[] ToolOptions = ["llvm", "dxc"];
 
     private string? _tool;
+    private bool? _fallbacks;
 
     public string Name => StepName;
 
@@ -62,7 +67,7 @@ internal sealed class ShaderTranslateStep : ISetupStep
     {
         _tool ??= Identity(context.Arguments);
 
-        return new StepFingerprint(Fingerprints.Combine(Fingerprints.OfContent(context.ManifestPath), context.Sample), _tool);
+        return new StepFingerprint(Fingerprints.Combine(Fingerprints.OfContent(context.ManifestPath), context.Sample, Fallbacks(context).ToString()), _tool);
     }
 
     public bool HasOutputs(SetupContext context) =>
@@ -124,15 +129,32 @@ internal sealed class ShaderTranslateStep : ISetupStep
         return StepResult.Done(summary);
     }
 
+    /// <summary>
+    /// Whether every mesh program also gets its compute + vertex-pulling fallback: with <c>--mesh-fallbacks</c>, or when
+    /// an adapter of this machine has no mesh shaders. Mesh-shader GPUs never load them, and they double the mesh
+    /// programs' dxc work; a program dxc rejects as a mesh shader gets its fallback either way.
+    /// </summary>
+    private bool Fallbacks(SetupContext context)
+    {
+        _fallbacks ??= context.Arguments.Flag(MeshFallbacksFlag) || AdapterCatalog.List().Any(adapter => adapter is { Software: false, ShaderModel: not null, MeshShaders: false });
+
+        return _fallbacks.Value;
+    }
+
     private static string ResultsPath(SetupContext context)
     {
         return Path.Combine(context.TranslationFolder, CorpusTranslator.ResultsName);
     }
 
-    private static List<string> Arguments(SetupContext context)
+    private List<string> Arguments(SetupContext context)
     {
         var jobs = context.Jobs.ToString(CultureInfo.InvariantCulture);
-        var arguments = new List<string> { context.ProgramFolder, context.TranslationFolder, "--cache", context.CacheFolder, "--jobs", jobs, "--mesh-fallbacks" };
+        var arguments = new List<string> { context.ProgramFolder, context.TranslationFolder, "--cache", context.CacheFolder, "--jobs", jobs };
+
+        if (Fallbacks(context))
+        {
+            arguments.Add("--" + MeshFallbacksFlag);
+        }
 
         if (context.Limit is not null)
         {
