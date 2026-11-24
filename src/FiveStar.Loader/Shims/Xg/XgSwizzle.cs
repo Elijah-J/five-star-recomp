@@ -24,6 +24,7 @@ internal readonly struct XgSwizzle
         YMask = ((1u << bits) - 1) & ~xMask & ~zMask;
         Bits = bits;
         LowYSwapped = lowYSwapped;
+
         TileWidth = 1 << BitOperations.PopCount(XMask);
         TileHeight = 1 << BitOperations.PopCount(YMask);
         TileDepth = 1 << BitOperations.PopCount(ZMask);

@@ -55,6 +55,7 @@ internal static class XgLayoutBuilder
         uint mode = XgSwizzleModes.Mode(desc.Layout, mip0Bytes);
         int blockBytes = XgSwizzleModes.BlockBytes(mode);
         bool thick = desc.Dimension == Texture3D && XgSwizzleModes.IsThick(mode);
+
         surface.PlaneCount = format.StencilPlane ? XgLimits.MaxPlanes : 1;
         ulong offset = 0;
 

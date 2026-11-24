@@ -92,11 +92,19 @@ internal static class XgSwizzles
 
     private static XgSwizzle Volume(bool large, int elementLog2)
     {
-        int x = BrickXLog2[elementLog2] + (large ? LargeGrowthX : 0);
-        int y = BrickYLog2[elementLog2] + (large ? LargeGrowthYZ : 0);
-        int z = BrickZLog2[elementLog2] + (large ? LargeGrowthYZ : 0);
+        int x = BrickXLog2[elementLog2];
+        int y = BrickYLog2[elementLog2];
+        int z = BrickZLog2[elementLog2];
+
+        if (large)
+        {
+            x += LargeGrowthX;
+            y += LargeGrowthYZ;
+            z += LargeGrowthYZ;
+        }
+
         string known = FiveStar.Formats.Ttpf.SwizzlePatterns.FindVolume(1 << elementLog2) ?? string.Empty;
-        string pattern = Extend(known, x, y, z);
+        string pattern = Extend(known, [x, z, y]);
         uint xMask = 0;
         uint zMask = 0;
 
@@ -115,21 +123,27 @@ internal static class XgSwizzles
         return new XgSwizzle(xMask, pattern.Length, false, zMask);
     }
 
-    /// <summary>Appends x, z and y bits in turn, each while its axis has fewer than the wanted bits.</summary>
-    private static string Extend(string pattern, int x, int y, int z)
+    /// <summary>
+    /// Appends x, z and y bits in turn (the order of <see cref="AxisLetters"/>), each while its axis has fewer bits
+    /// than <paramref name="wanted"/> gives for it.
+    /// </summary>
+    private static string Extend(string pattern, int[] wanted)
     {
         var text = new System.Text.StringBuilder(pattern);
-        int[] wanted = [x, z, y];
-        int[] have = [pattern.Count(c => c == 'x'), pattern.Count(c => c == 'z'), pattern.Count(c => c == 'y')];
+        int[] have = [.. AxisLetters.Select(letter => pattern.Count(c => c == letter))];
+        bool added = true;
 
-        while (have[0] < wanted[0] || have[1] < wanted[1] || have[2] < wanted[2])
+        while (added)
         {
+            added = false;
+
             for (int axis = 0; axis < wanted.Length; axis++)
             {
                 if (have[axis] < wanted[axis])
                 {
                     text.Append(AxisLetters[axis]);
                     have[axis]++;
+                    added = true;
                 }
             }
         }

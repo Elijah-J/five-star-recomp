@@ -86,6 +86,7 @@ internal static class XgAddress
         uint width = (uint)swizzle.TileWidth;
         uint height = (uint)swizzle.TileHeight;
         uint depth = (uint)swizzle.TileDepth;
+
         ulong columns = mip.PitchElements / width;
         ulong rows = mip.PaddedHeightElements / height;
         ulong brick = ((((ulong)(z / depth) * rows) + (y / height)) * columns) + (x / width);

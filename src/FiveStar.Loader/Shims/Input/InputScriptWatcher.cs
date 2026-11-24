@@ -40,6 +40,7 @@ internal sealed class InputScriptWatcher : IDisposable
         _clock = clock;
         _capture = capture;
         _log = log;
+
         _written = File.GetLastWriteTimeUtc(path);
         _timer = new Timer(_ => Tick(), null, Interval, Interval);
     }
