@@ -28,8 +28,7 @@ internal sealed class PipelineWarmStep : ISetupStep
     /// <summary>The setup option that warms every pipeline of the console pipeline cache too.</summary>
     public const string WarmAllFlag = "warm-all";
 
-    // The loader's journal of the pipelines the game used (PipelineJournal.FileName).
-    private const string JournalName = "pipelines-used.bin";
+    private const string JournalName = FiveStar.Shaders.Cache.PipelineJournalFile.FileName;
 
     // Measured on an RTX 4090 with 4 jobs: every 20th pipeline in 26 minutes; the mesh pipelines take minutes each.
     private static readonly TimeSpan TypicalTime = TimeSpan.FromHours(9);

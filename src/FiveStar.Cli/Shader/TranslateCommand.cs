@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using FiveStar.Graphics.Programs;
+using FiveStar.Shaders.Cache;
 using FiveStar.Shaders.Compilation;
 using FiveStar.Shaders.Disassembly;
 using FiveStar.Shaders.Translation;
@@ -33,7 +34,7 @@ internal static class TranslateCommand
         if (arguments.Positional.Count != TwoPaths)
         {
             throw new ArgumentException(
-                "translate <fssm-or-folder> <out> [--cache <dir>] [--retry results.json] [--stages ps,vs,cs,ms,gs] [--jobs N] [--dispatch] [--native-waves] [--mesh-fallbacks] [--waves min-max,...] [--llvm-disassembler]");
+                "translate <fssm-or-folder> <out> [--cache <dir>] [--retry results.json] [--stages ps,vs,cs,ms,gs] [--jobs N] [--dispatch] [--native-waves] [--mesh-fallbacks] [--waves min-max,...] [--first-used pipelines-used.bin] [--llvm-disassembler]");
         }
 
         var programs = Programs(arguments);
@@ -63,14 +64,21 @@ internal static class TranslateCommand
         var fallback = compiler is null ? null : new MeshFallbackCompiler(compiler);
         var progress = new ConsoleProgress(() => Counts(compiler, translations));
         var loader = new ProgramLoader(disassembler);
-        var results = new CorpusTranslator(loader, compiler, fallback, translations, progress).Run(programs, options);
-        Report(results);
+        var translator = new CorpusTranslator(loader, compiler, fallback, translations, progress);
+        var used = Used(programs, arguments.Option("first-used"));
 
-        if (compiler is not null)
+        if (used.Count > 0)
         {
-            var manifest = ManifestBuilder.Write(options.OutputFolder);
-            Console.WriteLine($"manifest {Path.Combine(options.OutputFolder, ShaderManifest.FileName)}: {manifest.Programs.Count} programs");
+            // The programs earlier boots used first, with their manifest, so the game can start before the rest is done.
+            Report(translator.Run(used, options));
+            WriteManifest(compiler, options.OutputFolder);
+            Console.WriteLine($"the {used.Count} programs earlier boots used are ready; translating the rest");
+            options = options with { RetryResults = Path.Combine(options.OutputFolder, CorpusTranslator.ResultsName) };
         }
+
+        var results = translator.Run(programs, options);
+        Report(results);
+        WriteManifest(compiler, options.OutputFolder);
 
         if (cache is not null)
         {
@@ -83,6 +91,39 @@ internal static class TranslateCommand
         }
 
         return Success;
+    }
+
+    private static void WriteManifest(IShaderCompiler? compiler, string folder)
+    {
+        if (compiler is not null)
+        {
+            var manifest = ManifestBuilder.Write(folder);
+            Console.WriteLine($"manifest {Path.Combine(folder, ShaderManifest.FileName)}: {manifest.Programs.Count} programs");
+        }
+    }
+
+    /// <summary>
+    /// The programs the pipeline journal of <c>--first-used</c> names (<see cref="PipelineJournalFile"/>), found by
+    /// code-block prefix among the FSSM programs; none without a journal.
+    /// </summary>
+    private static List<string> Used(IReadOnlyList<string> programs, string? journal)
+    {
+        if (journal is null || programs.Count == 0)
+        {
+            return [];
+        }
+
+        var prefixes = PipelineJournalFile.ShaderPrefixes(journal);
+
+        if (prefixes.Count == 0)
+        {
+            return [];
+        }
+
+        var index = ProgramIndex.Load(Path.GetDirectoryName(Path.GetFullPath(programs[0]))!);
+        var names = prefixes.SelectMany(prefix => index.Find(prefix)).ToHashSet(StringComparer.Ordinal);
+
+        return programs.Where(path => names.Contains(Path.GetFileNameWithoutExtension(path))).ToList();
     }
 
     /// <summary>The GPUs of <c>--waves 32-32,32-64</c>: only the forms they pick are compiled; null compiles all.</summary>

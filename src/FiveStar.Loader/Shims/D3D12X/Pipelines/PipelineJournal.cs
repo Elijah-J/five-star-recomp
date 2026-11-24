@@ -2,24 +2,23 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Security.Cryptography;
+using FiveStar.Shaders.Cache;
 
 namespace FiveStar.Loader.Shims.D3D12X.Pipelines;
 
 /// <summary>
-/// The pipelines the game asked for, in the order it first asked, across boots: <c>pipelines-used.bin</c> in the
-/// pipeline cache folder. Each record is a game description (every creation slot, derives included) with its shaders
-/// as code-block prefixes, so it names the pipeline whatever the translation: the warm-up
-/// (<c>--warm-journal</c>) builds these first after a new translation made every cached pipeline stale.
+/// The pipelines the game used, in the order it first used them, across boots: <c>pipelines-used.bin</c> in the
+/// pipeline cache folder (<see cref="PipelineJournalFile"/>). Each record is a game description (every creation slot,
+/// derives included) with its shaders as code-block prefixes, so it names the pipeline whatever the translation: the
+/// next boot builds these at creation, the warm-up builds them first.
 /// </summary>
 internal sealed class PipelineJournal : IDisposable
 {
     /// <summary>The journal's file name in the pipeline cache folder.</summary>
-    public const string FileName = "pipelines-used.bin";
+    public const string FileName = PipelineJournalFile.FileName;
 
-    private const uint Magic = 0x4A505346; // "FSPJ"
-    private const uint Version = 1;
-    private const byte GraphicsKind = 0;
-    private const byte ComputeKind = 1;
+    private const byte GraphicsKind = PipelineJournalFile.GraphicsKind;
+    private const byte ComputeKind = PipelineJournalFile.ComputeKind;
 
     private readonly Lock _gate = new();
     private readonly HashSet<string> _known = new(StringComparer.Ordinal);
@@ -53,22 +52,22 @@ internal sealed class PipelineJournal : IDisposable
     public static PipelineJournal Open(string folder)
     {
         var path = Path.Combine(folder, FileName);
-        var records = Records(path);
+        var records = PipelineJournalFile.Records(path);
         var file = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read);
 
         if (records is null)
         {
             file.SetLength(0);
             var header = new BinaryWriter(file);
-            header.Write(Magic);
-            header.Write(Version);
+            header.Write(PipelineJournalFile.Magic);
+            header.Write(PipelineJournalFile.Version);
             header.Flush();
             records = [];
         }
         else
         {
             // A record cut off by a crash is dropped, so the next one starts where it started.
-            file.SetLength((2 * sizeof(uint)) + records.Sum(record => (long)sizeof(int) + record.Length));
+            file.SetLength(PipelineJournalFile.HeaderSize + records.Sum(record => (long)sizeof(int) + record.Length));
         }
 
         file.Seek(0, SeekOrigin.End);
@@ -81,7 +80,7 @@ internal sealed class PipelineJournal : IDisposable
     {
         var targets = new List<WarmTarget>();
 
-        foreach (var record in Records(Path.Combine(folder, FileName)) ?? [])
+        foreach (var record in PipelineJournalFile.Records(Path.Combine(folder, FileName)) ?? [])
         {
             var target = Decode(record, targets.Count);
 
@@ -295,39 +294,6 @@ internal sealed class PipelineJournal : IDisposable
         }
 
         return bytes;
-    }
-
-    /// <summary>The records of a journal file; null when it is missing or not a journal. A cut-off last record is dropped.</summary>
-    private static List<byte[]>? Records(string path)
-    {
-        if (!File.Exists(path))
-        {
-            return null;
-        }
-
-        using var reader = new BinaryReader(File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite));
-        var stream = reader.BaseStream;
-
-        if (stream.Length < 2 * sizeof(uint) || reader.ReadUInt32() != Magic || reader.ReadUInt32() != Version)
-        {
-            return null;
-        }
-
-        var records = new List<byte[]>();
-
-        while (stream.Length - stream.Position >= sizeof(int))
-        {
-            var length = reader.ReadInt32();
-
-            if (length <= 0 || length > stream.Length - stream.Position)
-            {
-                break;
-            }
-
-            records.Add(reader.ReadBytes(length));
-        }
-
-        return records;
     }
 
     private static string Hash(byte[] record)

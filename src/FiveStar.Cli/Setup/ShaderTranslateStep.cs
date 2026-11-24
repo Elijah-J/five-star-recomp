@@ -4,6 +4,7 @@
 using System.Globalization;
 using FiveStar.Cli.Shader;
 using FiveStar.Graphics;
+using FiveStar.Shaders.Cache;
 using FiveStar.Graphics.Programs;
 using FiveStar.Shaders.Compilation;
 using FiveStar.Shaders.Translation;
@@ -185,6 +186,14 @@ internal sealed class ShaderTranslateStep : ISetupStep
         if (Waves(context) is { } waves)
         {
             arguments.AddRange(["--waves", waves]);
+        }
+
+        // The programs earlier boots used go first (the loader's journal beside its pipeline cache).
+        var journal = Path.Combine(context.PipelineLibraryFolder, PipelineJournalFile.FileName);
+
+        if (File.Exists(journal))
+        {
+            arguments.AddRange(["--first-used", journal]);
         }
 
         if (context.Limit is not null)
