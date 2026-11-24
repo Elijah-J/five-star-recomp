@@ -141,17 +141,25 @@ reads zeros past an end. Without it, those stores landed through the address map
 buffer. One of the places they landed was the transient pool's block-end nodes, which caused the story-load faults at
 0x144e9b4b2 ([debugging.md](debugging.md#transient-pool-watch)).
 
-Once per access, `buf_limit` gives the first out-of-range offset from OOB_SELECT (V# dword3 bits 28-29):
+The rules follow OOB_SELECT (V# dword3 bits 28-29) as measured on RDNA1 (gfx1011) and RDNA2 (gfx1036) hardware
+(Leonida's docs/buffer_bounds.md, Mesa's GFX11 column). num_records is dword2; the offset is the VGPR offset plus the
+instruction offset. Every access below is one dword:
 
-- 2 checks nothing.
-- 3 (raw), or any V# with stride 0, checks index × stride + offset against num_records (dword2).
-- 0 and 1 (structured) check the index. Mode 0 would also check the offset against the stride; that check is left
-  out, because the shim's records leave the field at 0.
+| OOB_SELECT | Out of range when |
+|---|---|
+| 0, structured | index ≥ num_records, or offset + 4 > stride |
+| 1, structured | index ≥ num_records |
+| 2 | num_records = 0 |
+| 3, raw | offset + soffset + 4 > num_records; index × stride moves the address but is not checked |
 
-Each dword then costs one compare. Raw buffers check every dword, as RDNA does; formatted accesses check the element.
-The offset is the VGPR offset plus the instruction offset; soffset is not checked. `s_buffer_load` compares its whole
-offset with `sbuf_limit`: num_records in bytes for stride 0, else num_records × stride.
+Per access, `buf_limit` gives the end the dwords must fit under and `buf_offset` the checked offset (soffset counts
+for raw V#s). Each dword then costs one compare (`buf_fits`); formatted accesses check the element's first dword.
+The shim's records carry the OOB_SELECT of their view's kind (raw 3, structured 0, typed and constant buffers 1).
+`s_buffer_load` compares its whole offset with `sbuf_limit`: num_records in bytes for stride 0, else num_records ×
+stride.
 
+soffset matters: the meshlet culling kernels (`CS_BatchCullBatchCSMeshlets` and its siblings) take argument slots with
+`buffer_atomic_add v4, off, s[44:47], s11 glc`, addressing only through soffset (ThatRecompDev/five-star-recomp#3).
 Loads use `select`, not `?:`. HLSL 2021 short-circuits `?:`, and the branches around each load raised dxc time by
 50 to 300 % on the heaviest programs. With `select` the overhead is about 0 to 40 % (three sample programs).
 A buffer the program also stores to is loaded through its RW view (`BufLoadRW`). Cube sampling rebuilds a direction

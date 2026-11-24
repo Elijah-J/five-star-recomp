@@ -108,6 +108,9 @@ public sealed unsafe class D3D12XBindingTests
         Assert.Equal(DescriptorRemap.Unmapped, remap.Map(high - DescriptorRemap.PageSize));
     }
 
+    private const uint RawBounds = 3u << 28;
+    private const uint IndexBounds = 1u << 28;
+
     [Fact]
     public void A_buffer_view_record_carries_stride_count_and_format_into_the_window()
     {
@@ -133,12 +136,13 @@ public sealed unsafe class D3D12XBindingTests
         srv(device.Device, buffer, &bgra, heap.Cpu + (nint)(4 * heap.Increment));
 
         // V# dwords 1 to 3 as the hardware lays them out: the idxen stride over base_hi 0 (dword 0 is a heap index),
-        // num_records (elements of the stride, bytes without one) and the format word with its destination swizzle.
+        // num_records (elements of the stride, bytes without one) and the format word with its destination swizzle and its
+        // OOB_SELECT: structured 0, raw 3, typed 1.
         Assert.Equal([StructureStride << StrideShift, 4u, Dword], Fields(test, 0));
-        Assert.Equal([0u, 8u, Dword], Fields(test, 1));
-        Assert.Equal([8u << StrideShift, 8u, Half4], Fields(test, 2));
-        Assert.Equal([4u << StrideShift, 16u, Byte4], Fields(test, 3));
-        Assert.Equal([4u << StrideShift, 2u, Byte4Bgra], Fields(test, 4));
+        Assert.Equal([0u, 8u, Dword | RawBounds], Fields(test, 1));
+        Assert.Equal([8u << StrideShift, 8u, Half4 | IndexBounds], Fields(test, 2));
+        Assert.Equal([4u << StrideShift, 16u, Byte4 | IndexBounds], Fields(test, 3));
+        Assert.Equal([4u << StrideShift, 2u, Byte4Bgra | IndexBounds], Fields(test, 4));
     }
 
     [DxcFact]

@@ -11,12 +11,19 @@ namespace FiveStar.Loader.Shims.D3D12X.Binding;
 /// Descriptor window), as AMD's driver lays out such descriptors: a constant buffer as float4 rows (stride 16, the
 /// Scaleform batch programs read row batch * 4 + k), a structured view by its structure, a typed view by its format's
 /// element and format, a raw view in bytes. Counts come from the game's desc, before the view is fitted to the
-/// desktop buffer.
+/// desktop buffer. Dword 3 carries the OOB_SELECT (bits 28-29) of the view's kind as the console's D3D12 writes it:
+/// raw 3 (offset + soffset against bytes), structured 0 (index against records, offset within the structure), typed and
+/// constant buffers 1 (index only); translated programs check accesses by it (docs/shader-translation.md#resources).
 /// </summary>
 internal static unsafe class BufferRecords
 {
     /// <summary>Bytes of a constant-buffer row (a float4).</summary>
     public const uint ConstantBufferRow = 16;
+
+    /// <summary>OOB_SELECT in dword 3: raw, structured with the offset checked, index only.</summary>
+    private const uint RawBounds = 3u << 28;
+    private const uint StructuredBounds = 0;
+    private const uint IndexBounds = 1u << 28;
 
     /// <summary>Bytes of an element of a raw view.</summary>
     private const uint RawElement = 4;
@@ -25,7 +32,7 @@ internal static unsafe class BufferRecords
     [HotPath]
     public static BufferRecord ConstantBuffer(uint size)
     {
-        return new BufferRecord(ConstantBufferRow, (size + ConstantBufferRow - 1) / ConstantBufferRow, BufferFormatCodes.Float4);
+        return new BufferRecord(ConstantBufferRow, (size + ConstantBufferRow - 1) / ConstantBufferRow, BufferFormatCodes.Float4 | IndexBounds);
     }
 
     /// <summary>The record of a D3D12_SHADER_RESOURCE_VIEW_DESC; none for a texture view or no desc.</summary>
@@ -61,12 +68,12 @@ internal static unsafe class BufferRecords
     {
         if ((flags & BufferViewDescription.RawFlag) != 0)
         {
-            return new BufferRecord(0, elements * RawElement, BufferFormatCodes.Dword);
+            return new BufferRecord(0, elements * RawElement, BufferFormatCodes.Dword | RawBounds);
         }
 
         if (structure != 0)
         {
-            return new BufferRecord(structure, elements, BufferFormatCodes.Dword);
+            return new BufferRecord(structure, elements, BufferFormatCodes.Dword | StructuredBounds);
         }
 
         if (format == ViewFormats.Unknown)
@@ -74,6 +81,6 @@ internal static unsafe class BufferRecords
             return new BufferRecord(0, 0, BufferFormatCodes.None);
         }
 
-        return new BufferRecord((uint)XgFormats.Find((uint)format).BytesPerElement, elements, BufferFormatCodes.Of(format));
+        return new BufferRecord((uint)XgFormats.Find((uint)format).BytesPerElement, elements, BufferFormatCodes.Of(format) | IndexBounds);
     }
 }

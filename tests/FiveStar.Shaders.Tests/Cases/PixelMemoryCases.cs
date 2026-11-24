@@ -89,7 +89,7 @@ public static class PixelMemoryCases
             5,
             pixel => [BufferWords[pixel.X], BufferWords[pixel.X + 4], BufferWords[pixel.X + 5], BufferWords[2 * pixel.X], BufferWords[(2 * pixel.X) + 3]])
         {
-            Bindings = Raw(1, BufferWords, 1, 8 << 16, 0x100, 0, 8),
+            Bindings = Raw(1, BufferWords, 1, 8 << 16, 0x100, 1u << 28, 8),
         };
     }
 
