@@ -135,6 +135,21 @@ access and the access offset added inside the view; a pointer is looked up at th
 out of the low dword. The D3D12.X shim fills the map from its address table ([d3d12x-shim.md](d3d12x-shim.md#binding));
 an address it does not know names a null view and reads 0.
 
+**Range checking.** Buffer accesses keep the RDNA rule: out of range, a load reads 0 and a store or atomic is dropped
+(an atomic returns 0). Console programs rely on it: an argument or append writer runs past its allocation, and a loop
+reads zeros past an end. Without it, those stores landed through the address map in the game memory next to the
+buffer. One of the places they landed was the transient pool's block-end nodes, which caused the story-load faults at
+0x144e9b4b2 ([debugging.md](debugging.md#transient-pool-watch)). `buf_ok` follows OOB_SELECT (V# dword3 bits 28-29):
+
+- 2 checks nothing.
+- 3 (raw), or any V# with stride 0, checks index × stride + offset against num_records (dword2).
+- 0 and 1 (structured) check the index. Mode 0 would also check the offset against the stride; that check is left out,
+  because the shim's records leave the field at 0.
+
+The offset is the VGPR offset plus the instruction offset; soffset is not checked. Multi-dword accesses check each
+dword, and formatted ones check the element. `s_buffer_load` (`sbuf_ok`) checks the whole offset against num_records,
+counted in bytes for a stride of 0 and in strides otherwise.
+
 A buffer the program also stores to is loaded through its RW view (`BufLoadRW`). Cube sampling rebuilds a direction
 from (s, t, face) with `cube_dir`.
 

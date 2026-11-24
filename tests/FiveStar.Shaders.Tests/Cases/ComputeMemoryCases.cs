@@ -57,6 +57,7 @@ public static class ComputeMemoryCases
             BufferAtomics(),
             BufferReadModifyWrite(),
             BufferLoads(),
+            BufferBounds(),
             GlobalMemory(),
             GlobalNegativeOffset(),
             GlobalAtomic(),
@@ -208,6 +209,44 @@ public static class ComputeMemoryCases
             User = [32],
             Groups = (2, 1, 1),
             Buffers = [new BufferResource(3, Input, Writable: false)],
+        };
+    }
+
+    // RDNA range checking: a raw V# of 32 bytes (OOB_SELECT 3) reads 0 past its end, by MUBUF and s_buffer_load; a
+    // structured V# of 8 records drops the stores of indices 8 and up, which land in the buffer beyond it otherwise.
+    private static ComputeCase BufferBounds()
+    {
+        const string Program = """
+            v_lshlrev_b32_e32 v1, 2, v41
+            buffer_load_dword v20, v1, s[4:7], 0 offen
+            s_buffer_load_dword s24, s[4:7], 0x40
+            s_buffer_load_dword s25, s[4:7], 0x4
+            buffer_store_dword v41, v41, s[8:11], 0 idxen
+            s_waitcnt vmcnt(0) lgkmcnt(0)
+            v_mov_b32_e32 v21, s24
+            v_mov_b32_e32 v22, s25
+            """;
+        const int RawBytes = 32;
+        const int Records = 8;
+        const uint RawSelect = 3u << 28;
+        var stored = new uint[Threads];
+
+        for (var index = 0; index < Records; index++)
+        {
+            stored[index] = (uint)index;
+        }
+
+        return new ComputeCase("cs_buffer_bounds", Program, 3, thread =>
+        {
+            var load = thread.Id < RawBytes / 4 ? Input[thread.Id] : 0u;
+
+            return [Expected.Exact(load), Expected.Exact(0), Expected.Exact(Input[1])];
+        })
+        {
+            SecondDescriptor = [3, 0, RawBytes, RawSelect],
+            User = [4, 4u << 16, Records, 0],
+            Buffers = [new BufferResource(3, Input, Writable: false), new BufferResource(4, new uint[Threads], Writable: true)],
+            Check = buffers => Differences("heap4", stored, buffers[4]),
         };
     }
 
