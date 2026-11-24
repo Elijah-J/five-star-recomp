@@ -21,6 +21,7 @@ internal sealed unsafe class StandInPipelines
 
     private readonly object _gate = new();
     private readonly HashSet<nint> _live = [];
+    private readonly Dictionary<nint, Action> _waiting = [];
     private readonly TimeSpan _budget;
     private readonly PipelineBuildQueue _builds;
     private readonly PipelineBuildQueue _heavyBuilds;
@@ -29,6 +30,8 @@ internal sealed unsafe class StandInPipelines
     private readonly GCHandle _self;
     private int _created;
     private int _ready;
+    private int _deferred;
+    private int _used;
     private long _skipped;
     private long _recorded;
 
@@ -47,7 +50,7 @@ internal sealed unsafe class StandInPipelines
     }
 
     /// <summary>Stand-ins handed out, how many have their pipeline, the work skipped meanwhile and the work recorded.</summary>
-    public string Summary => $"{Volatile.Read(ref _created)} stand-in pipelines ({Volatile.Read(ref _ready)} built since, {Count(queue => queue.Backlog)} queued, {Count(queue => queue.WaitingForMemory)} build threads waiting for memory), {Interlocked.Read(ref _skipped)} draws and dispatches skipped, {Interlocked.Read(ref _recorded)} recorded";
+    public string Summary => $"{Volatile.Read(ref _created)} stand-in pipelines ({Volatile.Read(ref _deferred)} built on first use, {Volatile.Read(ref _used)} of them used, {Volatile.Read(ref _ready)} built since, {Count(queue => queue.Backlog)} queued, {Count(queue => queue.WaitingForMemory)} build threads waiting for memory), {Interlocked.Read(ref _skipped)} draws and dispatches skipped, {Interlocked.Read(ref _recorded)} recorded";
 
     /// <summary>
     /// Runs <paramref name="create"/> and writes its pipeline to <paramref name="result"/>; when it takes longer than
@@ -94,6 +97,34 @@ internal sealed unsafe class StandInPipelines
     }
 
     /// <summary>
+    /// Writes a stand-in whose build starts only when a command list first sets it (<see cref="Desktop"/>): the game
+    /// creates tens of thousands of pipelines while loading and draws with a small part of them. <paramref name="used"/>
+    /// runs then, before the build is queued.
+    /// </summary>
+    public int Deferred(Func<PipelineResult> create, nint* result, string what, Action<nint>? built, bool heavy, Action used)
+    {
+        nint standIn = NewStandIn();
+        ((StandInPipelineObject*)standIn)->Deferred = 1;
+
+        lock (_gate)
+        {
+            _waiting[standIn] = () =>
+            {
+                used();
+                var queue = heavy ? _heavyBuilds : _builds;
+                long started = Stopwatch.GetTimestamp();
+                queue.Enqueue(create).ContinueWith(task => Complete(standIn, task.Result, what, started, built), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
+            };
+        }
+
+        Interlocked.Increment(ref _created);
+        Interlocked.Increment(ref _deferred);
+        *result = standIn;
+
+        return HResult.Ok;
+    }
+
+    /// <summary>
     /// The desktop pipeline behind <paramref name="pipeline"/>: the built pipeline of a stand-in (0 and
     /// <paramref name="pending"/> while the driver works), any other pointer as it is.
     /// </summary>
@@ -107,10 +138,30 @@ internal sealed unsafe class StandInPipelines
             return pipeline;
         }
 
-        nint desktop = Volatile.Read(ref ((StandInPipelineObject*)pipeline)->Desktop);
+        var standIn = (StandInPipelineObject*)pipeline;
+        nint desktop = Volatile.Read(ref standIn->Desktop);
         pending = desktop == 0;
 
+        if (pending && Volatile.Read(ref standIn->Deferred) == 1 && Interlocked.Exchange(ref standIn->Deferred, 0) == 1)
+        {
+            Start(pipeline);
+        }
+
         return desktop;
+    }
+
+    /// <summary>Queues the build of a deferred stand-in on its first use.</summary>
+    private void Start(nint standIn)
+    {
+        Action? start;
+
+        lock (_gate)
+        {
+            _waiting.Remove(standIn, out start);
+        }
+
+        Interlocked.Increment(ref _used);
+        start?.Invoke();
     }
 
     /// <summary>Counts a draw or dispatch a command list recorded (draws per frame: its growth over the presents).</summary>
@@ -135,6 +186,7 @@ internal sealed unsafe class StandInPipelines
         lock (_gate)
         {
             _live.Remove((nint)standIn);
+            _waiting.Remove((nint)standIn);
             desktop = standIn->Desktop;
         }
 

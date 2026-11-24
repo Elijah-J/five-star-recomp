@@ -97,13 +97,25 @@ internal sealed class PipelineJournal : IDisposable
     /// <summary>Appends a graphics description the journal does not have yet.</summary>
     public void Record(GraphicsPipelineDescription description)
     {
-        Append(GraphicsKind, writer => Write(writer, description));
+        Append(Encode(description));
     }
 
     /// <summary>Appends a compute description the journal does not have yet.</summary>
     public void Record(ComputePipelineDescription description)
     {
-        Append(ComputeKind, writer => WriteShader(writer, description.Shader));
+        Append(Encode(description));
+    }
+
+    /// <summary>Whether an earlier boot (or this one) asked for the description.</summary>
+    public bool Contains(GraphicsPipelineDescription description)
+    {
+        return Known(Encode(description));
+    }
+
+    /// <summary>Whether an earlier boot (or this one) asked for the description.</summary>
+    public bool Contains(ComputePipelineDescription description)
+    {
+        return Known(Encode(description));
     }
 
     public void Dispose()
@@ -115,10 +127,19 @@ internal sealed class PipelineJournal : IDisposable
         }
     }
 
-    private void Append(byte kind, Action<BinaryWriter> write)
+    private static byte[]? Encode(GraphicsPipelineDescription description)
     {
-        byte[] record;
+        return Encode(GraphicsKind, writer => Write(writer, description));
+    }
 
+    private static byte[]? Encode(ComputePipelineDescription description)
+    {
+        return Encode(ComputeKind, writer => WriteShader(writer, description.Shader));
+    }
+
+    /// <summary>The record of a description; null when a shader has no readable code block (the creation fails anyway).</summary>
+    private static byte[]? Encode(byte kind, Action<BinaryWriter> write)
+    {
         try
         {
             using var buffer = new MemoryStream();
@@ -126,11 +147,32 @@ internal sealed class PipelineJournal : IDisposable
             writer.Write(kind);
             write(writer);
             writer.Flush();
-            record = buffer.ToArray();
+
+            return buffer.ToArray();
         }
         catch (InvalidDataException)
         {
-            // A shader without a readable code block: the creation fails and is reported anyway.
+            return null;
+        }
+    }
+
+    private bool Known(byte[]? record)
+    {
+        if (record is null)
+        {
+            return false;
+        }
+
+        lock (_gate)
+        {
+            return _known.Contains(Hash(record));
+        }
+    }
+
+    private void Append(byte[]? record)
+    {
+        if (record is null)
+        {
             return;
         }
 

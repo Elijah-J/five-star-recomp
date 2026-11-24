@@ -83,6 +83,9 @@ internal sealed record HostOptions
     /// <summary>The warm-up builds only the pipelines earlier boots asked for (<c>pipelines-used.bin</c>).</summary>
     public bool WarmUsedOnly { get; set; }
 
+    /// <summary>Every pipeline the cache lacks is built at creation, not on first use.</summary>
+    public bool EagerPipelines { get; set; }
+
     /// <summary>The PC FidelityFX API DLL the console FidelityFX calls are forwarded to; null leaves FidelityFX off.</summary>
     public string? FidelityFxLibrary { get; set; }
 

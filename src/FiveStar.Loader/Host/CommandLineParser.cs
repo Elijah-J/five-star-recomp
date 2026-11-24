@@ -173,6 +173,10 @@ internal sealed class CommandLineParser
                 return SetWarmStep();
             case "--warm-match":
                 return Add(_options.WarmMatches);
+            case "--eager-pipelines":
+                _options.EagerPipelines = true;
+
+                return true;
             case "--warm-used-only":
                 _options.WarmUsedOnly = true;
 

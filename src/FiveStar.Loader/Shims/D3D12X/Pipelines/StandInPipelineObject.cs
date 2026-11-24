@@ -21,6 +21,7 @@ internal unsafe struct StandInPipelineObject
     public nint Desktop;
     public fixed byte GameRead[GameReadBytes];
     public int References;
-    public int Unused;
+    /// <summary>1 while the build waits for the first use (<see cref="StandInPipelines.Deferred"/>), else 0.</summary>
+    public int Deferred;
     public nint Owner;
 }
