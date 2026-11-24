@@ -439,7 +439,7 @@ calls (`lock inc`) and, under `--run`, wrap the GDK thunk-ABI slots. `OutputDebu
 logged as `[debug]` (first 4096 messages).
 
 **Input script.** `--input-script` lines are `<seconds> <key> [hold <s>] [repeat <n> every <s>]`, times from loader
-start, keys named as in the input config, `#` a comment. A scripted key counts as held on the desktop, so the keyboard
+start (`+<s>`: that long after the previous line), keys named as in the input config, `#` a comment. A scripted key counts as held on the desktop, so the keyboard
 and the keyboard-and-mouse gamepad both see it (`Space` is A). The game reads input only through its own GameInput
 calls; a press while it does not poll has no effect. `<seconds> capture` reads back the next present at that time
 (with `--capture-dir`, [d3d12x-shim.md](d3d12x-shim.md#debug-layer)); `<seconds> cursor <dx> <dy> [hold <s>] [repeat …]`

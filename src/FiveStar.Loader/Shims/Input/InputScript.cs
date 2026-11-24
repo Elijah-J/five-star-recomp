@@ -11,11 +11,13 @@ namespace FiveStar.Loader.Shims.Input;
 /// the names of the input config; a scripted key reaches the game like a held desktop key, so the keyboard and the
 /// keyboard-and-mouse gamepad both see it (Space is A, Escape is Menu). <c>capture</c> in place of a key reads back
 /// the next present at that time (with <c>--capture-dir</c>); <c>cursor &lt;dx&gt; &lt;dy&gt;</c> moves the cursor that
-/// many pixels a second for the hold time (the gamepad's right stick, full at 1000).
+/// many pixels a second for the hold time (the gamepad's right stick, full at 1000). A time written <c>+&lt;s&gt;</c>
+/// is that many seconds after the previous line's time.
 /// </summary>
 internal sealed class InputScript
 {
     private const char CommentMark = '#';
+    private const char RelativeMark = '+';
     private const double DefaultHold = 0.2;
     private const string HoldWord = "hold";
     private const string RepeatWord = "repeat";
@@ -58,6 +60,7 @@ internal sealed class InputScript
         var presses = new List<ScriptedPress>();
         var motions = new List<ScriptedMotion>();
         var captures = new List<double>();
+        double previous = 0;
 
         foreach (string raw in lines)
         {
@@ -72,6 +75,9 @@ internal sealed class InputScript
             {
                 throw new FormatException($"input script: '{string.Join(' ', fields)}' needs a time and a key");
             }
+
+            previous = LineTime(fields[0], previous);
+            fields[0] = previous.ToString(CultureInfo.InvariantCulture);
 
             if (fields[1].Equals(CaptureWord, StringComparison.OrdinalIgnoreCase))
             {
@@ -185,6 +191,17 @@ internal sealed class InputScript
         }
 
         return (start, hold, repeat, every);
+    }
+
+    /// <summary>The line's time: absolute, or after <paramref name="previous"/> when it starts with '+'.</summary>
+    private static double LineTime(string text, double previous)
+    {
+        if (text[0] == RelativeMark)
+        {
+            return previous + Number(text[1..]);
+        }
+
+        return Number(text);
     }
 
     private static double Number(string text)

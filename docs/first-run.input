@@ -9,17 +9,15 @@
 # A tap passes the black screen, skips the logos and confirms each option screen (minimap, text size, the Off
 # option, brightness, controls notice); on the legal screen it does nothing while the Legal item has the focus.
 40 Space hold 0.3 repeat 91 every 4
-# Legal and photosensitivity: focus down twice (the photosensitivity item keeps the focus about 15 s), then Next.
+# Legal and photosensitivity: Down, wait a few seconds while the photosensitivity item holds the focus, Down, then
+# Next. The start time is from boots before programs were compiled on demand; the screens now come sooner.
 410 Down hold 0.3
-430 Down hold 0.3
-450 Space hold 0.3
-# Privacy policy and terms of service: each item is a check box that A toggles (its text need not be scrolled), so
-# one press each; then Confirm starts the story load. The screen drops its first press (a Space at 470 s and at 480 s
-# both left the privacy box unchecked), so an Up, which does nothing on the top item, goes first. If a box stays
-# unchecked, presses appended to the script while it runs can still fix it.
-480 Up hold 0.3
-486 Space hold 0.3
-492 Down hold 0.3
-498 Space hold 0.3
-504 Down hold 0.3
-510 Space hold 0.3
++4 Down hold 0.3
++1 Space hold 0.3
+# Privacy policy and terms of service: the two items are check boxes that A toggles, so Space, Down, Space, Down and
+# Space (Confirm) start the story load. If a box stays unchecked, presses appended while it runs can still fix it.
++8 Space hold 0.3
++1 Down hold 0.3
++1 Space hold 0.3
++1 Down hold 0.3
++1 Space hold 0.3

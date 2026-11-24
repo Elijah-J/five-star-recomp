@@ -33,6 +33,14 @@ public sealed class InputScriptTests
     }
 
     [Fact]
+    public void Plus_times_follow_the_previous_line()
+    {
+        var script = InputScript.Parse(["100 Down", "+4 Down", "+0.5 Space"]);
+
+        Assert.Equal([100.0, 104.0, 104.5], script.Presses.Select(p => p.Start));
+    }
+
+    [Fact]
     public void Cursor_lines_move_the_cursor_at_their_speed_while_held()
     {
         var script = InputScript.Parse(["10 cursor 0 500 hold 2 repeat 2 every 10", "11 Space"]);
