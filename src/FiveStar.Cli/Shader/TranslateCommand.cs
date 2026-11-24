@@ -57,7 +57,8 @@ internal static class TranslateCommand
             translations = new TranslationCache(cache, TranslationCache.Identity(llvm, options.Translation));
         }
 
-        var compiler = Cached(dxc, cache);
+        using var timed = Timed(dxc, options.OutputFolder);
+        var compiler = Cached(timed, cache);
         var fallback = compiler is null ? null : new MeshFallbackCompiler(compiler);
         var progress = new ConsoleProgress(() => Counts(compiler, translations));
         var loader = new ProgramLoader(disassembler);
@@ -102,6 +103,19 @@ internal static class TranslateCommand
         }
 
         return ShaderTools.Compiler(arguments, retry);
+    }
+
+    /// <summary>The compiler that logs each compile it runs to compile-times.tsv in the output folder.</summary>
+    private static TimedCompiler? Timed(IShaderCompiler? compiler, string outputFolder)
+    {
+        if (compiler is null)
+        {
+            return null;
+        }
+
+        Directory.CreateDirectory(outputFolder);
+
+        return new TimedCompiler(compiler, Path.Combine(outputFolder, TimedCompiler.LogName));
     }
 
     private static IShaderCompiler? Cached(IShaderCompiler? compiler, CacheFolder? cache)
