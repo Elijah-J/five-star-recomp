@@ -42,7 +42,15 @@ internal sealed class PipelineWarmStep : ISetupStep
 
     public IReadOnlyList<string> DependsOn => [ShaderTranslateStep.StepName, PipelineCacheStep.StepName];
 
-    public TimeSpan Estimate(SetupContext context) => All(context) ? TypicalTime : UsedTime;
+    public TimeSpan Estimate(SetupContext context)
+    {
+        if (All(context))
+        {
+            return TypicalTime;
+        }
+
+        return UsedTime;
+    }
 
     public StepFingerprint Fingerprint(SetupContext context)
     {

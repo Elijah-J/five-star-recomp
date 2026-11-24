@@ -92,13 +92,24 @@ public sealed partial class CorpusTranslator
             paths = programPaths.Where(path => !final.Contains(Path.GetFileNameWithoutExtension(path))).ToList();
         }
 
+        var merged = Merge(prior, RunAll(paths, options));
+        ResultsFile.Write(Path.Combine(options.OutputFolder, ResultsName), merged);
+
+        return merged;
+    }
+
+    /// <summary>Runs the programs on the parallel jobs, the costliest first, and reports progress in expected cost.</summary>
+    private ProgramResult[] RunAll(IReadOnlyList<string> paths, CorpusOptions options)
+    {
         var results = new ProgramResult[paths.Count];
         var parallel = new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, options.Parallelism) };
         var costs = ExpectedCosts.Of(paths, options.OutputFolder);
         var total = costs.Sum();
+
         var done = 0;
         var finished = 0.0;
         var gate = new Lock();
+
         Parallel.ForEach(Partitioner.Create(CostliestFirst(costs), EnumerablePartitionerOptions.NoBuffering), parallel, index =>
         {
             results[index] = Work(paths[index], options);
@@ -113,10 +124,7 @@ public sealed partial class CorpusTranslator
             _progress?.Report(new CorpusProgress(Interlocked.Increment(ref done), paths.Count, work, total));
         });
 
-        var merged = Merge(prior, results);
-        ResultsFile.Write(Path.Combine(options.OutputFolder, ResultsName), merged);
-
-        return merged;
+        return results;
     }
 
     /// <summary>
@@ -178,6 +186,12 @@ public sealed partial class CorpusTranslator
             return new ProgramResult(translated.Name, stageName, ProgramStatus.Ok, null);
         }
 
+        return CompileForms(_compiler, translated, stageName, hlslPath, options);
+    }
+
+    /// <summary>Compiles the forms of a translated program the run needs and its mesh fallbacks.</summary>
+    private ProgramResult CompileForms(IShaderCompiler compiler, TranslatedProgram translated, string? stageName, string hlslPath, CorpusOptions options)
+    {
         var (native, variant) = Forms(translated, options.Waves);
         var status = ProgramStatus.Ok;
         string? reason = null;
@@ -185,7 +199,7 @@ public sealed partial class CorpusTranslator
 
         if (native)
         {
-            (status, reason) = Compile(_compiler, hlslPath, translated.Hlsl, translated);
+            (status, reason) = Compile(compiler, hlslPath, translated.Hlsl!, translated);
         }
         else
         {
@@ -197,7 +211,7 @@ public sealed partial class CorpusTranslator
         if (status == ProgramStatus.Ok && translated.GroupWave is not null && variant)
         {
             var variantPath = Path.Combine(options.OutputFolder, translated.Name + GroupWaveSuffix);
-            var note = CompileGroupWave(_compiler, variantPath, translated, translated.GroupWave);
+            var note = CompileGroupWave(compiler, variantPath, translated, translated.GroupWave);
             notes.Add(note);
 
             if (!native && note != GroupWaveReady)
@@ -279,15 +293,17 @@ public sealed partial class CorpusTranslator
         }
 
         var facts = Analysis.WaveFacts.Read(program.Hlsl!);
+        var floor = facts.Floor;
+        var pin = facts.WavePin;
 
-        if (program.Stage == ShaderStage.Mesh && facts.Floor is { } floor)
+        if (program.Stage == ShaderStage.Mesh && floor is not null)
         {
             return (waves.Any(wave => floor <= wave.Min), waves.Any(wave => floor > wave.Min));
         }
 
-        if (program.Stage == ShaderStage.Compute && facts.WavePin is { } pin)
+        if (program.Stage == ShaderStage.Compute && pin is not null)
         {
-            return (waves.Any(wave => wave.Offers(pin)), waves.Any(wave => !wave.Offers(pin)));
+            return (waves.Any(wave => wave.Offers(pin.Value)), waves.Any(wave => !wave.Offers(pin.Value)));
         }
 
         return (true, true);

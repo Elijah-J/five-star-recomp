@@ -210,6 +210,7 @@ internal sealed class PipelineJournal : IDisposable
             writer.Write(element.Semantic);
             writer.Write(element.SemanticIndex);
             writer.Write(element.Format);
+
             writer.Write(element.InputSlot);
             writer.Write(element.Offset);
             writer.Write(element.Classification);
@@ -268,6 +269,7 @@ internal sealed class PipelineJournal : IDisposable
         var sampleMask = reader.ReadUInt32();
         var rasterizer = ReadBytes(reader);
         var depthStencil = ReadBytes(reader);
+
         var elements = Enumerable.Range(0, reader.ReadInt32())
             .Select(_ => new VertexElement(reader.ReadString(), reader.ReadInt32(), reader.ReadInt32(), reader.ReadInt32(), reader.ReadInt32(), reader.ReadInt32(), reader.ReadInt32()))
             .ToList();

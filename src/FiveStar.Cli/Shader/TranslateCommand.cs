@@ -63,22 +63,8 @@ internal static class TranslateCommand
         var compiler = Cached(timed, cache);
         var fallback = compiler is null ? null : new MeshFallbackCompiler(compiler);
         var progress = new ConsoleProgress(() => Counts(compiler, translations));
-        var loader = new ProgramLoader(disassembler);
-        var translator = new CorpusTranslator(loader, compiler, fallback, translations, progress);
-        var used = Used(programs, arguments.Option("first-used"));
-
-        if (used.Count > 0)
-        {
-            // The programs earlier boots used first, with their manifest, so the game can start before the rest is done.
-            Report(translator.Run(used, options));
-            WriteManifest(compiler, options.OutputFolder);
-            Console.WriteLine($"the {used.Count} programs earlier boots used are ready; translating the rest");
-            options = options with { RetryResults = Path.Combine(options.OutputFolder, CorpusTranslator.ResultsName) };
-        }
-
-        var results = translator.Run(programs, options);
-        Report(results);
-        WriteManifest(compiler, options.OutputFolder);
+        var translator = new CorpusTranslator(new ProgramLoader(disassembler), compiler, fallback, translations, progress);
+        var results = Translate(translator, compiler, programs, Used(programs, arguments.Option("first-used")), options);
 
         if (cache is not null)
         {
@@ -91,6 +77,27 @@ internal static class TranslateCommand
         }
 
         return Success;
+    }
+
+    /// <summary>
+    /// Runs the programs, those earlier boots used first (<paramref name="used"/>) with their own results and manifest, so
+    /// the game can start before the rest is done; writes the manifest at the end.
+    /// </summary>
+    private static IReadOnlyList<ProgramResult> Translate(CorpusTranslator translator, IShaderCompiler? compiler, List<string> programs, List<string> used, CorpusOptions options)
+    {
+        if (used.Count > 0)
+        {
+            Report(translator.Run(used, options));
+            WriteManifest(compiler, options.OutputFolder);
+            Console.WriteLine($"the {used.Count} programs earlier boots used are ready; translating the rest");
+            options = options with { RetryResults = Path.Combine(options.OutputFolder, CorpusTranslator.ResultsName) };
+        }
+
+        var results = translator.Run(programs, options);
+        Report(results);
+        WriteManifest(compiler, options.OutputFolder);
+
+        return results;
     }
 
     private static void WriteManifest(IShaderCompiler? compiler, string folder)
@@ -168,7 +175,7 @@ internal static class TranslateCommand
 
         Directory.CreateDirectory(outputFolder);
 
-        return new TimedCompiler(compiler, Path.Combine(outputFolder, TimedCompiler.LogName));
+        return new TimedCompiler(compiler, Path.Combine(outputFolder, TimedCompiler.LogName), TimeProvider.System);
     }
 
     private static IShaderCompiler? Cached(IShaderCompiler? compiler, CacheFolder? cache)

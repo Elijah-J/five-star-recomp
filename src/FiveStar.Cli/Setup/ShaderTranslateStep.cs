@@ -163,7 +163,7 @@ internal sealed class ShaderTranslateStep : ISetupStep
     /// <summary>The hardware adapters with a D3D12 device.</summary>
     private List<AdapterInfo> Gpus()
     {
-        _gpus ??= AdapterCatalog.List().Where(adapter => adapter is { Software: false, ShaderModel: not null }).ToList();
+        _gpus ??= AdapterCatalog.List().Where(adapter => !adapter.Software && adapter.ShaderModel is not null).ToList();
 
         return _gpus;
     }
@@ -183,7 +183,9 @@ internal sealed class ShaderTranslateStep : ISetupStep
             arguments.Add("--" + MeshFallbacksFlag);
         }
 
-        if (Waves(context) is { } waves)
+        var waves = Waves(context);
+
+        if (waves is not null)
         {
             arguments.AddRange(["--waves", waves]);
         }

@@ -41,6 +41,7 @@ public sealed class D3D12XPipelineJournalTests
             var read = targets[0].Graphics!;
             Assert.Equal(graphics.Shaders.Select(shader => shader.Bytes), read.Shaders.Select(shader => shader.Bytes));
             Assert.Equal(graphics.Blend, read.Blend);
+
             Assert.Equal(graphics.InputLayout, read.InputLayout);
             Assert.Equal(graphics.RenderTargetFormats, read.RenderTargetFormats);
             Assert.Equal(graphics.DepthStencilFormat, read.DepthStencilFormat);

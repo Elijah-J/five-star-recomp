@@ -11,6 +11,8 @@ namespace FiveStar.Shaders.Compilation;
 /// </summary>
 public sealed record WaveRange(int Min, int Max)
 {
+    private const int MinAndMax = 2;
+
     /// <summary>Whether a compute shader pinned to <paramref name="lanes"/> loads on the GPU.</summary>
     public bool Offers(int lanes) => lanes >= Min && lanes <= Max;
 
@@ -26,7 +28,7 @@ public sealed record WaveRange(int Min, int Max)
     {
         var parts = text.Split('-');
 
-        if (parts.Length != 2 || !int.TryParse(parts[0], CultureInfo.InvariantCulture, out var min) || !int.TryParse(parts[1], CultureInfo.InvariantCulture, out var max) || min < 1 || max < min)
+        if (parts.Length != MinAndMax || !int.TryParse(parts[0], CultureInfo.InvariantCulture, out var min) || !int.TryParse(parts[1], CultureInfo.InvariantCulture, out var max) || min < 1 || max < min)
         {
             throw new ArgumentException($"a wave range is min-max lanes, such as 32-64: {text}");
         }

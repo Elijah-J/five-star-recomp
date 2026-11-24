@@ -1,7 +1,6 @@
 // Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-using System.Diagnostics;
 using System.Globalization;
 
 namespace FiveStar.Shaders.Compilation;
@@ -19,10 +18,12 @@ public sealed class TimedCompiler : IShaderCompiler, IDisposable
     private readonly IShaderCompiler _inner;
     private readonly StreamWriter _log;
     private readonly Lock _gate = new();
+    private readonly TimeProvider _time;
 
-    public TimedCompiler(IShaderCompiler inner, string logPath)
+    public TimedCompiler(IShaderCompiler inner, string logPath, TimeProvider time)
     {
         _inner = inner;
+        _time = time;
         _log = new StreamWriter(logPath, append: true) { AutoFlush = true };
     }
 
@@ -32,9 +33,9 @@ public sealed class TimedCompiler : IShaderCompiler, IDisposable
 
     public CompileOutcome Compile(CompileRequest request, TimeSpan timeout)
     {
-        var clock = Stopwatch.StartNew();
+        var started = _time.GetTimestamp();
         var outcome = _inner.Compile(request, timeout);
-        var milliseconds = clock.ElapsedMilliseconds;
+        var milliseconds = (long)_time.GetElapsedTime(started).TotalMilliseconds;
         var dxil = 0L;
 
         if (outcome.Succeeded && File.Exists(request.DxilPath))

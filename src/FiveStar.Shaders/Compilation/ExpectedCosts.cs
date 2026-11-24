@@ -19,7 +19,7 @@ public static class ExpectedCosts
     /// <summary>The cost of each of <paramref name="paths"/>, in their order.</summary>
     public static double[] Of(IReadOnlyList<string> paths, string outputFolder)
     {
-        var sizes = paths.Select(path => File.Exists(path) ? new FileInfo(path).Length : 0).ToArray();
+        var sizes = paths.Select(Size).ToArray();
         var logged = Logged(Path.Combine(outputFolder, TimedCompiler.LogName));
         long loggedBytes = 0;
         double loggedMilliseconds = 0;
@@ -33,9 +33,34 @@ public static class ExpectedCosts
             }
         }
 
-        var perByte = loggedBytes > 0 ? loggedMilliseconds / loggedBytes : 1;
+        double perByte = 1;
 
-        return paths.Select((path, index) => logged.TryGetValue(Path.GetFileNameWithoutExtension(path), out var milliseconds) ? milliseconds : sizes[index] * perByte).ToArray();
+        if (loggedBytes > 0)
+        {
+            perByte = loggedMilliseconds / loggedBytes;
+        }
+
+        var costs = new double[paths.Count];
+
+        for (var index = 0; index < paths.Count; index++)
+        {
+            if (!logged.TryGetValue(Path.GetFileNameWithoutExtension(paths[index]), out costs[index]))
+            {
+                costs[index] = sizes[index] * perByte;
+            }
+        }
+
+        return costs;
+    }
+
+    private static long Size(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return 0;
+        }
+
+        return new FileInfo(path).Length;
     }
 
     /// <summary>Milliseconds per program in a compile log (every form of a program counts towards it); empty without one.</summary>
@@ -50,7 +75,7 @@ public static class ExpectedCosts
 
         using var reader = new StreamReader(File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite));
 
-        while (reader.ReadLine() is { } line)
+        for (var line = reader.ReadLine(); line is not null; line = reader.ReadLine())
         {
             var fields = line.Split('\t');
 
