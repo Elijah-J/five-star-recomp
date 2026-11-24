@@ -91,7 +91,7 @@ internal sealed partial class BufferEmitter
 
         var resource = a[Resource];
         var address = BufferAddress.Build(_operands, a[Address], resource, a[SOffset], modifiers);
-        var range = BufferAddress.RangeOperands(_operands, a[Address], modifiers);
+        var range = BufferAddress.Range(_operands, a[Address], resource, modifiers);
 
         if (op.StartsWith("buffer_load", StringComparison.Ordinal))
         {
@@ -102,8 +102,8 @@ internal sealed partial class BufferEmitter
 
             for (var dword = 0; dword < count; dword++)
             {
-                var inRange = BufferAddress.InRange(_operands, resource, range, dword * BytesPerDword);
-                _operands.Write(a[Data], $"({inRange} ? {function}({view}.x, {byteAddress} + {dword * BytesPerDword}u) : 0u)", dword);
+                var inRange = BufferAddress.InRange(range, dword * BytesPerDword);
+                _operands.Write(a[Data], $"select({inRange}, {function}({view}.x, {byteAddress} + {dword * BytesPerDword}u), 0u)", dword);
             }
 
             return;
@@ -113,7 +113,7 @@ internal sealed partial class BufferEmitter
 
         for (var dword = 0; dword < count; dword++)
         {
-            var inRange = BufferAddress.InRange(_operands, resource, range, dword * BytesPerDword);
+            var inRange = BufferAddress.InRange(range, dword * BytesPerDword);
             _state.Emit($"  if (active && {inRange}) BufStore({target}.x, {target}.y + {address} + {dword * BytesPerDword}u, {_operands.Read(a[Data], dword)});");
         }
     }
@@ -132,7 +132,7 @@ internal sealed partial class BufferEmitter
         var store = op.Contains("store", StringComparison.Ordinal);
 
         var address = BufferAddress.Build(_operands, a[Address], resource, a[SOffset], modifiers);
-        var inRange = BufferAddress.InRange(_operands, resource, BufferAddress.RangeOperands(_operands, a[Address], modifiers), 0);
+        var inRange = BufferAddress.InRange(BufferAddress.Range(_operands, a[Address], resource, modifiers), 0);
         var view = BufferAddress.View(_operands, resource, store);
         var byteAddress = _operands.SnapOne($"{view}.y + {address}");
         var format = _operands.SnapOne(code);
@@ -154,7 +154,7 @@ internal sealed partial class BufferEmitter
         }
 
         var name = $"_fmt{_state.NextTemporary()}";
-        _state.Emit($"  uint4 {name} = {inRange} ? fmt_swizzle(FmtLoad({view}.x, {byteAddress}, {format}), {swizzle}, {format}) : uint4(0u, 0u, 0u, 0u);");
+        _state.Emit($"  uint4 {name} = select({inRange}, fmt_swizzle(FmtLoad({view}.x, {byteAddress}, {format}), {swizzle}, {format}), uint4(0u, 0u, 0u, 0u));");
 
         for (var component = 0; component < count; component++)
         {

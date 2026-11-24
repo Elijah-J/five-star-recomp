@@ -163,7 +163,7 @@ internal sealed partial class AtomicEmitter
         var vaddr = OperandParser.Parse(arguments[Address]);
         var soffset = OperandParser.Parse(arguments[SOffset]);
         var byteAddress = BufferAddress.Build(_operands, vaddr, resource, soffset, modifiers);
-        var inRange = BufferAddress.InRange(_operands, resource, BufferAddress.RangeOperands(_operands, vaddr, modifiers), 0);
+        var inRange = BufferAddress.InRange(BufferAddress.Range(_operands, vaddr, resource, modifiers), 0);
         var view = BufferAddress.View(_operands, resource, true);
 
         var result = atomic.Result;

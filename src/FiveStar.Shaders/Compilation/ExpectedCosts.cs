@@ -14,7 +14,11 @@ namespace FiveStar.Shaders.Compilation;
 public static class ExpectedCosts
 {
     private const int NameField = 0;
+    private const int OptimizationField = 2;
     private const int MillisecondsField = 5;
+    private const int OutcomeField = 6;
+    private const string OptimizedFlag = "-O3";
+    private const string TimeoutOutcome = "timeout";
 
     /// <summary>The cost of each of <paramref name="paths"/>, in their order.</summary>
     public static double[] Of(IReadOnlyList<string> paths, string outputFolder)
@@ -51,6 +55,35 @@ public static class ExpectedCosts
         }
 
         return costs;
+    }
+
+    /// <summary>
+    /// The HLSL files whose -O3 compile timed out in the output folder's log from an earlier run: they compile with -Od
+    /// from the start instead of spending the whole limit at -O3 first.
+    /// </summary>
+    public static HashSet<string> TimedOut(string outputFolder)
+    {
+        var files = new HashSet<string>(StringComparer.Ordinal);
+        var path = Path.Combine(outputFolder, TimedCompiler.LogName);
+
+        if (!File.Exists(path))
+        {
+            return files;
+        }
+
+        using var reader = new StreamReader(File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite));
+
+        for (var line = reader.ReadLine(); line is not null; line = reader.ReadLine())
+        {
+            var fields = line.Split('\t');
+
+            if (fields.Length > OutcomeField && fields[OptimizationField] == OptimizedFlag && fields[OutcomeField] == TimeoutOutcome)
+            {
+                files.Add(fields[NameField]);
+            }
+        }
+
+        return files;
     }
 
     private static long Size(string path)

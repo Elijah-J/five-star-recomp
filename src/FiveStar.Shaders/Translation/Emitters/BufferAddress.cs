@@ -52,10 +52,10 @@ internal static class BufferAddress
     }
 
     /// <summary>
-    /// The index and the checked offset (VGPR offset + instruction offset, not soffset) of a MUBUF/MTBUF access, as
-    /// snapped temporaries for <see cref="InRange"/>.
+    /// The checked offset (VGPR offset + instruction offset, not soffset) of a MUBUF/MTBUF access and its limit, the
+    /// first offset out of range (prelude buf_limit of the index), as snapped temporaries for <see cref="InRange"/>.
     /// </summary>
-    public static (string Index, string Offset) RangeOperands(OperandAccess operands, Operand vaddr, InstructionModifiers modifiers)
+    public static (string Offset, string Limit) Range(OperandAccess operands, Operand vaddr, Operand resource, InstructionModifiers modifiers)
     {
         var indexed = modifiers.Has("idxen");
         var offset = modifiers.Has("offen");
@@ -76,15 +76,21 @@ internal static class BufferAddress
             bytes += $" + {operands.Read(vaddr)}";
         }
 
-        var values = operands.Snap(index, bytes);
+        var limit = $"buf_limit({operands.Read(resource, StrideDword)}, {operands.Read(resource, RecordsDword)}, {operands.Read(resource, FormatDword)}, {index})";
+        var values = operands.Snap(bytes, limit);
 
         return (values[0], values[1]);
     }
 
-    /// <summary>The prelude's range check (buf_ok) of an access <paramref name="extraBytes"/> past <paramref name="at"/>.</summary>
-    public static string InRange(OperandAccess operands, Operand resource, (string Index, string Offset) at, int extraBytes)
+    /// <summary>True when the dword <paramref name="extraBytes"/> past the access's offset is in range.</summary>
+    public static string InRange((string Offset, string Limit) range, int extraBytes)
     {
-        return $"buf_ok({operands.Read(resource, StrideDword)}, {operands.Read(resource, RecordsDword)}, {operands.Read(resource, FormatDword)}, {at.Index}, {at.Offset} + {extraBytes}u)";
+        if (extraBytes == 0)
+        {
+            return $"({range.Offset} < {range.Limit})";
+        }
+
+        return $"({range.Offset} + {extraBytes}u < {range.Limit})";
     }
 
     private static string Stride(OperandAccess operands, Operand resource)

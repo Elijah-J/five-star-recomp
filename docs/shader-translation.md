@@ -139,17 +139,21 @@ an address it does not know names a null view and reads 0.
 (an atomic returns 0). Console programs rely on it: an argument or append writer runs past its allocation, and a loop
 reads zeros past an end. Without it, those stores landed through the address map in the game memory next to the
 buffer. One of the places they landed was the transient pool's block-end nodes, which caused the story-load faults at
-0x144e9b4b2 ([debugging.md](debugging.md#transient-pool-watch)). `buf_ok` follows OOB_SELECT (V# dword3 bits 28-29):
+0x144e9b4b2 ([debugging.md](debugging.md#transient-pool-watch)).
+
+Once per access, `buf_limit` gives the first out-of-range offset from OOB_SELECT (V# dword3 bits 28-29):
 
 - 2 checks nothing.
 - 3 (raw), or any V# with stride 0, checks index × stride + offset against num_records (dword2).
-- 0 and 1 (structured) check the index. Mode 0 would also check the offset against the stride; that check is left out,
-  because the shim's records leave the field at 0.
+- 0 and 1 (structured) check the index. Mode 0 would also check the offset against the stride; that check is left
+  out, because the shim's records leave the field at 0.
 
-The offset is the VGPR offset plus the instruction offset; soffset is not checked. Multi-dword accesses check each
-dword, and formatted ones check the element. `s_buffer_load` (`sbuf_ok`) checks the whole offset against num_records,
-counted in bytes for a stride of 0 and in strides otherwise.
+Each dword then costs one compare. Raw buffers check every dword, as RDNA does; formatted accesses check the element.
+The offset is the VGPR offset plus the instruction offset; soffset is not checked. `s_buffer_load` compares its whole
+offset with `sbuf_limit`: num_records in bytes for stride 0, else num_records × stride.
 
+Loads use `select`, not `?:`. HLSL 2021 short-circuits `?:`, and the branches around each load raised dxc time by
+50 to 300 % on the heaviest programs. With `select` the overhead is about 0 to 40 % (three sample programs).
 A buffer the program also stores to is loaded through its RW view (`BufLoadRW`). Cube sampling rebuilds a direction
 from (s, t, face) with `cube_dir`.
 
@@ -445,7 +449,8 @@ rest follows and both files are rewritten. Until then the other programs load wh
 
 dxc runs as `dxc.exe -T <stage>_6_7 -E main -HV 2021 -I <out> -Fo <name>.dxil`, one process per compile, with a 180 s
 limit; a timed-out compile is retried with `-Od` for 300 s (900 s with `--retry`); fallback compiles have 600 s.
-Sources over 2,500,000 characters use `-Od` from the start. dxc comes from `--dxc`, then `FIVESTAR_DXC`, then the
+Sources over 2,500,000 characters use `-Od` from the start, and so does every HLSL file whose `-O3` compile timed out
+in the output folder's `compile-times.tsv` from an earlier run. dxc comes from `--dxc`, then `FIVESTAR_DXC`, then the
 Windows SDK default when it exists, then `PATH`. Compiling in-process through `dxcompiler.dll` was measured no faster
 (a dxc.exe start costs about 10 ms against a median compile of 0.85 s), and a process can be killed at the limit
 while an in-process crash or allocation failure ends the whole run.

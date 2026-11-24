@@ -17,6 +17,7 @@ internal sealed class ScalarMemoryEmitter
     private const int OffsetOperand = 2;
     private const int StrideDword = 1;
     private const int RecordsDword = 2;
+    private const int BytesPerDword = 4;
 
     private static readonly IReadOnlyDictionary<string, int> Sizes = new Dictionary<string, int>
     {
@@ -47,13 +48,12 @@ internal sealed class ScalarMemoryEmitter
             var view = BufferAddress.View(_operands, pointer, false);
             var start = _operands.SnapOne($"{view}.y + {offsetValue}");
             var checkedOffset = _operands.SnapOne(offsetValue);
-            var stride = _operands.SnapOne(_operands.Read(pointer, StrideDword));
-            var records = _operands.SnapOne(_operands.Read(pointer, RecordsDword));
+            var limit = _operands.SnapOne($"sbuf_limit({_operands.Read(pointer, StrideDword)}, {_operands.Read(pointer, RecordsDword)})");
 
-            // Out of range (prelude sbuf_ok) reads 0.
+            // Out of range (past prelude sbuf_limit) reads 0.
             for (var dword = 0; dword < count; dword++)
             {
-                _operands.Write(a[Destination], $"(sbuf_ok({stride}, {records}, {checkedOffset} + {dword}u * 4u) ? BufLoad({view}.x, {start} + {dword}u * 4u) : 0u)", dword);
+                _operands.Write(a[Destination], $"select({checkedOffset} + {dword * BytesPerDword}u < {limit}, BufLoad({view}.x, {start} + {dword}u * 4u), 0u)", dword);
             }
 
             return;
