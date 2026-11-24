@@ -19,7 +19,7 @@ internal static unsafe class WarmMemoryGuard
     /// Commit a heavy pipeline needs to start: one 10 MB ray-traced shadow program passed 30 GB in the NVIDIA driver
     /// (docs/d3d12x-pipelines.md, Warm-up).
     /// </summary>
-    public const ulong HeavyBytes = 40UL << 30;
+    public const ulong HeavyBytes = 32UL << 30;
 
     private const int PauseMilliseconds = 2000;
 

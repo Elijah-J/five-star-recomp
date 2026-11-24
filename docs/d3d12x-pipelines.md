@@ -94,11 +94,11 @@ flowchart LR
 
 | Item | Rule |
 |---|---|
-| Key (pipeline name) | the first 16 bytes of a SHA-256 over the stream: each subobject's type and payload, the DXIL itself in place of shader pointers, the input elements' semantic names and fields; the root signature is left out (the salt covers it) |
+| Key (pipeline name) | the first 16 bytes of a SHA-256 over the stream: each subobject's type and payload, the DXIL itself in place of shader pointers, the input elements' semantic names and fields; the root signature is left out (the salt covers it). The padding of the blend and depth-stencil descs is zeroed first (`StatePadding`): the game leaves stack bytes there, which gave one pipeline a new key on every boot |
 | Salt | SHA-256 of a format string and the serialized bindless root signature; files with another salt are deleted |
 | Segment file `<utc time>-<pid>-<n>.psolib` | `FSPL`, u32 version 1, the 32-byte salt, u32 name count, u32 0, u64 library size, the 16-byte names, then the serialized library at a 256-byte boundary |
-| Opening | every segment is mapped read-only and given to `CreatePipelineLibrary`; one the driver refuses (D3D12_ERROR_ADAPTER_NOT_FOUND, D3D12_ERROR_DRIVER_VERSION_MISMATCH, a damaged blob) is deleted |
-| New pipelines | go to an empty library of this process, written to its own segment through a `.tmp` file and a rename every minute and after every 2,048 new ones; past 256 MiB it becomes a read-only segment and a new library starts |
+| Opening | every segment is mapped read-only and its names indexed; a background thread gives the segments, newest first, to `CreatePipelineLibrary` (8 segments, 830 MB: 0.9 s) while the device is created. A pipeline whose segment is not open yet is built as if not cached. A segment the driver refuses (D3D12_ERROR_ADAPTER_NOT_FOUND, D3D12_ERROR_DRIVER_VERSION_MISMATCH, a damaged blob) is deleted |
+| New pipelines | go to an empty library of this process. Every minute, after every 2,048 new ones and at exit it is sealed (a new empty library takes new ones at once), written to a segment file of its own through a `.tmp` file and a rename, and replaced by that file mapped read-only; no lock the game waits on is held while the driver serializes |
 | Size | past 32 GiB the oldest segments are deleted when the cache opens |
 
 Processes never write each other's segments, so the game and the warm-up can share the folder. A cache hit is
@@ -111,7 +111,7 @@ loads the driver refused.
 [--pipeline-cache <dir>] [--warm-jobs N] [--warm-step K] [--warm-match text]` runs no game. On the default adapter it
 reads the console pipeline cache ([pipeline-cache.md](pipeline-cache.md)), turns every compute and graphics record
 into the description slots 67 and 57 would get, and builds each through the same factory as the game, on
-`--warm-jobs` threads (default 4), without a time limit. No build starts while less than 8 GB of commit is available; a pipeline with 4 MiB of DXIL or more is built alone on its own thread and only with 48 GB available, else it is left out (logged) for a later run or the game: one ray-traced shadow program passed 30 GB in the NVIDIA driver. Compute pipelines go first, the
+`--warm-jobs` threads (default 4), without a time limit. No build starts while less than 8 GB of commit is available; a pipeline with 4 MiB of DXIL or more is built alone on its own thread and only with 40 GB of commit available, else it is left out (logged) for a later run or the game: one ray-traced shadow program passed 30 GB in the NVIDIA driver. Compute pipelines go first, the
 largest code first. A pipeline whose key is cached is skipped, so a stopped run (Ctrl+C finishes the running builds
 and writes the cache) resumes; pipelines the driver refuses are listed in `warm-failures.txt` in the cache folder
 and not retried while their key stays the same. Builds over 20 s are named in the log; every 30 s it prints the

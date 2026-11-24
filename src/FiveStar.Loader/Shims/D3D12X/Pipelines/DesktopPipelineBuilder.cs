@@ -34,10 +34,10 @@ internal static unsafe class DesktopPipelineBuilder
             stream.AddShader(StageType(program.Stage), program.Dxil);
         }
 
-        stream.AddBytes(PipelineStateSubObjectType.Blend, DesktopStateRules.Blend(description.Blend));
+        stream.AddBytes(PipelineStateSubObjectType.Blend, StatePadding.Blend(DesktopStateRules.Blend(description.Blend)));
         stream.AddWords(PipelineStateSubObjectType.SampleMask, [unchecked((int)description.SampleMask)]);
         stream.AddBytes(PipelineStateSubObjectType.Rasterizer, DesktopStateRules.Rasterizer(description.Rasterizer, description.DepthStencil));
-        stream.AddBytes(PipelineStateSubObjectType.DepthStencil1, description.DepthStencil);
+        stream.AddBytes(PipelineStateSubObjectType.DepthStencil1, StatePadding.DepthStencil(description.DepthStencil));
 
         if (!mesh)
         {

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -13,9 +14,8 @@ namespace FiveStar.Loader.Shims.D3D12X.Pipelines;
 /// <summary>
 /// The disk cache of built desktop pipelines (docs/d3d12x-pipelines.md, Disk cache): ID3D12PipelineLibrary1
 /// segments in one folder, each pipeline named by <see cref="DesktopStream.Key"/>. Finished segments are mapped and
-/// only read; new pipelines go to this process's active library, which is written to its own segment file every
-/// <see cref="SaveInterval"/>, after <see cref="SaveBatch"/> new pipelines and at disposal, and becomes a finished
-/// segment past <see cref="SegmentBytes"/>.
+/// only read; new pipelines go to this process's active library, which is sealed and written to a segment file of its
+/// own every <see cref="SaveInterval"/>, after <see cref="SaveBatch"/> new pipelines and at disposal.
 /// Segments the driver refuses (another adapter or driver version) are deleted; past <see cref="MaximumBytes"/> the
 /// oldest segments are deleted when the cache opens.
 /// </summary>
@@ -23,8 +23,6 @@ internal sealed unsafe class PipelineLibraryCache : IDisposable
 {
     /// <summary>The cache's folder under the loader's work folder when no other is given.</summary>
     public const string FolderName = "pipeline-cache";
-
-    private const long SegmentBytes = 256L << 20;
 
     /// <summary>Pipelines stored since the last write that make the saver write at once, keeping the active library small.</summary>
     private const int SaveBatch = 2048;
@@ -36,6 +34,7 @@ internal sealed unsafe class PipelineLibraryCache : IDisposable
     private static readonly TimeSpan SaveInterval = TimeSpan.FromMinutes(1);
 
     private readonly object _active = new();
+    private readonly object _saving = new();
     private readonly ConcurrentDictionary<string, PipelineLibrarySegment> _index = new(StringComparer.Ordinal);
     private readonly List<PipelineLibrarySegment> _segments = [];
     private readonly List<string> _activeKeys = [];
@@ -47,6 +46,7 @@ internal sealed unsafe class PipelineLibraryCache : IDisposable
     private readonly byte[] _salt;
     private readonly LoaderLog _log;
     private Thread? _saver;
+    private Thread? _opener;
     private nint _library;
     private string _activePath = string.Empty;
     private int _sequence;
@@ -96,6 +96,12 @@ internal sealed unsafe class PipelineLibraryCache : IDisposable
         return cache;
     }
 
+    /// <summary>Waits up to <paramref name="timeout"/> until every segment found at opening can be loaded from.</summary>
+    public bool WaitForSegments(TimeSpan timeout)
+    {
+        return _opener is null || _opener.Join(timeout);
+    }
+
     /// <summary>True when the pipeline named <paramref name="key"/> is in the cache.</summary>
     public bool Contains(string key)
     {
@@ -136,9 +142,9 @@ internal sealed unsafe class PipelineLibraryCache : IDisposable
         {
             Interlocked.Increment(ref _hits);
         }
-        else if (known)
+        else if (known && hr != HResult.Pending && Interlocked.Increment(ref _refused) == 1)
         {
-            Interlocked.Increment(ref _refused);
+            _log.Warn($"[d3d12_xs] pipeline cache: the driver refused a cached pipeline ({HResult.Format(hr)}); refusals are built anew and counted");
         }
 
         return hr;
@@ -177,43 +183,35 @@ internal sealed unsafe class PipelineLibraryCache : IDisposable
         _saver.Start();
     }
 
-    /// <summary>Writes the active library when pipelines were stored since the last write.</summary>
+    /// <summary>
+    /// Seals the active library when pipelines were stored since the last write: a new empty library takes its place at
+    /// once, the sealed one is written to its segment file outside the lock, then replaced by the mapped file.
+    /// </summary>
     public void Save()
     {
-        lock (_active)
+        lock (_saving)
         {
-            if (!_dirty || _library == 0)
+            PipelineLibrarySegment sealedSegment;
+
+            lock (_active)
             {
-                return;
+                if (!_dirty || _library == 0)
+                {
+                    return;
+                }
+
+                sealedSegment = PipelineLibrarySegment.Sealed(_activePath, _library, [.. _activeKeys]);
+                Add(sealedSegment);
+
+                _activeKeys.Clear();
+                _activeSet.Clear();
+                _dirty = false;
+                _unsaved = 0;
+                _library = 0;
+                NewActive();
             }
 
-            long size;
-
-            try
-            {
-                size = PipelineLibraryFile.Write(_activePath, _salt, _activeKeys, _library);
-            }
-            catch (IOException exception)
-            {
-                _log.Warn($"[d3d12_xs] pipeline cache not written to {_activePath}: {exception.Message}");
-
-                return;
-            }
-
-            if (size < 0)
-            {
-                _log.Warn($"[d3d12_xs] pipeline cache not written: Serialize -> {HResult.Format((int)size)}");
-
-                return;
-            }
-
-            _dirty = false;
-            _unsaved = 0;
-
-            if (size > SegmentBytes)
-            {
-                Rotate();
-            }
+            Persist(sealedSegment);
         }
     }
 
@@ -221,6 +219,7 @@ internal sealed unsafe class PipelineLibraryCache : IDisposable
     {
         _stop.Set();
         _saver?.Join();
+        _opener?.Join();
         Save();
         _log.Info($"  [d3d12_xs] {Summary}");
 
@@ -230,9 +229,12 @@ internal sealed unsafe class PipelineLibraryCache : IDisposable
             _library = 0;
         }
 
-        foreach (var segment in _segments)
+        lock (_segments)
         {
-            segment.Dispose();
+            foreach (var segment in _segments)
+            {
+                segment.Dispose();
+            }
         }
 
         _stop.Dispose();
@@ -249,27 +251,55 @@ internal sealed unsafe class PipelineLibraryCache : IDisposable
         }
     }
 
-    /// <summary>Opens every segment, oldest first so newer ones name a pipeline last; deletes the unusable ones.</summary>
+    /// <summary>
+    /// Maps every segment and indexes its names, oldest first so newer ones name a pipeline last, and deletes foreign
+    /// files; the driver's libraries are made on a background thread (<see cref="Activate"/>), since that takes seconds
+    /// per segment and the device is being created meanwhile.
+    /// </summary>
     private void Load()
     {
         var files = Directory.EnumerateFiles(_folder, "*" + PipelineLibraryFile.Extension).Order(StringComparer.Ordinal).ToList();
-        files = Evict(files);
-        var discarded = new Dictionary<string, int>(StringComparer.Ordinal);
+        var mapped = new List<PipelineLibrarySegment>();
 
-        foreach (var file in files)
+        foreach (var file in Evict(files))
         {
-            var segment = PipelineLibrarySegment.Open(file, _device1, _salt, out var refusal);
+            var segment = PipelineLibrarySegment.Map(file, _salt);
 
             if (segment is null)
             {
-                var reason = Refusal(refusal);
-                discarded[reason] = discarded.GetValueOrDefault(reason) + 1;
+                _log.Warn($"[d3d12_xs] pipeline cache: {Path.GetFileName(file)} deleted ({Refusal(HResult.Ok)})");
                 TryDelete(file);
 
                 continue;
             }
 
             Add(segment);
+            mapped.Add(segment);
+        }
+
+        _log.Detail($"  [d3d12_xs] pipeline cache: {_index.Count} pipelines in {mapped.Count} segment(s) of {_folder}");
+        _opener = new Thread(() => Activate(mapped)) { IsBackground = true, Name = "fivestar pipeline cache open" };
+        _opener.Start();
+    }
+
+    /// <summary>Makes the libraries of the mapped segments, newest first; deletes those the driver refuses.</summary>
+    private void Activate(List<PipelineLibrarySegment> segments)
+    {
+        var clock = Stopwatch.StartNew();
+        var discarded = new Dictionary<string, int>(StringComparer.Ordinal);
+
+        for (var index = segments.Count - 1; index >= 0 && !_stop.IsSet; index--)
+        {
+            var segment = segments[index];
+            var hr = segment.Activate(_device1);
+
+            if (HResult.Failed(hr))
+            {
+                var reason = Refusal(hr);
+                discarded[reason] = discarded.GetValueOrDefault(reason) + 1;
+                Remove(segment);
+                TryDelete(segment.Path);
+            }
         }
 
         foreach (var (reason, count) in discarded)
@@ -277,12 +307,31 @@ internal sealed unsafe class PipelineLibraryCache : IDisposable
             _log.Warn($"[d3d12_xs] pipeline cache: {count} segment(s) discarded ({reason})");
         }
 
-        _log.Detail($"  [d3d12_xs] pipeline cache: {_index.Count} pipelines in {_segments.Count} segment(s) of {_folder}");
+        _log.Detail($"  [d3d12_xs] pipeline cache: {segments.Count - discarded.Values.Sum()} segment(s) opened in {clock.Elapsed.TotalSeconds:F1} s");
+    }
+
+    /// <summary>Takes a segment out of the index (where no newer one names its pipelines) and disposes it.</summary>
+    private void Remove(PipelineLibrarySegment segment)
+    {
+        foreach (var key in segment.Keys)
+        {
+            _index.TryRemove(new KeyValuePair<string, PipelineLibrarySegment>(key, segment));
+        }
+
+        lock (_segments)
+        {
+            _segments.Remove(segment);
+        }
+
+        segment.Dispose();
     }
 
     private void Add(PipelineLibrarySegment segment)
     {
-        _segments.Add(segment);
+        lock (_segments)
+        {
+            _segments.Add(segment);
+        }
 
         foreach (var key in segment.Keys)
         {
@@ -290,24 +339,39 @@ internal sealed unsafe class PipelineLibraryCache : IDisposable
         }
     }
 
-    /// <summary>The active library's file becomes a finished segment, and a new empty library takes its place.</summary>
-    private void Rotate()
+    /// <summary>Writes a sealed library and puts its mapped file in its place; on failure it stays for this run.</summary>
+    private void Persist(PipelineLibrarySegment sealedSegment)
     {
-        var segment = PipelineLibrarySegment.Open(_activePath, _device1, _salt, out var refusal);
+        long size;
 
-        if (segment is null)
+        try
         {
-            _log.Warn($"[d3d12_xs] pipeline cache segment {_activePath} not reopened: {Refusal(refusal)}");
+            size = sealedSegment.Write(_salt);
+        }
+        catch (IOException exception)
+        {
+            _log.Warn($"[d3d12_xs] pipeline cache not written to {sealedSegment.Path}: {exception.Message}");
+
+            return;
+        }
+
+        var segment = size < 0 ? null : PipelineLibrarySegment.Map(sealedSegment.Path, _salt);
+
+        if (segment is null || HResult.Failed(segment.Activate(_device1)))
+        {
+            _log.Warn($"[d3d12_xs] pipeline cache segment {sealedSegment.Path} not written or not reopened ({HResult.Format((int)Math.Min(size, 0))})");
 
             return;
         }
 
         Add(segment);
-        ComObject.Release(_library);
-        _library = 0;
-        _activeKeys.Clear();
-        _activeSet.Clear();
-        NewActive();
+
+        lock (_segments)
+        {
+            _segments.Remove(sealedSegment);
+        }
+
+        sealedSegment.Dispose();
     }
 
     private bool NewActive()
