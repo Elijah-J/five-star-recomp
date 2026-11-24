@@ -9,8 +9,8 @@ system, and after a scripted button press pairs a gamepad with the user and stre
 first real image: its UI layer and the intro video (Bink, decoded on the CPU and drawn with the game's own translated
 shaders) in the right colours. It then shows the Rockstar logo, the intro art and every first-run screen (text size,
 brightness, controls, legal, privacy policy and terms), which scripted input answers, saves its settings and starts
-loading story mode. About six minutes into that load the GPU hangs; that is the current blocker (see
-[Roadmap](Roadmap.md)).
+loading story mode. The GPU hang on the first frame after that load (compute shader loops that never ended) is now
+bounded; the load then stops on corrupted game memory, which is the current blocker (see [Roadmap](Roadmap.md)).
 
 ![Progress](progress.svg)
 

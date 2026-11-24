@@ -19,7 +19,7 @@ No game files, keys or extracted data are part of this repository. Every tool ru
 
 GTA VI does not run yet. Its main executable is now available: under the loader it starts, runs through its memory
 set-up, archive opening and graphics device set-up, presents frames to its own window, shows its logo, intro art and
-first-run screens, and starts loading story mode, where the GPU currently hangs. Details and numbers are in the
+first-run screens, and loads story mode, which does not finish yet. Details and numbers are in the
 [wiki](https://github.com/ThatRecompDev/five-star-recomp/wiki/Status).
 
 | Area | State |
@@ -29,7 +29,7 @@ first-run screens, and starts loading story mode, where the GPU currently hangs.
 | Textures | 99.44% of textures are readable: BCPack BC1 decodes exactly and BC4/BC5 approximately; BC7, BC6H and BC3 (about 2,000 textures) cannot be decoded yet. |
 | Models | Drawable geometry (meshlets, packed vertices) decodes and exports as OBJ ([docs/models.md](docs/models.md)). |
 | Loader | The game executable and its support libraries load with all imports resolved; the game boots through its start-up, answers its first-run screens through a scripted gamepad ([docs/first-run.input](docs/first-run.input)) and starts loading story mode. The console runtime, audio decoding and system libraries are implemented for offline use. |
-| Graphics API | The game's D3D12.X device runs on desktop D3D12: its pipelines build from the translated shaders (with a disk cache), its descriptors and barriers are translated, and it presents its logo, intro video and menus with complete UI text. Shaders that read memory through console GPU addresses reach the game's memory through an address map. Open: a GPU hang in the first frame after the story load ([docs/d3d12x-shim.md](docs/d3d12x-shim.md)). |
+| Graphics API | The game's D3D12.X device runs on desktop D3D12: its pipelines build from the translated shaders (with a disk cache), its descriptors and barriers are translated, and it presents its logo, intro video and menus with complete UI text. Shaders that read memory through console GPU addresses reach the game's memory through an address map. The GPU hang after the story load (shader loops that never ended) is bounded; open: the story load itself, which stops on corrupted game memory ([docs/d3d12x-shim.md](docs/d3d12x-shim.md)). |
 
 The [wiki](../../wiki) has the details, research notes and the current progress report.
 

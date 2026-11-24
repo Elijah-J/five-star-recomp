@@ -17,7 +17,7 @@
         { "name": "Next stage streaming", "done": 1, "partial": 0, "todo": 0, "note": "three-minute boots run without a crash" },
         { "name": "First image", "done": 1, "partial": 0, "todo": 0, "note": "the intro video" },
         { "name": "First-run screens", "done": 1, "partial": 0, "todo": 0, "note": "options, legal, privacy; UI text complete" },
-        { "name": "Story load", "done": 0, "partial": 1, "todo": 0, "note": "GPU hang in meshlet culling, first frame after loading" },
+        { "name": "Story load", "done": 0, "partial": 1, "todo": 0, "note": "GPU hang bounded; game memory overwritten during the load" },
         { "name": "In game", "done": 0, "partial": 0, "todo": 1 }
       ]
     },
@@ -74,7 +74,7 @@
     {
       "area": "Running the game",
       "items": [
-        { "name": "Story load", "note": "the GPU hangs in meshlet culling's indirect dispatch" },
+        { "name": "Story load", "note": "endless shader loops bounded; full retranslation, then a memory overwrite" },
         { "name": "Brightness symbol", "note": "still black on the calibration screen" },
         { "name": "Memory", "note": "the story load reaches 62 to 65 GB; allocator of the large blocks unknown" },
         { "name": "Pipeline warm-up", "note": "about 9 hours for the full set; the cache makes later boots warm" }

@@ -74,7 +74,7 @@
           "done": 0,
           "partial": 1,
           "todo": 0,
-          "note": "GPU hang in meshlet culling, first frame after loading"
+          "note": "GPU hang bounded; game memory overwritten during the load"
         },
         {
           "name": "In game",
@@ -208,7 +208,7 @@
       "items": [
         {
           "name": "Story load",
-          "note": "the GPU hangs in meshlet culling\u0027s indirect dispatch"
+          "note": "endless shader loops bounded; full retranslation, then a memory overwrite"
         },
         {
           "name": "Brightness symbol",
