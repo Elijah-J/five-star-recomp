@@ -12,7 +12,7 @@ namespace FiveStar.Cli.Setup;
 /// <summary>
 /// Exports mip 0 of every readable texture as DDS, one folder per page file below <c>&lt;work&gt;/textures</c> (runs
 /// <c>fivestar texture extract</c> per file). Each finished file leaves a mark with its fingerprint, so an interrupted
-/// run resumes at the first file without a current mark.
+/// run resumes at the first file without a current mark. With the imported BCPack tables every codec exports.
 /// </summary>
 internal sealed class TextureStep : ISetupStep
 {
@@ -23,7 +23,7 @@ internal sealed class TextureStep : ISetupStep
     private const string MarkExtension = ".done";
     private const int BytesPerMebibyte = 1 << 20;
 
-    // Measured: the DDS files take 0.9 to 2.2 times their page file (mip 0 only; BCPack pages of codecs 3 to 7 skipped).
+    // Measured: the DDS files take 0.9 to 2.2 times their page file (mip 0 only).
     private const double SpaceFactor = 2;
 
     // One sampled texture is assumed to take at most 4 MiB.
@@ -36,7 +36,7 @@ internal sealed class TextureStep : ISetupStep
 
     public string Title => "Export textures";
 
-    public IReadOnlyList<string> DependsOn => [VerifyStep.StepName];
+    public IReadOnlyList<string> DependsOn => [VerifyStep.StepName, BcPackTablesStep.StepName];
 
     public TimeSpan Estimate(SetupContext context)
     {
@@ -66,7 +66,7 @@ internal sealed class TextureStep : ISetupStep
 
     public StepFingerprint Fingerprint(SetupContext context)
     {
-        var inputs = Fingerprints.Combine(Fingerprints.OfFiles(context.Dump, PageFiles(context.Dump)), context.Sample);
+        var inputs = Fingerprints.Combine(Fingerprints.OfFiles(context.Dump, PageFiles(context.Dump)), context.Sample, Fingerprints.OfContent(context.BcPackTables));
 
         return new StepFingerprint(inputs, Tool());
     }
@@ -94,6 +94,11 @@ internal sealed class TextureStep : ISetupStep
         var total = (int)(remaining.Sum(file => new FileInfo(file).Length) / BytesPerMebibyte);
         var done = 0L;
         var progress = new ConsoleProgress(() => "MiB of page files");
+
+        if (File.Exists(context.BcPackTables) && !BcPackTableSource.Install(context.BcPackTables, Console.Error))
+        {
+            return StepResult.Failed($"{context.BcPackTables} is not the BCPack table file: run the {BcPackTablesStep.StepName} step again");
+        }
 
         foreach (var file in remaining)
         {
@@ -143,7 +148,7 @@ internal sealed class TextureStep : ISetupStep
 
     private static string Mark(SetupContext context, string file)
     {
-        return Fingerprints.Combine(Fingerprints.OfFiles(context.Dump, [file]), context.Sample, Tool());
+        return Fingerprints.Combine(Fingerprints.OfFiles(context.Dump, [file]), context.Sample, Fingerprints.OfContent(context.BcPackTables), Tool());
     }
 
     private static string MarkPath(SetupContext context, string file)

@@ -146,6 +146,9 @@ internal sealed record HostOptions
     /// <summary>Fail DirectStorage BCPack pages that have no block decoder instead of writing placeholder blocks (<c>--bcpack-missing fail</c>).</summary>
     public bool FailMissingBcPack { get; set; }
 
+    /// <summary>The user's BCPack table file (<c>--bcpack-tables</c>), with which every BCPack codec decodes exactly.</summary>
+    public string? BcPackTables { get; set; }
+
     /// <summary>What XNetworking reports (<c>--network</c>); outbound traffic is sealed in every mode.</summary>
     public NetworkMode NetworkMode { get; set; }
 

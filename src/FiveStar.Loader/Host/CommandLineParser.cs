@@ -161,6 +161,8 @@ internal sealed class CommandLineParser
         {
             case "--bcpack-missing":
                 return SetBcPackMissing();
+            case "--bcpack-tables":
+                return SetBcPackTables();
             case "--pipeline-cache":
                 return SetPipelineCache();
             case "--no-pipeline-cache":
@@ -536,6 +538,13 @@ internal sealed class CommandLineParser
             "fail" => true,
             _ => throw new CommandLineException($"--bcpack-missing {value}: expected placeholder or fail"),
         };
+
+        return true;
+    }
+
+    private bool SetBcPackTables()
+    {
+        _options.BcPackTables = Path.GetFullPath(Next());
 
         return true;
     }

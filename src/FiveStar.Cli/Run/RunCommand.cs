@@ -28,7 +28,7 @@ internal static class RunCommand
         "  --timeout <s>        end the game after s seconds (fivestar-loader --run-timeout)",
         "  --shaders <fssm dir> --translated <dir>   use these shader folders instead of building them in the work folder",
         "  --loader <exe>       fivestar-loader.exe (default: FIVESTAR_LOADER, then beside this command, then the build tree)",
-        "  --dxc <dxc.exe> --gdk-lib <xgameruntime.lib> --jobs N   as for fivestar setup",
+        "  --dxc <dxc.exe> --gdk-lib <xgameruntime.lib> --bcpack-tables <file> --jobs N   as for fivestar setup",
         "  -- <options>         passed on to fivestar-loader (fivestar-loader --help lists them)",
     ];
 
