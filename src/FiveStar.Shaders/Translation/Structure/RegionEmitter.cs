@@ -379,7 +379,7 @@ internal sealed class RegionEmitter
         Add(depth, $"uint {guard} = 0;");
 
         Add(depth, "[loop] for (;;) {");
-        Add(depth + 1, $"if (++{guard} > {LoopGuard.Hex}) {{ break; }}");
+        Add(depth + 1, $"if (++{guard} > {LoopGuard.Hex}) {{ TRACE_GUARD({Hlsl.Number(_loopGuards - 1)}); break; }}");
         EmitScope(scope, selector, depth + 1);
         Add(depth, "}");
 

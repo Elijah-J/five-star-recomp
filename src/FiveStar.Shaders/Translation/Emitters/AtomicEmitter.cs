@@ -170,7 +170,7 @@ internal sealed partial class AtomicEmitter
         var result = atomic.Result;
 
         // Out of range: no write, and the returned value is 0.
-        _state.Emit($"  if (active && {inRange}) TRACE_VIEW({view}.x, {view}.y + {byteAddress}, {_operands.Read(atomic.Data, 0)});");
+        _state.Emit($"  if (active && {inRange}) {{ TRACE_VIEW({view}.x, {view}.y + {byteAddress}, {_operands.Read(atomic.Data, 0)}); TRACE_VSTORE({_operands.Read(resource, 0)}, {_operands.Read(resource, 1)}, {byteAddress}, {_operands.Read(atomic.Data, 0)}); }}");
         _state.Emit($"  uint {result} = 0; if (active && {inRange}) {{ RWByteAddressBuffer _b{result} = ResourceDescriptorHeap[{view}.x];");
         _state.Emit($"    _b{result}.{Operation(atomic, atomic.Data, $"({view}.y + {byteAddress})")}; }}");
     }

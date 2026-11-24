@@ -361,7 +361,13 @@ internal sealed partial class OperandAccess
 
     private void WriteExecInteger(RegisterKey key, string value)
     {
-        // An integer write to EXEC: refresh the per-lane flag from the mask bits.
+        // An integer write to EXEC: refresh the per-lane flag from the mask bits. EXEC usually lives only in `active`,
+        // so the half not written is taken from it first; s_exec and s_exech were stale for a 32-bit write before.
+        var other = key.Index == SpecialRegisters.ExecLo ? RegisterKey.Sgpr(SpecialRegisters.ExecHi) : SpecialRegisters.Exec;
+        var otherHalf = key.Index == SpecialRegisters.ExecLo ? Halves[HighDword] : Halves[LowDword];
+        var current = SnapOne($"{WaveOps.Ballot}(active).{otherHalf}");
+        _state.Emit($"  {other.Name} = {current};");
+
         _state.Emit($"  {key.Name} = {value};");
         _state.Variables.Add(SpecialRegisters.Exec);
         _state.Variables.Add(RegisterKey.Sgpr(SpecialRegisters.ExecHi));

@@ -114,7 +114,7 @@ internal sealed partial class BufferEmitter
         for (var dword = 0; dword < count; dword++)
         {
             var inRange = BufferAddress.InRange(range, dword * BytesPerDword);
-            _state.Emit($"  if (active && {inRange}) BufStore({target}.x, {target}.y + {address} + {dword * BytesPerDword}u, {_operands.Read(a[Data], dword)});");
+            _state.Emit($"  if (active && {inRange}) {{ TRACE_VSTORE({_operands.Read(resource, 0)}, {_operands.Read(resource, 1)}, {address} + {dword * BytesPerDword}u, {_operands.Read(a[Data], dword)}); BufStore({target}.x, {target}.y + {address} + {dword * BytesPerDword}u, {_operands.Read(a[Data], dword)}); }}");
         }
     }
 

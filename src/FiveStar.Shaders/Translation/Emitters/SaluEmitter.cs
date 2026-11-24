@@ -262,7 +262,11 @@ internal sealed partial class SaluEmitter
             return true;
         }
 
-        if (a[Destination].Key == SpecialRegisters.Exec && source.IsImmediate)
+        // A constant that sets or clears every lane EXEC holds; any other constant (s_mov_b32 exec_lo, 0xffff0000 on
+        // wave64) is an integer write of its bits, which keeps the other half (OperandAccess.Write).
+        bool whole = a[Destination].High > a[Destination].Low || !_state.IsWave64;
+
+        if (a[Destination].Key == SpecialRegisters.Exec && source.IsImmediate && whole && (source.Value == 0 || source.Value == AllOnes))
         {
             var constant = source.Value != 0 ? "true" : "false";
             _operands.WriteMask(a[Destination], constant);

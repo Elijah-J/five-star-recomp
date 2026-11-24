@@ -42,6 +42,11 @@ internal sealed unsafe class TransientPoolWatch
     private const int PollMilliseconds = 5;
     private const int DumpBytes = 0x60;
     private const int DumpRow = 16;
+    private const int HighShift = 32;
+
+    /// <summary>High dwords (4 GiB each) either side of the block records that the store trace watches.</summary>
+    private const uint HeapSpanHighDwords = 4;
+    private const int HeapSpanSlot = 2;
     private const ulong PointerAlignmentMask = 7;
 
     /// <summary>Pooled objects are 0x30-byte entries of arrays that may start 4 bytes into an 8-byte word.</summary>
@@ -331,12 +336,18 @@ internal sealed unsafe class TransientPoolWatch
         }
 
         PoolStoreTrace.SetRange(0, pool, bytes);
+        TransientPoolViews.PoolKnown();
         var (start, length) = Allocation(table);
 
         if (length != 0)
         {
             PoolStoreTrace.SetRange(1, start, length);
         }
+
+        // Every global store within 16 GiB of the block records: the game heap, its fixed-size pool pages and their
+        // descriptors (boot 13's corrupted pool object lay 7 GiB from the pool).
+        uint high = (uint)(table >> HighShift);
+        PoolStoreTrace.SetSpan(HeapSpanSlot, high - HeapSpanHighDwords, high + HeapSpanHighDwords);
     }
 
     /// <summary>The whole allocation (every region with the same allocation base) that holds <paramref name="address"/>.</summary>

@@ -119,7 +119,8 @@ public static class ComputeWaveCases
             .Concat(Variants("cs_ds_permute", ForwardPermuteCase))
             .Concat(Variants("cs_dpp", DppCase))
             .Concat(Variants("cs_waterfall", WaterfallCase))
-            .Append(VccHighBranchCase());
+            .Append(VccHighBranchCase())
+            .Append(ExecLowHalfCase());
     }
 
     // Wave64 s_cbranch_vccnz / vccz on VCC written as an integer test all 64 bits: only vcc_hi is set, then neither half.
@@ -140,6 +141,29 @@ public static class ComputeWaveCases
             """;
 
         return new ComputeCase("cs_vcc_hi_branch_w64", Program, 2, _ => [1, 3]) { Wave = 64 };
+    }
+
+    // Wave64 s_mov_b32 exec_lo with a constant writes only the low half of EXEC: lanes 0-15 are off, 16-63 stay on.
+    private static ComputeCase ExecLowHalfCase()
+    {
+        const string Program = """
+            v_mov_b32 v20, 0
+            s_mov_b32 exec_lo, 0xffff0000
+            v_mov_b32 v20, 1
+            s_mov_b64 exec, -1
+            """;
+
+        return new ComputeCase("cs_exec_lo_half_w64", Program, 1, thread => [LowHalfOff(thread.Lane)]) { Wave = 64 };
+    }
+
+    private static uint LowHalfOff(int lane)
+    {
+        if (lane < 16)
+        {
+            return 0;
+        }
+
+        return 1;
     }
 
     /// <summary>Cases that need the PC wave to be as wide as the AMD wave.</summary>
