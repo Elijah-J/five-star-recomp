@@ -76,6 +76,10 @@ void TRACE_VSTORE(uint d0, uint d1, uint off, uint v) {   // a buffer store thro
     uint2 a = ptr_add(d0, hi, off, 0);
     TRACE_ADDR(a.x, a.y, v);
 #endif
+}void TRACE_SBUF(uint off, uint bytes, uint limit) {   // an s_buffer_load reaching past num_records (reads 0)
+#ifdef FIVESTAR_STORE_TRACE
+    if (off + bytes > limit && WaveIsFirstLane()) trace_entry(off, 0x20000000u | bytes, limit);
+#endif
 }void TRACE_GUARD(uint guard) {   // a structured loop that reached the loop guard
 #ifdef FIVESTAR_STORE_TRACE
     trace_entry(0u, 0x40000000u | guard, 0u);
