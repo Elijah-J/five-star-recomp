@@ -216,7 +216,7 @@
         },
         {
           "name": "Memory",
-          "note": "boots reach 62 to 65 GB"
+          "note": "the story load reaches 62 to 65 GB; allocator of the large blocks unknown"
         },
         {
           "name": "Pipeline warm-up",

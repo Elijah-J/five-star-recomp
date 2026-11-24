@@ -76,7 +76,7 @@
       "items": [
         { "name": "Story load", "note": "the GPU hangs about six minutes into the load" },
         { "name": "UI text", "note": "letters missing, calibration symbols black" },
-        { "name": "Memory", "note": "boots reach 62 to 65 GB" },
+        { "name": "Memory", "note": "the story load reaches 62 to 65 GB; allocator of the large blocks unknown" },
         { "name": "Pipeline warm-up", "note": "about 9 hours for the full set; the cache makes later boots warm" }
       ]
     },
