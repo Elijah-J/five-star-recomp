@@ -29,7 +29,7 @@ flowchart LR
 | Step | Does | Output in the work folder |
 |---|---|---|
 | `verify` | reads the title id and version from `MicrosoftGame.Config`; checks `shaders.rpf` and the texture page files exist. Another title fails; another version gives a warning | none |
-| `shader-extract` | `fivestar shader extract` of `shaders.rpf` | `shaders/dxbc`, `shaders/fssm` |
+| `shader-extract` | `fivestar shader extract` of `shaders.rpf` and the executable | `shaders/dxbc`, `shaders/fssm` |
 | `shader-translate` | `fivestar shader translate --mesh-fallbacks` of every program, compiled with dxc through the shader cache | `shaders/hlsl` (HLSL, DXIL, `results.json`, `variants.json`), `shader-cache` |
 | `rect-gs` | `fivestar shader rect-gs` of the translated vertex programs: the geometry shaders the loader draws rectangle lists with | `shaders/hlsl/rect-gs` |
 | `pipeline-cache` | `fivestar shader psocache` of the console pipeline cache, matched to the programs | `pipelines` (`pipelines.json`, `code/`) |
@@ -62,7 +62,7 @@ or the step fails, and the step then shows as interrupted.
 | Step | Inputs | Tool |
 |---|---|---|
 | `verify` | path, size and write time of the config, `shaders.rpf` and the page files | a version number in the code |
-| `shader-extract` | `shaders.rpf` (path, size, write time) | FiveStar.Shaders |
+| `shader-extract` | `shaders.rpf` and `game_scarlett_master.exe` (path, size, write time) | FiveStar.Shaders |
 | `shader-translate` | `shaders/dxbc/_manifest.tsv` (it lists every container hash), the sample options | the shader-cache identity (below) |
 | `rect-gs` | `shaders/hlsl/variants.json` | the shader-cache identity, FiveStar.Shaders |
 | `pipeline-cache` | `shaders.rpf` | FiveStar.Shaders, FiveStar.Formats |

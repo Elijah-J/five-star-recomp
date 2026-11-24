@@ -43,6 +43,9 @@ internal sealed record SetupContext(string Dump, string Work, int? Limit, int Ev
 
     public string ShaderArchive => Path.Combine(Dump, "shaders.rpf");
 
+    /// <summary>The game executable, which embeds a few shader programs of its own.</summary>
+    public string Executable => Path.Combine(Dump, Run.RunPlan.GameExecutable);
+
     /// <summary>The sample options as text, for fingerprints: a different sample redoes the work.</summary>
     public string Sample => $"limit={Limit} step={Every}";
 }

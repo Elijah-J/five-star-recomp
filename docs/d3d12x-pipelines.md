@@ -278,7 +278,10 @@ flowchart LR
 `ProgramIndex` of the extracted programs. A description that cannot be read is logged once and answered with
 E_NOTIMPL; a shader without a translation with HRESULT_FROM_WIN32(ERROR_NOT_FOUND). The `--sample-threads` summary
 counts failed creations by slot and cause (`no extracted program <key>`, `no loadable form of <program>`, `desktop
-creation <HRESULT> (<programs>)`) and lists the creations running with their age.
+creation <HRESULT> (<programs>)`), names the 8 most frequent, then every key of a program not among the extracted ones
+with its failures (`N for K missing programs (count x key; ...)`, or `none for missing programs`), and lists the
+creations running with their age. A missing program is one the extraction did not find
+([shader-containers.md](shader-containers.md)); with the executable's programs and the scan fix none was left in boot.
 
 ### Variant per adapter
 

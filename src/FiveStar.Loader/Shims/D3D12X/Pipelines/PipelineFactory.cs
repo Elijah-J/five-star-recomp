@@ -302,7 +302,7 @@ internal sealed unsafe class PipelineFactory
 
             if (names.Count == 0)
             {
-                InFlight.Describe($"no extracted program {key}");
+                InFlight.Describe(PipelineFailureTally.MissingProgram + key);
             }
             else
             {

@@ -22,10 +22,21 @@ public static class ShaderArchiveExtractor
     private const string ManifestName = "_manifest.tsv";
     private const string ManifestHeader = "region\tfileoff\ttag\tname\tcsize\tdsize\tk\tdxbc_hash\tchunks";
 
-    /// <summary>Extracts every shader of the archive into the output folder.</summary>
-    public static ExtractionSummary Extract(string archivePath, string outputDirectory)
+    /// <summary>
+    /// Extracts every shader of the archive into the output folder, and those the game executable embeds (region
+    /// <see cref="ShaderArchiveScanner.ExecutableRegion"/>) when <paramref name="executablePath"/> is given. Embedded
+    /// containers without a native program (DXIL bitcode only) are left out.
+    /// </summary>
+    public static ExtractionSummary Extract(string archivePath, string outputDirectory, string? executablePath = null)
     {
-        var records = ShaderArchiveScanner.Scan(File.ReadAllBytes(archivePath));
+        var records = ShaderArchiveScanner.Scan(File.ReadAllBytes(archivePath)).ToList();
+
+        if (executablePath is not null)
+        {
+            var embedded = ShaderArchiveScanner.ScanFile(File.ReadAllBytes(executablePath), ShaderArchiveScanner.ExecutableRegion);
+            records.AddRange(embedded.Where(HasProgram));
+        }
+
         var containers = Path.Combine(outputDirectory, ContainerFolder);
         var programs = Path.Combine(outputDirectory, ProgramFolder);
         Directory.CreateDirectory(containers);
@@ -67,6 +78,20 @@ public static class ShaderArchiveExtractor
         }
 
         return program;
+    }
+
+    private static bool HasProgram(ShaderArchiveRecord record)
+    {
+        try
+        {
+            ReadProgram(record.Container);
+
+            return true;
+        }
+        catch (InvalidDataException)
+        {
+            return false;
+        }
     }
 
     private static bool TryWriteProgram(ShaderArchiveRecord record, string programs)

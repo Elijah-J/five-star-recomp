@@ -7,6 +7,7 @@ its bitcode removed, so the PC driver cannot compile it. The translator turns th
 ```mermaid
 flowchart TD
   rpf["shaders.rpf"] --> sgd["SGD5 shader records"]
+  exe["game executable: 12 clear shaders"] --> sgd
   sgd --> dxbc["DXBC container: signatures, DXIL chunk without bitcode"]
   dxbc --> xdat["XDAT wrapper"]
   xdat --> fssm["FSSM: header and RDNA machine code"]

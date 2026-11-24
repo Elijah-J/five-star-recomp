@@ -6,23 +6,22 @@ namespace FiveStar.Loader.Shims.D3D12X.Binding;
 /// <summary>
 /// One of the game's shader-visible heaps, or one of its CPU-only view heaps. Its descriptors live in title memory as
 /// on the console, one record per descriptor whose dword 0 is the index in the desktop shader-visible heap standing
-/// behind it and dword 1 a buffer view's element stride (<see cref="BufferRecordStrides"/>); the game copies these
+/// behind it and dwords 1 to 3 a buffer view's stride, record count and format (<see cref="BufferRecords"/>); the game copies these
 /// records itself (its per-draw tables, 0x144d9efc0, also from CPU-only heaps), so a table in title memory names
 /// desktop descriptors wherever the game put it. For a shader-visible heap the <see cref="DescriptorWindow"/> holds a
-/// mirror of dwords 0 and 1 of every record, which programs read through a table's pointer; a record is mirrored when
+/// mirror of dwords 0 to 3 of every record, which programs read through a table's pointer; a record is mirrored when
 /// the shim writes it and again when a table that covers it is bound. A CPU-only heap takes fresh desktop descriptors
 /// from a <see cref="DescriptorRing"/> on every write and is never mirrored.
 /// </summary>
 internal sealed unsafe class ShaderVisibleHeap
 {
     /// <summary>A shadow value no title record has been mirrored from yet.</summary>
-    private const ulong NotMirrored = ulong.MaxValue;
+    private static readonly UInt128 NotMirrored = UInt128.MaxValue;
 
-    /// <summary>The record dword holding the stride, in title memory and in the window.</summary>
+    /// <summary>The record dwords holding the buffer fields, in title memory and in the window.</summary>
     private const int StrideDword = 1;
-
-    /// <summary>Where the stride sits in a shadow value, above the desktop index.</summary>
-    private const int StrideShift = 32;
+    private const int RecordsDword = 2;
+    private const int FormatDword = 3;
 
     private readonly byte* _title;
     private readonly nint _desktopStart;
@@ -31,8 +30,8 @@ internal sealed unsafe class ShaderVisibleHeap
     private readonly DescriptorWindow _window;
     private readonly HeapRecords _layout;
 
-    /// <summary>The dwords 0 and 1 last mirrored to the window, per record.</summary>
-    private readonly ulong[] _shadow;
+    /// <summary>The dwords 0 to 3 last mirrored to the window, per record.</summary>
+    private readonly UInt128[] _shadow;
 
     /// <param name="title">The title memory of the heap (its CPU and GPU start for the game).</param>
     /// <param name="count">Descriptors in the game heap.</param>
@@ -54,7 +53,7 @@ internal sealed unsafe class ShaderVisibleHeap
         _window = window;
         _layout = layout;
 
-        _shadow = new ulong[count];
+        _shadow = new UInt128[count];
         Array.Fill(_shadow, NotMirrored);
     }
 
@@ -86,11 +85,11 @@ internal sealed unsafe class ShaderVisibleHeap
 
     /// <summary>
     /// A new descriptor at <paramref name="index"/> and the <paramref name="count"/> - 1 after it (one desktop run): the
-    /// desktop CPU handle to write it to, with its records written (<paramref name="stride"/> for a buffer view, else
-    /// 0); 0 when no desktop descriptor is left for it.
+    /// desktop CPU handle to write it to, with its records written (<paramref name="buffer"/>'s fields for a buffer
+    /// view, else none); 0 when no desktop descriptor is left for it.
     /// </summary>
     [HotPath]
-    public nint Destination(uint index, uint count, uint stride)
+    public nint Destination(uint index, uint count, BufferRecord buffer)
     {
         uint desktop = _ring is null ? DesktopIndex(index) : _ring.Next(count);
 
@@ -101,7 +100,7 @@ internal sealed unsafe class ShaderVisibleHeap
 
         for (uint i = 0; i < count; i++)
         {
-            WriteRecord(index + i, desktop + i, stride);
+            WriteRecord(index + i, desktop + i, buffer);
         }
 
         return _desktopStart + (nint)((ulong)desktop * Increment);
@@ -175,12 +174,15 @@ internal sealed unsafe class ShaderVisibleHeap
     }
 
     [HotPath]
-    private void WriteRecord(uint index, uint desktop, uint stride)
+    private void WriteRecord(uint index, uint desktop, BufferRecord buffer)
     {
         uint* record = Record(index);
         new Span<byte>(record, (int)Increment).Clear();
         record[0] = desktop;
-        record[StrideDword] = stride;
+
+        record[StrideDword] = buffer.Stride;
+        record[RecordsDword] = buffer.Records;
+        record[FormatDword] = buffer.Format;
         MirrorOne(index);
     }
 
@@ -198,7 +200,7 @@ internal sealed unsafe class ShaderVisibleHeap
     {
         byte* window = _window.Data;
         uint* record = Record(index);
-        ulong value = record[0] | ((ulong)record[StrideDword] << StrideShift);
+        var value = *(UInt128*)record;
 
         if (_ring is not null || _shadow[index] == value || window == null)
         {
@@ -209,6 +211,8 @@ internal sealed unsafe class ShaderVisibleHeap
         uint* mirror = (uint*)(window + _layout.Base + ((ulong)index * _layout.RecordBytes));
         mirror[0] = Valid(record[0]);
         mirror[StrideDword] = record[StrideDword];
+        mirror[RecordsDword] = record[RecordsDword];
+        mirror[FormatDword] = record[FormatDword];
     }
 
     /// <summary>A record's desktop index, or the null descriptor for one that names none (a null or unwritten descriptor).</summary>

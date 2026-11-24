@@ -18,6 +18,12 @@ public sealed class DxbcContainer
     /// <summary>Size of the content hash.</summary>
     public const int HashSize = 16;
 
+    /// <summary>Offset of the u32 total size of the container.</summary>
+    public const int TotalSizeOffset = 0x18;
+
+    /// <summary>Size of the header up to the chunk offsets.</summary>
+    public const int HeaderSize = 0x20;
+
     // DXBC header: u32 chunk count @0x1C, then one u32 chunk offset per chunk from 0x20.
     private const int ChunkCountOffset = 0x1C;
     private const int ChunkOffsetsStart = 0x20;

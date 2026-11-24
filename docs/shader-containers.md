@@ -1,7 +1,7 @@
 # Shader containers
 
-The game ships its shaders in `shaders.rpf`. Unlike the other archives its payload is not encrypted: it holds SGD5
-tables whose shader records each compress one DXBC container. The DXIL chunk of that container carries no LLVM
+The game ships its shaders in `shaders.rpf` (a few in the executable, [below](#executable)). Unlike the other
+archives its payload is not encrypted: it holds SGD5 tables whose shader records each compress one DXBC container. The DXIL chunk of that container carries no LLVM
 bitcode; an Xbox XDAT wrapper in its place holds the native RDNA program (FSSM, see [fssm.md](fssm.md)). The archive also holds the driver's pipeline cache
 ([pipeline-cache.md](pipeline-cache.md)). Code:
 `src/FiveStar.Shaders/Containers`.
@@ -42,8 +42,24 @@ scanning for this layout:
 | 19 + n | csize | raw deflate stream |
 
 A candidate is a record when the length byte equals the name length + 1, both size fields agree, 0 < csize <
-0x4000000, 0 < dsize < 0x10000000, and the stream inflates to exactly dsize bytes starting with `DXBC`. After any
-match of the name/NUL/tag pattern the scan continues after the tag byte, whether or not the candidate was a record.
+0x4000000, 0 < dsize < 0x10000000, and the stream inflates to exactly dsize bytes starting with `DXBC`. After a
+record the scan continues after its data; after a candidate that is no record, at the next byte. A name of 47 to 78
+characters has a length byte in the tag range, so bytes before a record can form a false candidate whose "tag" is the
+record's length byte (`E0 'K,Q' 00 '3'PS_EarlyComposite_...`): continuing after that tag lost 12 programs of
+`shaders.rpf`, among them five `PS_CascadeShadows_texture_fire`, `CS_ClearBothMasks` of the underwater mask and two
+meshlet-culling programs.
+
+A stored record has the same header up to the tag, then the u32 size of the DXBC container and the container itself,
+uncompressed; it counts when the container's own total size (offset 0x18) equals that size. Its constant is written
+as 0 in the manifest.
+
+## Executable
+
+`game_scarlett_master.exe` embeds 15 records of its own in the same format (region `exe`, the whole file scanned): the
+clear shaders `VS_Clear` and `PS_Clear*` (10 stored, 2 compressed, hash suffix `f05fef9c`) and three debug-text
+shaders `TextVSQuad`, `TextPS_Tex` and `TextPS_Sdf`, whose XDAT holds DXIL bitcode instead of a native program; those
+three are left out. `VS_Clear` is the vertex program of the first draw of every frame (a slot-86 stream pipeline,
+program key `7f2680d5...`), so without it that draw was skipped.
 
 A record repeats an earlier one when both name and DXBC hash are equal; only the first copy is written.
 
@@ -140,11 +156,12 @@ The FSSM program is section 0x0D of the first DXIL chunk, inflated; it must star
 ## Commands
 
 ```
-fivestar shader extract <shaders.rpf> <out>
+fivestar shader extract <shaders.rpf> <out> [--exe <game_scarlett_master.exe>]
 ```
 
-Writes `<out>/dxbc/<stem>.dxbc` for every unique record, `<out>/dxbc/_manifest.tsv`, and `<out>/fssm/<stem>.fssm` with
-the native program of each container. The translator finds a program's container by the same stem in the sibling
+Writes `<out>/dxbc/<stem>.dxbc` for every unique record (with `--exe` also the executable's), `<out>/dxbc/_manifest.tsv`,
+and `<out>/fssm/<stem>.fssm` with the native program of each container. The dump gives 26,503 records of
+`shaders.rpf` and 12 of the executable: 25,908 programs. The `shader-extract` setup step passes the executable. The translator finds a program's container by the same stem in the sibling
 `dxbc` folder.
 
 ```

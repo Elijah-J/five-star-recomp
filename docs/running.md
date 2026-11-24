@@ -11,7 +11,7 @@ work folder (once; later runs reuse it), then starts `fivestar-loader` on the ga
 3. Check: `fivestar doctor <dump folder>`. Every line should say `ok`; a `FAIL` line says what to install or pass.
 4. Run: `fivestar run <dump folder>`.
 
-The first run extracts and translates every shader program (25,884 programs, about an hour on 24 cores, 16 GB of
+The first run extracts and translates every shader program (25,908 programs, about an hour on 24 cores, 16 GB of
 disk) before the game starts; it can be stopped and resumed. Later runs start the game in under a second.
 
 The game uses four AMD-only instruction families (SSE4a, CLZERO, MONITORX/MWAITX, CLWB). On an Intel CPU the loader
@@ -91,10 +91,10 @@ stick, the mouse, is not required); with both checked Confirm is enabled. While 
 running ([loader.md](loader.md#running-the-executable)) these can be answered from a second shell;
 `-- --input-script docs/first-run.input` answers them all unattended (the story load starts about 500 s in). B
 (C) goes back to the previous screen. The screens' text, headings and logos render in full; the brightness-calibration
-symbol is still missing (black at every brightness level). Each frame's first draw uses a stream pipeline (slot 86)
-whose program (key `7f2680d5a629ff03...`) is not among the extracted programs, so it is skipped; whether that draw is
-the symbol is not confirmed.
-
+symbol is still missing (every pixel right of the panel is 0 at level 15). It is not the frame's first draw: that is
+the executable's `VS_Clear` + `PS_Clear` ([shader-containers.md](shader-containers.md#executable)), which now runs but
+changes no pixel, since it reads its rectangle through a root SRV whose GPU address translated programs take as a heap
+index. The next draw (`PS_BlitColour` with a zero colour) fills the target black, and the UI is drawn over it.
 
 ## Work folder
 

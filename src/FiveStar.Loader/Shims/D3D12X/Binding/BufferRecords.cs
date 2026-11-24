@@ -1,0 +1,79 @@
+// Copyright (c) 2026 Five Star Recomp contributors.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+using FiveStar.Loader.Shims.D3D12X.Resources;
+using FiveStar.Loader.Shims.Xg;
+
+namespace FiveStar.Loader.Shims.D3D12X.Binding;
+
+/// <summary>
+/// The V# fields a buffer view's record carries in dwords 1 to 3 (<see cref="BufferRecord"/>; docs/d3d12x-shim.md,
+/// Descriptor window), as AMD's driver lays out such descriptors: a constant buffer as float4 rows (stride 16, the
+/// Scaleform batch programs read row batch * 4 + k), a structured view by its structure, a typed view by its format's
+/// element and format, a raw view in bytes. Counts come from the game's desc, before the view is fitted to the
+/// desktop buffer.
+/// </summary>
+internal static unsafe class BufferRecords
+{
+    /// <summary>Bytes of a constant-buffer row (a float4).</summary>
+    public const uint ConstantBufferRow = 16;
+
+    /// <summary>Bytes of an element of a raw view.</summary>
+    private const uint RawElement = 4;
+
+    /// <summary>The record of a constant buffer of <paramref name="size"/> bytes.</summary>
+    [HotPath]
+    public static BufferRecord ConstantBuffer(uint size)
+    {
+        return new BufferRecord(ConstantBufferRow, (size + ConstantBufferRow - 1) / ConstantBufferRow, BufferFormatCodes.Float4);
+    }
+
+    /// <summary>The record of a D3D12_SHADER_RESOURCE_VIEW_DESC; none for a texture view or no desc.</summary>
+    [HotPath]
+    public static BufferRecord ShaderResource(void* description)
+    {
+        var view = (BufferViewDescription*)description;
+
+        if (view == null || view->Dimension != BufferViewDescription.BufferDimension)
+        {
+            return BufferRecord.None;
+        }
+
+        return Buffer(view->Format, view->SrvStride, view->SrvElements, view->SrvFlags);
+    }
+
+    /// <summary>The record of a D3D12_UNORDERED_ACCESS_VIEW_DESC; none for a texture view or no desc.</summary>
+    [HotPath]
+    public static BufferRecord UnorderedAccess(void* description)
+    {
+        var view = (BufferViewDescription*)description;
+
+        if (view == null || view->Dimension != BufferViewDescription.BufferDimension)
+        {
+            return BufferRecord.None;
+        }
+
+        return Buffer(view->Format, view->UavStride, view->UavElements, view->UavFlags);
+    }
+
+    [HotPath]
+    private static BufferRecord Buffer(int format, uint structure, uint elements, int flags)
+    {
+        if ((flags & BufferViewDescription.RawFlag) != 0)
+        {
+            return new BufferRecord(0, elements * RawElement, BufferFormatCodes.Dword);
+        }
+
+        if (structure != 0)
+        {
+            return new BufferRecord(structure, elements, BufferFormatCodes.Dword);
+        }
+
+        if (format == ViewFormats.Unknown)
+        {
+            return new BufferRecord(0, 0, BufferFormatCodes.None);
+        }
+
+        return new BufferRecord((uint)XgFormats.Find((uint)format).BytesPerElement, elements, BufferFormatCodes.Of(format));
+    }
+}

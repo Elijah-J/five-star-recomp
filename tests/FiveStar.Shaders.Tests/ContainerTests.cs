@@ -49,6 +49,55 @@ public sealed class ContainerTests
         Assert.Equal([0x00, 0x00, 0x81, 0xBF], code);
     }
 
+    [Fact]
+    public void Records_behind_a_false_candidate_and_stored_records_are_found()
+    {
+        var container = Dxbc(("DXIL", DxilWithXdat(Fssm(stage: 6, flags: 0x20))));
+
+        // "K,Q", NUL and the next record's length byte '3' look like a record header with tag 0x33 (shaders.rpf
+        // 0x6e18ed5); the game executable stores its clear shaders uncompressed.
+        byte[] file = [0xE0, .. "K,Q"u8, 0, .. Compressed("PS_EarlyComposite_HeatHaze_Simple_467d9c8c_Wrapped", container), .. Stored("VS_Clear_f05fef9c_Wrapped", container)];
+
+        var records = ShaderArchiveScanner.ScanFile(file, ShaderArchiveScanner.ExecutableRegion);
+
+        Assert.Equal(["PS_EarlyComposite_HeatHaze_Simple_467d9c8c_Wrapped", "VS_Clear_f05fef9c_Wrapped"], records.Select(record => record.Name));
+        Assert.All(records, record => Assert.Equal(container, record.Container));
+        Assert.Equal(0u, records[1].Constant);
+    }
+
+    // u8 name length + 1, name, NUL, tag 0x32, then the record's sizes and data.
+    private static byte[] Compressed(string name, byte[] container)
+    {
+        using var compressed = new MemoryStream();
+
+        using (var deflate = new DeflateStream(compressed, CompressionLevel.Optimal, leaveOpen: true))
+        {
+            deflate.Write(container);
+        }
+
+        var data = compressed.ToArray();
+        var sizes = new byte[16];
+        BinaryPrimitives.WriteInt32LittleEndian(sizes, data.Length);
+        BinaryPrimitives.WriteUInt32LittleEndian(sizes.AsSpan(4), 0x000DDCE7);
+        BinaryPrimitives.WriteInt32LittleEndian(sizes.AsSpan(8), data.Length);
+        BinaryPrimitives.WriteInt32LittleEndian(sizes.AsSpan(12), container.Length);
+
+        return [.. Header(name), .. sizes, .. data];
+    }
+
+    private static byte[] Stored(string name, byte[] container)
+    {
+        var size = new byte[4];
+        BinaryPrimitives.WriteInt32LittleEndian(size, container.Length);
+
+        return [.. Header(name), .. size, .. container];
+    }
+
+    private static byte[] Header(string name)
+    {
+        return [(byte)(name.Length + 1), .. Encoding.ASCII.GetBytes(name), 0, 0x32];
+    }
+
     // FSSM: code block at 0x400 (stored offset 0x3F0): 24-byte hash prefix, s_endpgm, one s_code_end pad.
     private static byte[] Fssm(byte stage, uint flags)
     {
@@ -136,6 +185,7 @@ public sealed class ContainerTests
         var head = 0x20 + (4 * chunks.Length);
         var bytes = new byte[head + chunks.Sum(chunk => 8 + chunk.Data.Length)];
         Encoding.ASCII.GetBytes("DXBC").CopyTo(bytes, 0);
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(0x18), bytes.Length);
         BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(0x1C), chunks.Length);
         var cursor = head;
 

@@ -24,6 +24,7 @@ internal static class ShaderCommands
     [
         "usage: fivestar shader <command> [arguments]",
         "  extract <shaders.rpf> <out>            write <out>/dxbc/*.dxbc (+ _manifest.tsv) and <out>/fssm/*.fssm",
+        "        [--exe <game exe>]               also the programs the executable embeds",
         "  disasm <program.fssm> [--count N]      list the program's instructions (address, size, text)",
         "  decode-check <fssm-folder>             disassemble every program in-process and with LLVM, report differences",
         "        [--jobs N] [--limit N] [--step K]",
@@ -125,10 +126,10 @@ internal static class ShaderCommands
 
         if (arguments.Positional.Count != TwoPaths)
         {
-            throw new ArgumentException("extract <shaders.rpf> <out>");
+            throw new ArgumentException("extract <shaders.rpf> <out> [--exe <game exe>]");
         }
 
-        var summary = ShaderArchiveExtractor.Extract(arguments.Positional[0], arguments.Positional[1]);
+        var summary = ShaderArchiveExtractor.Extract(arguments.Positional[0], arguments.Positional[1], arguments.Option("exe"));
         Console.WriteLine($"records {summary.Records}, unique containers {summary.Containers}, programs {summary.Programs}, failed {summary.ProgramFailures}");
 
         if (summary.ProgramFailures > 0)

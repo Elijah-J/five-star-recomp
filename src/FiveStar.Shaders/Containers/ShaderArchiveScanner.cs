@@ -9,13 +9,17 @@ using System.Text;
 namespace FiveStar.Shaders.Containers;
 
 /// <summary>
-/// Finds the shader records in the plaintext SGD5 tables of shaders.rpf. A table starts at a 4 KB page beginning with
-/// "SGD5" and runs to the next one (the last to the end of the file). A record is
-/// <c>u8 name length (incl. NUL), name, NUL, u8 tag, u32 csize, u32 constant, u32 csize, u32 dsize, raw deflate[csize]</c>
-/// and decompresses to a DXBC container of dsize bytes.
+/// Finds shader records: in the plaintext SGD5 tables of shaders.rpf (a table starts at a 4 KB page beginning with
+/// "SGD5" and runs to the next one, the last to the end of the file), or anywhere in a file such as the game
+/// executable. A record is <c>u8 name length (incl. NUL), name, NUL, u8 tag</c>, then either
+/// <c>u32 csize, u32 constant, u32 csize, u32 dsize, raw deflate[csize]</c> decompressing to a DXBC container of dsize
+/// bytes, or (stored) <c>u32 size, DXBC[size]</c>.
 /// </summary>
 public static class ShaderArchiveScanner
 {
+    /// <summary>Region name of the records found in the game executable.</summary>
+    public const string ExecutableRegion = "exe";
+
     private const string TableMagic = "SGD5";
     private const int PageSize = 0x1000;
     private const string RegionPrefix = "sgd";
@@ -32,15 +36,17 @@ public static class ShaderArchiveScanner
     private const byte LastTag = 0x4F;
 
     // Header after the name: u8 tag @0, u32 csize @1, u32 constant @5, u32 csize @9, u32 dsize @13; data @17.
+    // Stored: u8 tag @0, u32 size @1; the DXBC container @5.
     private const int CompressedSizeField = 1;
     private const int ConstantField = 5;
     private const int CompressedSizeCopyField = 9;
     private const int DecompressedSizeField = 13;
     private const int RecordHeaderSize = 17;
+    private const int StoredHeaderSize = 5;
     private const int MaxCompressedSize = 0x4000000;
     private const int MaxDecompressedSize = 0x10000000;
 
-    /// <summary>Every record that decompresses to a DXBC container of the declared size, in file order.</summary>
+    /// <summary>Every record of the SGD5 tables that decompresses to a DXBC container of the declared size, in file order.</summary>
     public static IReadOnlyList<ShaderArchiveRecord> Scan(byte[] archive)
     {
         var tables = FindTables(archive);
@@ -51,8 +57,17 @@ public static class ShaderArchiveScanner
             var start = tables[index];
             var end = index + 1 < tables.Count ? tables[index + 1] : archive.Length;
             var region = RegionPrefix + (index + 1).ToString(CultureInfo.InvariantCulture);
-            ScanTable(archive, region, start, end, records);
+            ScanRange(archive, region, start, end, records);
         }
+
+        return records;
+    }
+
+    /// <summary>Every record anywhere in <paramref name="file"/> (the game executable embeds a few), in file order.</summary>
+    public static IReadOnlyList<ShaderArchiveRecord> ScanFile(byte[] file, string region)
+    {
+        var records = new List<ShaderArchiveRecord>();
+        ScanRange(file, region, 0, file.Length, records);
 
         return records;
     }
@@ -73,9 +88,14 @@ public static class ShaderArchiveScanner
         return tables;
     }
 
-    private static void ScanTable(byte[] archive, string region, int start, int end, List<ShaderArchiveRecord> records)
+    /// <summary>
+    /// Tries a record at every position. A record's payload is skipped; a candidate that is no record moves on by one
+    /// byte only, since its tag byte may be the length byte of a real record (a name of 47 characters has the
+    /// length byte '0').
+    /// </summary>
+    private static void ScanRange(byte[] file, string region, int start, int end, List<ShaderArchiveRecord> records)
     {
-        var data = new ReadOnlyMemory<byte>(archive, start, end - start);
+        var data = new ReadOnlyMemory<byte>(file, start, end - start);
         var position = 0;
 
         while (position < data.Length)
@@ -89,14 +109,16 @@ public static class ShaderArchiveScanner
             }
 
             var tagAt = position + 1 + nameLength + 1;
-            var record = TryRead(data, region, start, position, nameLength, tagAt);
+            var record = TryRead(data, region, start, position, nameLength, tagAt, out var payloadEnd);
 
-            if (record is not null)
+            if (record is null)
             {
-                records.Add(record);
+                position++;
+                continue;
             }
 
-            position = tagAt + 1;
+            records.Add(record);
+            position = payloadEnd;
         }
     }
 
@@ -137,11 +159,27 @@ public static class ShaderArchiveScanner
     }
 
     private static ShaderArchiveRecord? TryRead(
-        ReadOnlyMemory<byte> data, string region, int tableStart, int position, int nameLength, int tagAt)
+        ReadOnlyMemory<byte> data, string region, int tableStart, int position, int nameLength, int tagAt, out int payloadEnd)
     {
         var span = data.Span;
+        payloadEnd = 0;
 
-        if (span[position] != nameLength + 1 || tagAt + RecordHeaderSize > data.Length)
+        if (span[position] != nameLength + 1 || tagAt + StoredHeaderSize + DxbcContainer.HeaderSize > data.Length)
+        {
+            return null;
+        }
+
+        var name = Encoding.Latin1.GetString(span.Slice(position + 1, nameLength));
+        var stored = TryReadStored(data, tagAt);
+
+        if (stored is not null)
+        {
+            payloadEnd = tagAt + StoredHeaderSize + stored.Length;
+
+            return Record(region, tableStart, position, tagAt, span[tagAt], name, stored.Length, stored.Length, 0, stored);
+        }
+
+        if (tagAt + RecordHeaderSize > data.Length)
         {
             return null;
         }
@@ -164,12 +202,57 @@ public static class ShaderArchiveScanner
             return null;
         }
 
-        var chunks = DxbcContainer.Parse(container).Chunks.Select(chunk => chunk.FourCc).ToList();
-        var name = Encoding.Latin1.GetString(span.Slice(position + 1, nameLength));
         var constant = BinaryPrimitives.ReadUInt32LittleEndian(span[(tagAt + ConstantField)..]);
+        payloadEnd = payloadStart + payload.Length;
+
+        return Record(region, tableStart, position, tagAt, span[tagAt], name, compressed, size, constant, container);
+    }
+
+    /// <summary>The DXBC container right after the size field when its own total size equals that field, else null.</summary>
+    private static byte[]? TryReadStored(ReadOnlyMemory<byte> data, int tagAt)
+    {
+        var span = data.Span;
+        var size = BinaryPrimitives.ReadInt32LittleEndian(span[(tagAt + CompressedSizeField)..]);
+        var start = tagAt + StoredHeaderSize;
+
+        if (size <= DxbcContainer.HeaderSize || size > data.Length - start || !DxbcContainer.HasMagic(span[start..]))
+        {
+            return null;
+        }
+
+        if (BinaryPrimitives.ReadInt32LittleEndian(span[(start + DxbcContainer.TotalSizeOffset)..]) != size)
+        {
+            return null;
+        }
+
+        var chunks = BinaryPrimitives.ReadInt32LittleEndian(span[(start + DxbcContainer.HeaderSize - sizeof(int))..]);
+
+        if (chunks < 0 || chunks > (size - DxbcContainer.HeaderSize) / sizeof(int))
+        {
+            return null;
+        }
+
+        var container = span.Slice(start, size).ToArray();
+
+        try
+        {
+            DxbcContainer.Parse(container);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return null;
+        }
+
+        return container;
+    }
+
+    private static ShaderArchiveRecord Record(
+        string region, int tableStart, int position, int tagAt, byte tag, string name, int compressed, int size, uint constant, byte[] container)
+    {
+        var chunks = DxbcContainer.Parse(container).Chunks.Select(chunk => chunk.FourCc).ToList();
 
         return new ShaderArchiveRecord(
-            region, tableStart + position, tableStart + tagAt, span[tagAt], name, compressed, size, constant, container, chunks);
+            region, tableStart + position, tableStart + tagAt, tag, name, compressed, size, constant, container, chunks);
     }
 
     private static byte[]? Inflate(ReadOnlyMemory<byte> payload, int expected)
