@@ -21,4 +21,14 @@ public sealed class InputScriptTests
         Assert.True(keys.IsDown(KeyNames.Parse("Space")));
         Assert.False(keys.IsDown(KeyNames.Parse("Enter")));
     }
+
+    [Fact]
+    public void Capture_lines_are_times_not_presses()
+    {
+        var script = InputScript.Parse(["90 capture", "15 Space", "30 CAPTURE"]);
+
+        Assert.Equal([30.0, 90.0], script.Captures);
+        Assert.Single(script.Presses);
+        Assert.Equal(1, script.StartedBefore(20));
+    }
 }

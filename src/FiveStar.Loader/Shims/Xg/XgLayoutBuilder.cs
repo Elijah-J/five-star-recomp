@@ -18,6 +18,9 @@ internal static class XgLayoutBuilder
     /// <summary>D3D12_RESOURCE_DIMENSION_TEXTURE1D: no height.</summary>
     private const uint Texture1D = 2;
 
+    /// <summary>D3D12_RESOURCE_DIMENSION_TEXTURE3D: DepthOrArraySize is a depth.</summary>
+    private const uint Texture3D = 4;
+
     private const int StencilBytes = 1;
     private const int PixelBlock = 1;
     private const int MaxElementLog2 = XgSwizzles.ElementSizes - 1;
@@ -49,7 +52,10 @@ internal static class XgLayoutBuilder
         int mips = MipCount(desc.MipLevels, width, height);
         int slices = (int)AtLeastOne(desc.DepthOrArraySize);
         long mip0Bytes = (long)Elements(width, format.BlockDimension) * Elements(height, format.BlockDimension) * format.BytesPerElement;
-        int blockBytes = XgSwizzleModes.BlockBytes(XgSwizzleModes.Mode(desc.Layout, mip0Bytes));
+        uint mode = XgSwizzleModes.Mode(desc.Layout, mip0Bytes);
+        int blockBytes = XgSwizzleModes.BlockBytes(mode);
+        bool thick = desc.Dimension == Texture3D && XgSwizzleModes.IsThick(mode);
+
         surface.PlaneCount = format.StencilPlane ? XgLimits.MaxPlanes : 1;
         ulong offset = 0;
 
@@ -58,6 +64,7 @@ internal static class XgLayoutBuilder
             ref XgPlane plane = ref surface.Planes[index];
             int bytesPerElement = index == 0 ? format.BytesPerElement : StencilBytes;
             int blockDimension = index == 0 ? format.BlockDimension : PixelBlock;
+            plane.Thick = thick;
             BuildPlane(ref plane, bytesPerElement, blockDimension, blockBytes, width, height, mips, slices);
 
             ulong alignment = PlaneAlignment(plane.BlockBytes);
@@ -107,9 +114,16 @@ internal static class XgLayoutBuilder
         bool swizzled = BitOperations.IsPow2(bytesPerElement) && BitOperations.Log2((uint)bytesPerElement) <= MaxElementLog2;
         plane.BlockBytes = swizzled ? blockBytes : 0;
 
+        plane.Thick &= plane.BlockBytes != 0;
+
         if (plane.BlockBytes == 0)
         {
             BuildLinear(ref plane);
+        }
+        else if (plane.Thick)
+        {
+            plane.Swizzle = XgSwizzles.FindVolume(plane.BlockBytes, BitOperations.Log2((uint)bytesPerElement));
+            BuildThick(ref plane);
         }
         else
         {
@@ -117,7 +131,32 @@ internal static class XgLayoutBuilder
             BuildTiled(ref plane);
         }
 
-        plane.Size = plane.SliceStride * (ulong)slices;
+        plane.Size = plane.Thick ? plane.SliceStride : plane.SliceStride * (ulong)slices;
+    }
+
+    /// <summary>
+    /// A thick volume: each mip padded to whole bricks (x, then y, then z), smallest mip first so mip 0 ends the
+    /// chain; no mip tail (the shipped volumes have one mip).
+    /// </summary>
+    private static void BuildThick(ref XgPlane plane)
+    {
+        var swizzle = plane.Swizzle;
+        ulong offset = 0;
+
+        for (int index = plane.MipCount - 1; index >= 0; index--)
+        {
+            ref XgMip mip = ref plane.Mips[index];
+            mip.DepthElements = (uint)Math.Max(1, plane.Slices >> index);
+            mip.PitchElements = (uint)AlignUp(mip.WidthElements, (ulong)swizzle.TileWidth);
+            mip.PaddedHeightElements = (uint)AlignUp(mip.HeightElements, (ulong)swizzle.TileHeight);
+            mip.Slice2DSize = (ulong)mip.PitchElements * mip.PaddedHeightElements * (ulong)plane.BytesPerElement;
+            mip.Size = mip.Slice2DSize * AlignUp(mip.DepthElements, (ulong)swizzle.TileDepth);
+
+            mip.Offset = offset;
+            offset += mip.Size;
+        }
+
+        plane.SliceStride = offset;
     }
 
     private static void SetMipExtents(ref XgPlane plane, uint width, uint height)

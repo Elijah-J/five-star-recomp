@@ -30,6 +30,10 @@ internal static class XgSwizzleModes
     private const uint FirstSmallX = 20;
     private const uint LastSmallX = 23;
 
+    /// <summary>The low two mode bits: 0 Z, 1 S, 2 D, 3 R.</summary>
+    private const uint KindMask = 3;
+    private const uint FirstThinKind = 2;
+
     /// <summary>
     /// Mip 0 sizes from which the shipped textures use 64 KB blocks: every texture of 1 MiB or more does, every one
     /// under 128 KiB uses 4 KB blocks (docs/xg.md).
@@ -67,6 +71,16 @@ internal static class XgSwizzleModes
         }
 
         return Small;
+    }
+
+    /// <summary>
+    /// Whether a 3D texture in this mode is laid out in thick bricks (z inside the block): the Z and S modes of 4 KB
+    /// and 64 KB blocks (mode mod 4 below 2), as in the RDNA address library; D and R modes keep 2D depth slices.
+    /// </summary>
+    [HotPath]
+    public static bool IsThick(uint mode)
+    {
+        return BlockBytes(mode) >= XgSwizzles.SmallBlockBytes && (mode & KindMask) < FirstThinKind;
     }
 
     /// <summary>Bytes of one swizzle block of a mode, or 0 for linear.</summary>

@@ -6,13 +6,18 @@ using FiveStar.Loader.Diagnostics;
 
 namespace FiveStar.Loader.Shims.Input;
 
-/// <summary>A desktop source with the presses of an <see cref="InputScript"/> added to the keys held for real.</summary>
+/// <summary>
+/// A desktop source with the presses of an <see cref="InputScript"/> added to the keys held for real. The script can
+/// be replaced while the game runs (<see cref="Replace"/>); presses of the new script that already started are not
+/// announced again.
+/// </summary>
 internal sealed class ScriptedDesktopInput : IDesktopSource
 {
     private readonly IDesktopSource _inner;
-    private readonly InputScript _script;
     private readonly Stopwatch _clock;
     private readonly LoaderLog _log;
+    private volatile InputScript _script;
+    private InputScript? _announcedScript;
     private int _announced;
 
     /// <param name="inner">The real keyboard and mouse.</param>
@@ -25,6 +30,13 @@ internal sealed class ScriptedDesktopInput : IDesktopSource
         _script = script;
         _clock = clock;
         _log = log;
+        _announcedScript = script;
+    }
+
+    /// <summary>Uses <paramref name="script"/> from the next poll on; any thread.</summary>
+    public void Replace(InputScript script)
+    {
+        _script = script;
     }
 
     [HotPath]
@@ -32,19 +44,27 @@ internal sealed class ScriptedDesktopInput : IDesktopSource
     {
         _inner.ReadKeys(keys);
         double seconds = _clock.Elapsed.TotalSeconds;
-        _script.Apply(keys, seconds);
+        var script = _script;
 
-        if (_announced < _script.Presses.Count && _script.Presses[_announced].Start <= seconds)
+        if (!ReferenceEquals(script, _announcedScript))
         {
-            Announce(seconds);
+            _announcedScript = script;
+            _announced = script.StartedBefore(seconds);
+        }
+
+        script.Apply(keys, seconds);
+
+        if (_announced < script.Presses.Count && script.Presses[_announced].Start <= seconds)
+        {
+            Announce(script, seconds);
         }
     }
 
-    private void Announce(double seconds)
+    private void Announce(InputScript script, double seconds)
     {
-        while (_announced < _script.Presses.Count && _script.Presses[_announced].Start <= seconds)
+        while (_announced < script.Presses.Count && script.Presses[_announced].Start <= seconds)
         {
-            var press = _script.Presses[_announced++];
+            var press = script.Presses[_announced++];
             _log.Info($"  [input] script: {press.Name} down at {seconds:F1} s for {press.Hold} s");
         }
     }

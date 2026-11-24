@@ -78,6 +78,16 @@ flowchart LR
    `fivestar-loader exit code 3: 293 presents, 0 faults, 43 warnings; full log ...`. Ctrl+C reaches the loader as well;
    run waits for it to end before the summary.
 
+## First run in the game
+
+With an empty save folder the game shows, after the logos and the intro art: a text-size choice, a second option
+screen (default Off), brightness calibration, a controls notice, the legal and photosensitivity screens, then a
+privacy policy and terms of service screen, before it loads story mode (a spinner on dark blue). Keys of the
+keyboard-and-mouse gamepad: A (Space) confirms, but the option screens need it held about 1.5 s; arrows move the
+focus. The photosensitivity item keeps the focus for about 15 s. Each terms item is checked only after its text
+was scrolled to the end with the right stick (move the mouse down); then Confirm is enabled. With the input script
+followed while running ([loader.md](loader.md#running-the-executable)) these can be answered from a second shell.
+
 ## Work folder
 
 | Path | Holds |

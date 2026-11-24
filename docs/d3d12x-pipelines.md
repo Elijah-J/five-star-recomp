@@ -53,7 +53,11 @@ at +0x118) takes an item from a pool of 32 (0x140f9fbd0), sets its callback 0x14
 
 A task of the frame graph calls 0x1458044a0 (from 0x142499630), so the frame does not end while a creation runs. A
 failed creation still completes its job, but the game later reads +0x10 to +0x2F of the pipeline at +0x120 without a
-null check (0x14248c700): the console never fails here. The cached graphics pipelines of a root signature
+null check (0x14248c700; 0x14248c30d reads +0x10 of it): the console never fails here. Every creation slot (55, 57,
+62, 67, 86) therefore answers a creation that gives no pipeline (driver failure, missing program, unreadable
+description) with S_OK and a stand-in that never builds (`StandInPipelines.Unbuilt`); the failure is still counted
+by cause in the sample summary, and the work recorded with it stays skipped. A failed compute pipeline in the story
+mode load reached the game as null and faulted at 0x14248c30d. The cached graphics pipelines of a root signature
 (0x1424774c0, slot 57) are created in jobs too.
 
 ### Stand-ins

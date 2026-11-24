@@ -100,7 +100,8 @@ of the 4 KB pattern).
 | Tail mip addressing | the whole block's swizzle, from the element whose index is the slot start |
 | Linear (mode 0, or a 12-byte element) | mips in order from mip 0, rows padded to 256 bytes, mips on 512 bytes |
 | Depth-stencil formats | a second plane of one-byte stencil after the depth plane, aligned to the block |
-| 3D | depth slices are laid out as array slices of the full chain |
+| 3D in a D or R mode, or with 256 B blocks | depth slices are laid out as array slices of the full chain |
+| 3D in a Z or S mode with 4 KB or 64 KB blocks (thick) | one chain of bricks: each mip padded to whole bricks in x, y and z, bricks in x, then y, then z, smallest mip first, no tail. 4 KB bricks per element size 16x16x16, 8x16x16, 8x16x8, 8x8x8, 4x8x8 (the RDNA 1 KB brick doubled in y and z); 64 KB bricks four times the 1 KB brick on each axis. The 2- and 8-byte 4 KB brick swizzles are those of the shipped volumes ([textures.md](textures.md)); other sizes and 64 KB bricks take the missing x, z and y bits in turn |
 
 GetResourceTiling uses 64 KB tiles: in a 64 KB mode the mips outside the tail are standard mips and the tail block
 is the one packed tile; in other modes every mip is packed.
@@ -126,6 +127,8 @@ the same way. Tile indices from GetResourceTiling count 64 KB tiles of this layo
 - The swizzle modes behind the `.ttpf` layout bases and the exact XG suggestion rule.
 - Array order: the shipped arrays are stored level by level ([textures.md](textures.md)), while this layout puts
   slices one after another, as the single slice stride the game reads implies.
-- Thick (3D) layouts: the three shipped volumes use 4 KB 3D bricks ([textures.md](textures.md)); this layout still
-  lays depth slices out as array slices.
+- Thick (3D) layouts: the brick swizzles of 1-, 4- and 16-byte elements and of 64 KB bricks, and the mip order and
+  tail of volumes with mips. The size of a one-mip 2-byte volume is checked: a 256x32x8 R16_FLOAT texture in mode 5
+  (0x105) streamed in story mode needs 0x40000 bytes; laid out as 2D slices it got 0x20000, the game read half its
+  archive chunk and broke at 0x144ffd879.
 - MSAA layouts and the console's pipe/bank XOR, which the shipped textures do not show.

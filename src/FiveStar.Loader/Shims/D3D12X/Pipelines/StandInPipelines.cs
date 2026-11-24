@@ -133,6 +133,17 @@ internal sealed unsafe class StandInPipelines
         NativeMemory.Free(standIn);
     }
 
+    /// <summary>
+    /// A stand-in that never gets a pipeline, for a creation that failed: the console never fails one and the game
+    /// reads a compute shader's pipeline without a null check (0x14248c30d, the shader object's +0x120).
+    /// </summary>
+    public nint Unbuilt()
+    {
+        Interlocked.Increment(ref _created);
+
+        return NewStandIn();
+    }
+
     private nint NewStandIn()
     {
         var standIn = (StandInPipelineObject*)NativeMemory.AllocZeroed((nuint)sizeof(StandInPipelineObject));

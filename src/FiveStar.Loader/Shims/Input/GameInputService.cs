@@ -22,6 +22,7 @@ internal sealed class GameInputService : IDisposable
     private readonly LoaderLog _log;
     private InputConfig _config;
     private GameInputSession? _session;
+    private InputScriptWatcher? _watcher;
 
     public GameInputService(IGamepadSource gamepads, IDesktopSource desktop, InputConfig config, TimeProvider time, UnresolvedStubs stubs, CodeHeap heap, LoaderLog log)
     {
@@ -45,13 +46,23 @@ internal sealed class GameInputService : IDisposable
         }
     }
 
-    /// <summary>Adds the presses of an input script (<c>--input-script</c>) to the desktop keys; before GameInputCreate.</summary>
-    public void UseScript(InputScript script, System.Diagnostics.Stopwatch clock)
+    /// <summary>
+    /// Adds the presses of the input script at <paramref name="path"/> (<c>--input-script</c>) to the desktop keys and
+    /// follows the file while the game runs; its capture lines call <paramref name="capture"/>. Before GameInputCreate.
+    /// </summary>
+    public InputScript UseScript(string path, System.Diagnostics.Stopwatch clock, Action capture)
     {
+        var script = InputScript.Load(path);
+
         lock (_gate)
         {
-            _desktop = new ScriptedDesktopInput(_desktop, script, clock, _log);
+            var scripted = new ScriptedDesktopInput(_desktop, script, clock, _log);
+            _desktop = scripted;
+            _watcher?.Dispose();
+            _watcher = new InputScriptWatcher(path, script, scripted, clock, capture, _log);
         }
+
+        return script;
     }
 
     /// <summary>GameInput use so far, for the thread sampler.</summary>
@@ -91,6 +102,8 @@ internal sealed class GameInputService : IDisposable
     {
         lock (_gate)
         {
+            _watcher?.Dispose();
+            _watcher = null;
             _session?.Dispose();
             _session = null;
         }
