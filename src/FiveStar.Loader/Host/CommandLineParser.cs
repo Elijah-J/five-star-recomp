@@ -129,6 +129,8 @@ internal sealed class CommandLineParser
                 return Add(_options.D3D12Skips);
             case "--d3d12-trace-queues":
                 return SetTraceQueues();
+            case "--d3d12-breadcrumbs":
+                return SetBreadcrumbs();
             case "--d3d12-trace-draws":
                 return SetTraceDraws();
             case "--capture-dir":
@@ -427,6 +429,13 @@ internal sealed class CommandLineParser
     private bool SetTraceQueues()
     {
         _options.D3D12TraceQueues = true;
+
+        return true;
+    }
+
+    private bool SetBreadcrumbs()
+    {
+        _options.D3D12Breadcrumbs = true;
 
         return true;
     }

@@ -48,6 +48,7 @@ internal static class HostUsage
           --d3d12-gpu-validation --d3d12-debug plus GPU-based validation (slow)
           --d3d12-skip <i:n,...> D3D12.X slots that do nothing (list:51, queue:35, device:n), to bisect GPU faults
           --d3d12-trace-queues   log the first queue submissions, signals and waits (cross-queue protocol)
+          --d3d12-breadcrumbs    a GPU marker after every draw and dispatch: a stalled queue names the one it hangs in
           --d3d12-trace-draws    log what the first draws bind (pipeline, targets, vertex buffers, tables) and read
                                  their render targets back
           --capture-dir <dir>    write read-back planes and render targets there as PNG

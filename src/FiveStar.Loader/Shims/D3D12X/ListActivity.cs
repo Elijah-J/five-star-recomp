@@ -20,8 +20,30 @@ internal unsafe struct ListActivity
     public int Dispatches;
     public int Indirect;
 
+    /// <summary>With <c>--d3d12-breadcrumbs</c> (<see cref="DebugLayer.GpuBreadcrumbs"/>): the recording's number and its operations so far.</summary>
+    public uint Serial;
+    public int Operations;
+
+    /// <summary>The list's marker slot (+1) and the pipeline of each operation; kept over Reset.</summary>
+    public int Slot;
+    public nint* Pipelines;
+
     public static ListActivity* Of(XboxObject* list)
     {
         return (ListActivity*)((byte*)list + Offset);
+    }
+
+    /// <summary>A new recording: the counts start over, the marker slot and pipeline table stay.</summary>
+    [HotPath]
+    public static void Reset(XboxObject* list)
+    {
+        var activity = Of(list);
+
+        activity->Pipeline = 0;
+        activity->Draws = 0;
+        activity->Dispatches = 0;
+        activity->Indirect = 0;
+        activity->Operations = 0;
+        activity->Serial = DebugLayer.GpuBreadcrumbs.NextSerial();
     }
 }

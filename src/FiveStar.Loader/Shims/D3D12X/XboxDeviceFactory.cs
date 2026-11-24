@@ -175,6 +175,7 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
 
         Debugging.AttachDevice(inner);
         QueueProgress.Start(_log);
+        GpuBreadcrumbs.Attach(inner, _log);
         *device = Objects.WrapDevice(inner);
         Bindings.Attach(inner);
         CreatePipelines(inner);

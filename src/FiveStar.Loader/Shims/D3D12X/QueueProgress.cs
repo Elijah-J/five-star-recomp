@@ -7,6 +7,7 @@ using System.Globalization;
 using System.Text;
 using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Native;
+using FiveStar.Loader.Shims.D3D12X.DebugLayer;
 
 namespace FiveStar.Loader.Shims.D3D12X;
 
@@ -248,7 +249,13 @@ internal static unsafe class QueueProgress
 
         for (long i = start; i < next; i++)
         {
-            text.Append("\n      ").Append(Format(queue.Events[i % History], queue.Seen, now));
+            var entry = queue.Events[i % History];
+            text.Append("\n      ").Append(Format(entry, queue.Seen, now));
+
+            if (entry.Kind == QueueEventKind.Execute && entry.Value > queue.Seen)
+            {
+                GpuBreadcrumbs.Describe(text, Volatile.Read(ref wrapper->Fence), entry.Value, PipelineName);
+            }
         }
 
         return text.ToString();
@@ -262,12 +269,23 @@ internal static unsafe class QueueProgress
         {
             case QueueEventKind.Execute:
                 string state = entry.Value <= seen ? "done" : "NOT DONE";
-                string pipeline = entry.Pipeline == 0 ? "none" : PipelineNames.GetValueOrDefault(entry.Pipeline, $"0x{entry.Pipeline:x}");
+                string pipeline = PipelineName(entry.Pipeline);
 
                 return string.Create(CultureInfo.InvariantCulture, $"{ago:F2} s ago execute #{entry.Value} {state}: {entry.Lists} lists, {entry.Draws} draws, {entry.Dispatches} dispatches, {entry.Indirect} indirect; last pipeline {pipeline}");
             default:
                 return string.Create(CultureInfo.InvariantCulture, $"{ago:F2} s ago {entry.Kind} fence 0x{entry.Fence:x} to {entry.Value} (fence at {FenceValue(entry.Fence)})");
         }
+    }
+
+    /// <summary>A desktop pipeline by the programs it was built from, or its address.</summary>
+    private static string PipelineName(nint pipeline)
+    {
+        if (pipeline == 0)
+        {
+            return "none";
+        }
+
+        return PipelineNames.GetValueOrDefault(pipeline, $"0x{pipeline:x}");
     }
 
     /// <summary>The completed value of a game fence (a wrapper or a desktop fence), as text.</summary>

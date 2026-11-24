@@ -119,6 +119,9 @@ internal sealed record HostOptions
     /// <summary>Queue submissions, signals and waits in the log (<c>--d3d12-trace-queues</c>).</summary>
     public bool D3D12TraceQueues { get; set; }
 
+    /// <summary>A GPU marker after every draw and dispatch, for the stall report (<c>--d3d12-breadcrumbs</c>).</summary>
+    public bool D3D12Breadcrumbs { get; set; }
+
     /// <summary>Presents read back when --capture-presents is not given: early, after the first seconds, later.</summary>
     private static readonly long[] DefaultCapturePresents = [60, 300, 900, 1500];
 

@@ -3,6 +3,7 @@
 
 using System.Runtime.InteropServices;
 using FiveStar.Loader.Native;
+using FiveStar.Loader.Shims.D3D12X.DebugLayer;
 using FiveStar.Loader.Shims.D3D12X.Present;
 
 namespace FiveStar.Loader.Shims.D3D12X.States;
@@ -60,6 +61,8 @@ internal static unsafe class ResourceBarrierSlots
         {
             Restore(inner, states);
         }
+
+        GpuBreadcrumbs.Close(self);
 
         return ((delegate* unmanaged<nint, int>)ComObject.Slot(inner, CloseSlot))(inner);
     }

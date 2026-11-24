@@ -558,6 +558,12 @@ finished execution (`NOT DONE` marks the ones the GPU has not finished; a Wait s
 memory line of the thread sampler. A removed device sets every fence to UINT64_MAX; the watch then logs every queue
 as last seen, without the debug layer as well.
 
+`--d3d12-breadcrumbs` (`GpuBreadcrumbs`) adds where each list of an unfinished execution stopped: before every draw,
+dispatch and ExecuteIndirect, and at Close, a list writes its recording number and the operation's index to its own
+dword of a readback buffer with WriteBufferImmediate(MARKER_OUT), which waits for the work before it, and keeps the
+pipeline of each operation. The report then says per list `not started`, `finished` or `STOPPED at operation n`
+with that operation's pipeline. Each marker drains the GPU, so it is a diagnosis mode, not for play.
+
 Two readback aids (`DrawTrace`, `FrameCapture`; debug only, they allocate and wait for the GPU):
 
 - `--d3d12-trace-draws` logs the first 24 draws, and 32 after each captured present: pipeline (programs, input
