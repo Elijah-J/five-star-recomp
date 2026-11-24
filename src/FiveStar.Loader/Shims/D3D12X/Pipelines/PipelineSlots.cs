@@ -7,7 +7,8 @@ namespace FiveStar.Loader.Shims.D3D12X.Pipelines;
 
 /// <summary>
 /// The five pipeline-creation slots of the D3D12.X device (docs/d3d12x-pipelines.md), with the game's arguments after
-/// the device pointer. A description the readers cannot translate is reported once and answered with E_NOTIMPL.
+/// the device pointer. A creation that gives no pipeline (a description the readers cannot translate, reported once, or
+/// a driver failure) is counted by cause and answered with S_OK and a stand-in that never builds.
 /// </summary>
 internal sealed unsafe class PipelineSlots
 {
@@ -116,24 +117,25 @@ internal sealed unsafe class PipelineSlots
             if (*result != 0)
             {
                 Interlocked.Increment(ref _created);
-            }
-            else
-            {
-                _failures.Record(slot, $"{_factory.InFlight.Current()} -> {HResult.Format(hr)}");
+
+                return hr;
             }
 
-            return hr;
+            _failures.Record(slot, $"{_factory.InFlight.Current()} -> {HResult.Format(hr)}");
         }
         catch (Exception exception) when (exception is InvalidDataException or NotSupportedException)
         {
-            _warnings.Warn($"slot{slot}-{exception.Message}", $"[d3d12_xs] ID3D12Device.X::Slot{slot}: {exception.Message} -> E_NOTIMPL");
+            _warnings.Warn($"slot{slot}-{exception.Message}", $"[d3d12_xs] ID3D12Device.X::Slot{slot}: {exception.Message} -> stand-in");
             _failures.Record(slot, $"unreadable description: {exception.Message}");
-
-            return HResult.NotImplemented;
         }
         finally
         {
             _factory.InFlight.End();
         }
+
+        // The console never fails a creation; the game keeps the result without checking it (StandInPipelines.Unbuilt).
+        *result = _factory.StandIns.Unbuilt();
+
+        return HResult.Ok;
     }
 }
