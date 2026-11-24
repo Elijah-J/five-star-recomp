@@ -19,7 +19,7 @@ internal static class HostUsage
           --cpu <host|intel>     intel: report SSE4a, CLZERO, MONITORX/MWAITX and CLWB as missing and check their
                                  emulation through the exception handler (self-test code, not the game's)
           --trace-system         with --run: the call trace also records System32 imports
-          --input-script <file>  timed key presses ("<s> <key> [hold <s>] [repeat <n> every <s>]" per line)
+          --input-script <file>  timed key presses ("<s> <key> [hold <s>] [repeat <n> every <s>]" or "<s> capture" per line; reloaded when the file changes)
                                  added to the desktop keys, so the keyboard and the virtual gamepad see them
           --profile-threads      with --sample-threads: also log the main image's busiest functions on running threads
           --trace-module <dll>   with --run: the call trace also records calls into this mapped image

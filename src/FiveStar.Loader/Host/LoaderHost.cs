@@ -133,11 +133,18 @@ internal sealed class LoaderHost
             _log.Info($"  [input] mapping from {_options.InputConfig}");
         }
 
+        FrameCapture? capture = null;
+
+        if (_options.CaptureDirectory is not null || _options.D3D12TraceDraws)
+        {
+            capture = new FrameCapture(_options.CaptureDirectory, _options.CapturePresents, _log);
+            _runtime.D3D12X.EnableCapture(capture, _options.D3D12TraceDraws);
+        }
+
         if (_options.InputScript is not null)
         {
-            var script = InputScript.Load(_options.InputScript);
-            _runtime.Input.UseScript(script, System.Diagnostics.Stopwatch.StartNew());
-            _log.Info($"  [input] {script.Presses.Count} scripted presses from {_options.InputScript}");
+            var script = _runtime.Input.UseScript(_options.InputScript, System.Diagnostics.Stopwatch.StartNew(), () => capture?.RequestNext());
+            _log.Info($"  [input] {script.Presses.Count} scripted presses, {script.Captures.Count} captures from {_options.InputScript} (followed while running)");
         }
 
         if (_options.D3D12Debug)
@@ -148,11 +155,6 @@ internal sealed class LoaderHost
         if (_options.D3D12TraceQueues)
         {
             QueueTrace.Enable(_runtime.D3D12X.Objects, _log);
-        }
-
-        if (_options.CaptureDirectory is not null || _options.D3D12TraceDraws)
-        {
-            _runtime.D3D12X.EnableCapture(new FrameCapture(_options.CaptureDirectory, _options.CapturePresents, _log), _options.D3D12TraceDraws);
         }
 
         foreach (string skips in _options.D3D12Skips)

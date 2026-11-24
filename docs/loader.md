@@ -397,7 +397,7 @@ fivestar-loader --load $dump\XboxBvhBuilder.dll --load $dump\Bink2Scarlett.dll -
 | `--sample-threads <s>` | with `--run`: every s seconds the calls per shim, stub and GDK slot since the last sample, DirectStorage, pipeline, present and GameInput counters, and every thread's stack (below) |
 | `--profile-threads` | with `--sample-threads`: also the main image's busiest functions on running threads (400 rounds of every thread per sample, several seconds in which the game runs slower: frame times then are not the game's) |
 | `--trace-module <dll>` | with `--run`: the call trace also wraps imports bound to this mapped image (for example `bink2scarlett.dll`) |
-| `--input-script <file>` | timed key presses added to the desktop keys (below) |
+| `--input-script <file>` | timed key presses added to the desktop keys and timed captures; followed while running (below) |
 
 The output lists the images, an import table per image and module, the totals and the exports. Tests:
 `dotnet test tests/FiveStar.Loader.Tests`; with `FIVESTAR_DUMP` set to the dump folder they also load the six Xbox
@@ -437,7 +437,11 @@ logged as `[debug]` (first 4096 messages).
 **Input script.** `--input-script` lines are `<seconds> <key> [hold <s>] [repeat <n> every <s>]`, times from loader
 start, keys named as in the input config, `#` a comment. A scripted key counts as held on the desktop, so the keyboard
 and the keyboard-and-mouse gamepad both see it (`Space` is A). The game reads input only through its own GameInput
-calls; a press while it does not poll has no effect.
+calls; a press while it does not poll has no effect. `<seconds> capture` reads back the next present at that time
+(with `--capture-dir`, [d3d12x-shim.md](d3d12x-shim.md#debug-layer)). The loader follows the file while the game
+runs: every 250 ms it reloads it when its write time changed, so lines appended with later times drive the game
+interactively (the log names each reload with the loader time; captures already due at a reload are skipped). The
+mouse needs no script: the real cursor's motion reaches the keyboard-and-mouse gamepad's right stick.
 The loader is built with `<CETCompat>false</CETCompat>`: with CET shadow stacks, SEH resuming inside mapped code
 fail-fasts (0x30).
 

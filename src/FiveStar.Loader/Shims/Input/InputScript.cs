@@ -9,7 +9,8 @@ namespace FiveStar.Loader.Shims.Input;
 /// The <c>--input-script</c> file: key presses at fixed times after the loader started, one per line,
 /// <c>&lt;seconds&gt; &lt;key&gt; [hold &lt;s&gt;] [repeat &lt;n&gt; every &lt;s&gt;]</c>, '#' starting a comment. Keys are
 /// the names of the input config; a scripted key reaches the game like a held desktop key, so the keyboard and the
-/// keyboard-and-mouse gamepad both see it (Space is A, Escape is Menu).
+/// keyboard-and-mouse gamepad both see it (Space is A, Escape is Menu). <c>capture</c> in place of a key reads back
+/// the next present at that time (with <c>--capture-dir</c>).
 /// </summary>
 internal sealed class InputScript
 {
@@ -18,18 +19,23 @@ internal sealed class InputScript
     private const string HoldWord = "hold";
     private const string RepeatWord = "repeat";
     private const string EveryWord = "every";
+    private const string CaptureWord = "capture";
 
     /// <summary>A line starts with the time and the key; the options follow as word and value pairs.</summary>
     private const int FixedFields = 2;
     private const int OptionFields = 2;
 
-    private InputScript(IReadOnlyList<ScriptedPress> presses)
+    private InputScript(IReadOnlyList<ScriptedPress> presses, IReadOnlyList<double> captures)
     {
         Presses = presses;
+        Captures = captures;
     }
 
     /// <summary>Every press, in start order.</summary>
     public IReadOnlyList<ScriptedPress> Presses { get; }
+
+    /// <summary>The times of the <c>capture</c> lines, in order.</summary>
+    public IReadOnlyList<double> Captures { get; }
 
     public static InputScript Load(string path)
     {
@@ -39,18 +45,35 @@ internal sealed class InputScript
     public static InputScript Parse(IEnumerable<string> lines)
     {
         var presses = new List<ScriptedPress>();
+        var captures = new List<double>();
 
         foreach (string raw in lines)
         {
             string[] fields = raw.Split(CommentMark)[0].Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
 
-            if (fields.Length > 0)
+            if (fields.Length == 0)
+            {
+                continue;
+            }
+
+            if (fields.Length < FixedFields)
+            {
+                throw new FormatException($"input script: '{string.Join(' ', fields)}' needs a time and a key");
+            }
+
+            if (fields[1].Equals(CaptureWord, StringComparison.OrdinalIgnoreCase))
+            {
+                captures.Add(Number(fields[0]));
+            }
+            else
             {
                 presses.AddRange(ParseLine(fields));
             }
         }
 
-        return new InputScript([.. presses.OrderBy(p => p.Start)]);
+        captures.Sort();
+
+        return new InputScript([.. presses.OrderBy(p => p.Start)], captures);
     }
 
     /// <summary>Marks the scripted keys held at <paramref name="seconds"/> as down.</summary>
@@ -66,13 +89,22 @@ internal sealed class InputScript
         }
     }
 
-    private static IEnumerable<ScriptedPress> ParseLine(string[] fields)
+    /// <summary>How many presses started before <paramref name="seconds"/>.</summary>
+    [HotPath]
+    public int StartedBefore(double seconds)
     {
-        if (fields.Length < FixedFields)
+        int count = 0;
+
+        while (count < Presses.Count && Presses[count].Start <= seconds)
         {
-            throw new FormatException($"input script: '{string.Join(' ', fields)}' needs a time and a key");
+            count++;
         }
 
+        return count;
+    }
+
+    private static IEnumerable<ScriptedPress> ParseLine(string[] fields)
+    {
         double start = Number(fields[0]);
         int key = KeyNames.Parse(fields[1]) ?? throw new FormatException("input script: 'none' is not a key");
         double hold = DefaultHold;

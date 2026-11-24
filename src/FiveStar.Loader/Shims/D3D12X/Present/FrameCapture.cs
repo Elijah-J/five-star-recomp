@@ -9,15 +9,21 @@ namespace FiveStar.Loader.Shims.D3D12X.Present;
 
 /// <summary>
 /// Debug readback of what the game presents (<c>--capture-dir</c>, <c>--capture-presents</c>): at the chosen present
-/// numbers the plane is read back after the presenting queue went idle, summarized in the log and, with a folder,
+/// numbers, and at the next present after <see cref="RequestNext"/>, the plane is read back after the presenting queue
+/// went idle, summarized in the log and, with a folder,
 /// written as <c>present-N.png</c>. Only the plane's own texels are read, never the window or the desktop. Other
 /// debug paths save textures through <see cref="Save"/>.
 /// </summary>
 internal sealed class FrameCapture : IDisposable
 {
+    /// <summary>No requested present: present numbers start at 1.</summary>
+    private const long NoPresent = 0;
+
     private readonly HashSet<long> _presents;
     private readonly TextureReadback _readback = new();
     private readonly LoaderLog _log;
+    private int _requested;
+    private long _requestedPresent;
 
     public FrameCapture(string? directory, IEnumerable<long> presents, LoaderLog log)
     {
@@ -33,7 +39,20 @@ internal sealed class FrameCapture : IDisposable
     [HotPath]
     public bool Wants(long present)
     {
-        return _presents.Contains(present);
+        if (Volatile.Read(ref _requested) != 0)
+        {
+            Interlocked.CompareExchange(ref _requestedPresent, present, NoPresent);
+            Volatile.Write(ref _requested, 0);
+        }
+
+        return _presents.Contains(present) || present == Volatile.Read(ref _requestedPresent);
+    }
+
+    /// <summary>Captures the next present as well (an input script's <c>capture</c> line); any thread.</summary>
+    public void RequestNext()
+    {
+        Volatile.Write(ref _requestedPresent, NoPresent);
+        Volatile.Write(ref _requested, 1);
     }
 
     /// <summary>Reads back <paramref name="resource"/> resting in <paramref name="state"/>, logs a summary and writes <paramref name="name"/>.png.</summary>
