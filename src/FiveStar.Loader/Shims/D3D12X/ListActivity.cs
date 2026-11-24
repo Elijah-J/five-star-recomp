@@ -23,6 +23,12 @@ internal unsafe struct ListActivity
     /// <summary>With <c>--d3d12-breadcrumbs</c> (<see cref="DebugLayer.GpuBreadcrumbs"/>): the recording's number, 0 for none.</summary>
     public uint Serial;
 
+    /// <summary>The stand-in the list set while its pipeline is not built yet, else 0.</summary>
+    public nint StandIn;
+
+    /// <summary>The last stand-in whose work this recording skipped and no later work ran after, else 0.</summary>
+    public nint Skipped;
+
     public static ListActivity* Of(XboxObject* list)
     {
         return (ListActivity*)((byte*)list + Offset);
@@ -38,6 +44,9 @@ internal unsafe struct ListActivity
         activity->Draws = 0;
         activity->Dispatches = 0;
         activity->Indirect = 0;
+
+        activity->StandIn = 0;
+        activity->Skipped = 0;
         activity->Serial = DebugLayer.GpuBreadcrumbs.Begin(list);
     }
 }
