@@ -58,6 +58,7 @@ internal static class HostComposition
         if (folders.Programs is not null && !options.NoOnDemand)
         {
             var root = options.ProgramCache ?? Path.Combine(WorkDirectory(options), OnDemandStart.FolderName);
+            Shims.D3D12X.DebugLayer.PoolStoreTrace.Enabled = options.TracePoolStores;
             folders = folders with { OnDemand = OnDemandStart.Begin(root, options.Dxc, options.ShaderJobs, out var message), OnDemandNote = message };
         }
 

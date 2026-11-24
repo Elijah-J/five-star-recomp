@@ -1,0 +1,227 @@
+// Copyright (c) 2026 Five Star Recomp contributors.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+using System.Collections.Concurrent;
+using System.Globalization;
+using System.Text;
+using FiveStar.Loader.Diagnostics;
+using FiveStar.Loader.Shims.D3D12X.Binding;
+
+namespace FiveStar.Loader.Shims.D3D12X.DebugLayer;
+
+/// <summary>
+/// <c>--trace-pool-stores</c>: translated programs made on demand define FIVESTAR_STORE_TRACE as their id, and their
+/// global stores and atomics into up to 8 address ranges, and buffer stores and atomics through up to 8 views, append
+/// {program id, address or offset, address high dword or view index, value} to a ring at the end of the GPU-memory
+/// window (rdna_prelude.hlsli). The ranges are the transient pool and the game heap region its block records live in;
+/// the views are the buffer UAVs over the pool. A transient report lists the entries that hit the corrupted block,
+/// and entries outside the pool are logged as they appear (the first <see cref="OutsideLogged"/>).
+/// </summary>
+internal static unsafe class PoolStoreTrace
+{
+    /// <summary>The ring's window offset: past the most view records the window holds (rdna_prelude TRACE_BASE).</summary>
+    public const uint TraceBase = DescriptorWindow.ViewBase + (DescriptorWindow.MaxViews * DescriptorWindow.ViewRecordBytes);
+
+    private const uint HeaderBytes = 256;
+    private const uint Entries = 65536;
+    private const uint EntryBytes = 16;
+    private const uint RangesAt = 16;
+    private const uint RangeBytes = 12;
+    private const uint ViewsAt = 112;
+    private const int MaxSlots = 8;
+    private const uint ViewKind = 0x80000000;
+    private const int HighShift = 32;
+    private const int OutsideLogged = 32;
+
+    /// <summary>Entry dwords: program id, address low or offset, address high or view | kind, value; a range's size.</summary>
+    private const int LowWord = 1;
+    private const int HighWord = 2;
+    private const int ValueWord = 3;
+    private const int SizeWord = 2;
+
+    /// <summary>Window bytes the ring needs.</summary>
+    public const uint Bytes = TraceBase + HeaderBytes + (Entries * EntryBytes);
+
+    private static readonly ConcurrentDictionary<uint, string> Programs = new();
+    private static readonly uint[] Views = new uint[MaxSlots];
+    private static readonly (ulong Start, ulong Bytes)[] Ranges = new (ulong, ulong)[MaxSlots];
+    private static int _nextId;
+    private static long _outsideSeen;
+    private static int _outsideLogged;
+
+    /// <summary>Whether programs made on demand trace their stores.</summary>
+    public static bool Enabled { get; set; }
+
+    /// <summary>The define a program made on demand starts with; registers its id.</summary>
+    public static string Header(string program)
+    {
+        uint id = (uint)Interlocked.Increment(ref _nextId);
+        Programs[id] = program;
+
+        return $"#define FIVESTAR_STORE_TRACE {id}u\n";
+    }
+
+    /// <summary>Sets address range <paramref name="slot"/> (clipped to the 4 GiB span of its start).</summary>
+    public static void SetRange(int slot, ulong start, ulong bytes)
+    {
+        byte* header = Header();
+
+        if (header == null || slot >= MaxSlots)
+        {
+            return;
+        }
+
+        ulong spanEnd = (start | uint.MaxValue) + 1;
+        bytes = Math.Min(bytes, spanEnd - start);
+        Ranges[slot] = (start, bytes);
+
+        uint* range = (uint*)(header + RangesAt + ((uint)slot * RangeBytes));
+        range[0] = (uint)start;
+        range[1] = (uint)(start >> HighShift);
+        range[SizeWord] = (uint)bytes;
+    }
+
+    /// <summary>A buffer UAV over the pool: its stores are traced (up to 8 views).</summary>
+    public static void AddView(uint desktop)
+    {
+        byte* header = Header();
+
+        if (header == null || desktop == 0)
+        {
+            return;
+        }
+
+        lock (Views)
+        {
+            for (int i = 0; i < MaxSlots; i++)
+            {
+                if (Views[i] == desktop)
+                {
+                    return;
+                }
+
+                if (Views[i] == 0)
+                {
+                    Views[i] = desktop;
+                    ((uint*)(header + ViewsAt))[i] = desktop;
+
+                    return;
+                }
+            }
+        }
+    }
+
+    /// <summary>The newest entries whose address is in [<paramref name="start"/>, +<paramref name="bytes"/>).</summary>
+    public static void Describe(StringBuilder text, ulong start, ulong bytes, int limit)
+    {
+        byte* header = Header();
+
+        if (header == null)
+        {
+            return;
+        }
+
+        uint count = Volatile.Read(ref *(uint*)header);
+        int printed = 0;
+        text.Append(CultureInfo.InvariantCulture, $"\n  traced stores so far: {count}; into this block, newest first:");
+
+        for (uint n = 0; n < Math.Min(count, Entries) && printed < limit; n++)
+        {
+            uint* entry = Entry(header, count - 1 - n);
+            ulong address = Address(entry);
+
+            if (address >= start && address < start + bytes)
+            {
+                text.Append(CultureInfo.InvariantCulture, $"\n    {Describe(entry, address)}");
+                printed++;
+            }
+        }
+
+        if (printed == 0)
+        {
+            text.Append("\n    none");
+        }
+    }
+
+    /// <summary>Logs new entries outside range 0 (the pool): writes into the game heap.</summary>
+    public static void LogOutside(LoaderLog log)
+    {
+        byte* header = Header();
+
+        if (header == null || _outsideLogged >= OutsideLogged)
+        {
+            return;
+        }
+
+        long count = Volatile.Read(ref *(uint*)header);
+        long first = Math.Max(_outsideSeen, count - Entries);
+
+        for (long n = first; n < count && _outsideLogged < OutsideLogged; n++)
+        {
+            uint* entry = Entry(header, (uint)n);
+            ulong address = Address(entry);
+            var pool = Ranges[0];
+
+            if (address != 0 && (address < pool.Start || address >= pool.Start + pool.Bytes))
+            {
+                _outsideLogged++;
+                log.Warn($"[store trace] a GPU store outside the transient pool: {Describe(entry, address)}");
+            }
+        }
+
+        _outsideSeen = count;
+    }
+
+    private static uint* Entry(byte* header, uint index)
+    {
+        return (uint*)(header + HeaderBytes + ((index % Entries) * EntryBytes));
+    }
+
+    /// <summary>An entry's game address: the address of a global access, or the view's start plus the offset.</summary>
+    private static ulong Address(uint* entry)
+    {
+        if ((entry[HighWord] & ViewKind) == 0)
+        {
+            return entry[LowWord] | ((ulong)entry[HighWord] << HighShift);
+        }
+
+        ulong start = TransientPoolViews.StartOf(entry[HighWord] & ~ViewKind);
+
+        if (start == 0)
+        {
+            return 0;
+        }
+
+        return start + entry[LowWord];
+    }
+
+    private static string Describe(uint* entry, ulong address)
+    {
+        string program = Programs.GetValueOrDefault(entry[0], $"program {entry[0]}");
+        string how = "global";
+
+        if ((entry[HighWord] & ViewKind) != 0)
+        {
+            how = $"view {entry[HighWord] & ~ViewKind} + 0x{entry[LowWord]:x}";
+        }
+
+        return $"0x{address:x} = 0x{entry[ValueWord]:x} ({how}) by {program}";
+    }
+
+    private static byte* Header()
+    {
+        if (!Enabled)
+        {
+            return null;
+        }
+
+        byte* window = ShimContext.Runtime.D3D12X.Bindings.Window.Data;
+
+        if (window == null)
+        {
+            return null;
+        }
+
+        return window + TraceBase;
+    }
+}

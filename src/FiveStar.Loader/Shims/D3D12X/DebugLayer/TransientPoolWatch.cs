@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using FiveStar.Loader.Diagnostics;
+using FiveStar.Loader.Native;
 
 namespace FiveStar.Loader.Shims.D3D12X.DebugLayer;
 
@@ -122,9 +123,12 @@ internal sealed unsafe class TransientPoolWatch
                 {
                     TransientPoolLifetime.Setup(pool, count, size, _log);
                 }
+
+                TraceRanges(pool, (ulong)count * size, table);
             }
 
             TakeMarkers();
+            PoolStoreTrace.LogOutside(_log);
 
             if (Check(pool, table, count, size))
             {
@@ -312,6 +316,49 @@ internal sealed unsafe class TransientPoolWatch
         TransientPoolHits.Describe(text, block, size, operations, RangesShown, QueueProgress.PipelineName);
         text.Append("\n  newest user-data ranges of any operation that reach this block:");
         TransientPoolHits.Describe(text, block, size, null, RangesShown, QueueProgress.PipelineName);
+        PoolStoreTrace.Describe(text, block, size, RangesShown);
+    }
+
+    /// <summary>
+    /// --trace-pool-stores: traces stores into the pool and into the game heap allocation the block records live in
+    /// (where the fixed-size pool pages and their descriptors are too).
+    /// </summary>
+    private static void TraceRanges(ulong pool, ulong bytes, ulong table)
+    {
+        if (!PoolStoreTrace.Enabled)
+        {
+            return;
+        }
+
+        PoolStoreTrace.SetRange(0, pool, bytes);
+        var (start, length) = Allocation(table);
+
+        if (length != 0)
+        {
+            PoolStoreTrace.SetRange(1, start, length);
+        }
+    }
+
+    /// <summary>The whole allocation (every region with the same allocation base) that holds <paramref name="address"/>.</summary>
+    private static (ulong Start, ulong Bytes) Allocation(ulong address)
+    {
+        MemoryBasicInformation info;
+        nint process = Kernel32.GetCurrentProcess();
+
+        if (Kernel32.VirtualQueryEx(process, (nint)address, &info, (nuint)sizeof(MemoryBasicInformation)) == 0)
+        {
+            return (0, 0);
+        }
+
+        nint allocation = info.AllocationBase;
+        ulong next = (ulong)allocation;
+
+        while (Kernel32.VirtualQueryEx(process, (nint)next, &info, (nuint)sizeof(MemoryBasicInformation)) != 0 && info.AllocationBase == allocation)
+        {
+            next = (ulong)info.BaseAddress + (ulong)info.RegionSize;
+        }
+
+        return ((ulong)allocation, next - (ulong)allocation);
     }
 
     private static ulong Read(ulong address)

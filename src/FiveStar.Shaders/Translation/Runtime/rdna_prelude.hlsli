@@ -43,6 +43,38 @@ uint2 ptr_add(uint lo, uint hi, uint u, int s) {
     uint h = hi + (a < lo ? 1u : 0u);
     return uint2(b, h + (s < 0 ? 0xffffffffu : 0u) + (b < a ? 1u : 0u));
 }
+// ---- Store trace (loader --trace-pool-stores, which defines FIVESTAR_STORE_TRACE as the program's id): global stores
+// and atomics into up to 8 address ranges, and buffer stores and atomics through up to 8 views, are appended to a ring
+// at the end of the GPU-memory window. Header at TRACE_BASE: count, then 8 ranges {lo, hi, bytes} from + 16, 8 view
+// heap indices from + 112; entries of {program id, address lo or byte offset, address hi or heap index | kind << 31,
+// value} from + 256. TRACE_BASE is DescriptorWindow.TraceBase.
+#ifdef FIVESTAR_STORE_TRACE
+static const uint TRACE_BASE = 0x01e94800u;
+static const uint TRACE_ENTRIES = 65536u;
+void trace_entry(uint lo, uint hi, uint v) {
+    RWByteAddressBuffer m = ResourceDescriptorHeap[GPU_MEM_HEAP + 1];
+    uint i;
+    m.InterlockedAdd(TRACE_BASE, 1u, i);
+    m.Store4(TRACE_BASE + 256u + (i % TRACE_ENTRIES) * 16u, uint4(FIVESTAR_STORE_TRACE, lo, hi, v));
+}
+#endif
+void TRACE_ADDR(uint lo, uint hi, uint v) {
+#ifdef FIVESTAR_STORE_TRACE
+    ByteAddressBuffer m = ResourceDescriptorHeap[GPU_MEM_HEAP];
+    for (uint r = 0u; r < 8u; r++) {
+        uint3 range = m.Load3(TRACE_BASE + 16u + r * 12u);
+        if (range.z != 0u && hi == range.y && lo - range.x < range.z) { trace_entry(lo, hi, v); return; }
+    }
+#endif
+}
+void TRACE_VIEW(uint heap_index, uint off, uint v) {
+#ifdef FIVESTAR_STORE_TRACE
+    ByteAddressBuffer m = ResourceDescriptorHeap[GPU_MEM_HEAP];
+    for (uint r = 0u; r < 8u; r++) {
+        if (m.Load(TRACE_BASE + 112u + r * 4u) == heap_index && heap_index != 0u) { trace_entry(off, heap_index | 0x80000000u, v); return; }
+    }
+#endif
+}
 uint PtrLoad(uint lo, uint hi, uint off) {   // off is signed (a dword offset or an SMEM offset)
     uint2 a = ptr_add(lo, hi, 0u, asint(off));
     if (hi == 0u) return MemLoad(a.x, 0u);
@@ -53,6 +85,7 @@ uint PtrLoad(uint lo, uint hi, uint off) {   // off is signed (a dword offset or
 void PtrStore(uint lo, uint hi, uint off, uint v) {
     uint2 a = ptr_add(lo, hi, 0u, asint(off));
     if (hi == 0u) { MemStore(a.x, 0u, v); return; }
+    TRACE_ADDR(a.x, a.y, v);
     uint2 p = gpu_page(a.x, a.y);
     RWByteAddressBuffer b = ResourceDescriptorHeap[p.x + 1u];
     b.Store(p.y & ~3u, v);
@@ -108,6 +141,7 @@ uint BufLoadRW(uint heap_index, uint off) {   // load through a UAV slot (buffer
     return b.Load(off & ~3u);
 }
 void BufStore(uint heap_index, uint off, uint v) {
+    TRACE_VIEW(heap_index, off, v);
     RWByteAddressBuffer b = ResourceDescriptorHeap[heap_index];
     b.Store(off & ~3u, v);
 }

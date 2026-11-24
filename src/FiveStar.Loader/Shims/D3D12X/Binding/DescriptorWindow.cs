@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Five Star Recomp contributors.
+// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using FiveStar.Loader.Diagnostics;
@@ -99,7 +99,15 @@ internal sealed unsafe class DescriptorWindow
     /// </summary>
     public bool AttachViews(nint device, nint heap, uint views, uint increment)
     {
-        uint bytes = ViewBase + (views * ViewRecordBytes);
+        uint records = ViewBase + (views * ViewRecordBytes);
+        uint bytes = records;
+
+        // --trace-pool-stores: the store ring past the most view records the window can hold.
+        if (DebugLayer.PoolStoreTrace.Enabled && bytes < DebugLayer.PoolStoreTrace.Bytes)
+        {
+            bytes = DebugLayer.PoolStoreTrace.Bytes;
+        }
+
         var properties = new HeapProperties { Type = HeapProperties.Custom, CpuPageProperty = HeapProperties.WriteCombine, MemoryPool = HeapProperties.SystemPool };
         nint buffer = DesktopCalls.CreateBuffer(device, properties, bytes, DesktopCalls.UnorderedAccessFlag, CommonState);
         byte* data = buffer == 0 ? null : DesktopCalls.Map(buffer);
@@ -111,7 +119,7 @@ internal sealed unsafe class DescriptorWindow
             return false;
         }
 
-        FillRecords(data, bytes);
+        FillRecords(data, bytes, records);
         WriteReserved(device, buffer, bytes, DesktopCalls.HeapCpuStart(heap), increment);
 
         Buffer = buffer;
@@ -152,7 +160,7 @@ internal sealed unsafe class DescriptorWindow
     }
 
     /// <summary>Null view records everywhere, sampler records naming their own index.</summary>
-    private static void FillRecords(byte* data, uint bytes)
+    private static void FillRecords(byte* data, uint bytes, uint records)
     {
         new Span<byte>(data, (int)bytes).Clear();
 
@@ -161,7 +169,7 @@ internal sealed unsafe class DescriptorWindow
             *(uint*)(data + SamplerBase + (sampler * SamplerRecordBytes)) = sampler;
         }
 
-        for (uint offset = NullTableBase; offset < bytes; offset += ViewRecordBytes)
+        for (uint offset = NullTableBase; offset < records; offset += ViewRecordBytes)
         {
             *(uint*)(data + offset) = NullViewSlot;
         }

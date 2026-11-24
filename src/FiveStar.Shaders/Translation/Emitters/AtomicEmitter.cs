@@ -134,6 +134,7 @@ internal sealed partial class AtomicEmitter
         var full = _operands.SnapPair(pointer);
         var target = _operands.SnapPair($"gpu_rw({full}.x, {full}.y)");
         var result = atomic.Result;
+        _state.Emit($"  if (active && {full}.y != 0u) TRACE_ADDR({full}.x, {full}.y, {_operands.Read(data, 0)});");
         _state.Emit($"  uint {result} = 0; if (active) {{ RWByteAddressBuffer _b{result} = ResourceDescriptorHeap[{target}.x];");
         _state.Emit($"    _b{result}.{Operation(atomic, data, $"{target}.y")}; }}");
 
@@ -169,6 +170,7 @@ internal sealed partial class AtomicEmitter
         var result = atomic.Result;
 
         // Out of range: no write, and the returned value is 0.
+        _state.Emit($"  if (active && {inRange}) TRACE_VIEW({view}.x, {view}.y + {byteAddress}, {_operands.Read(atomic.Data, 0)});");
         _state.Emit($"  uint {result} = 0; if (active && {inRange}) {{ RWByteAddressBuffer _b{result} = ResourceDescriptorHeap[{view}.x];");
         _state.Emit($"    _b{result}.{Operation(atomic, atomic.Data, $"({view}.y + {byteAddress})")}; }}");
     }
