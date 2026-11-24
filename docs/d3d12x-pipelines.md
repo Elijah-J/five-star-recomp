@@ -89,7 +89,7 @@ flowchart LR
   hit -->|"yes"| load["LoadPipeline on the calling thread"]
   hit -->|"no, or the driver refuses the load"| build["build thread (stand-in after 1 s)"]
   build --> store["StorePipeline into this process's library"]
-  store --> file["written every minute, at the end of a timed-out run and at exit"]
+  store --> file["written every minute or 2,048 pipelines, at the end of a timed-out run and at exit"]
 ```
 
 | Item | Rule |
@@ -98,7 +98,7 @@ flowchart LR
 | Salt | SHA-256 of a format string and the serialized bindless root signature; files with another salt are deleted |
 | Segment file `<utc time>-<pid>-<n>.psolib` | `FSPL`, u32 version 1, the 32-byte salt, u32 name count, u32 0, u64 library size, the 16-byte names, then the serialized library at a 256-byte boundary |
 | Opening | every segment is mapped read-only and given to `CreatePipelineLibrary`; one the driver refuses (D3D12_ERROR_ADAPTER_NOT_FOUND, D3D12_ERROR_DRIVER_VERSION_MISMATCH, a damaged blob) is deleted |
-| New pipelines | go to an empty library of this process, written to its own segment through a `.tmp` file and a rename; past 512 MiB it becomes a read-only segment and a new library starts |
+| New pipelines | go to an empty library of this process, written to its own segment through a `.tmp` file and a rename every minute and after every 2,048 new ones; past 256 MiB it becomes a read-only segment and a new library starts |
 | Size | past 32 GiB the oldest segments are deleted when the cache opens |
 
 Processes never write each other's segments, so the game and the warm-up can share the folder. A cache hit is

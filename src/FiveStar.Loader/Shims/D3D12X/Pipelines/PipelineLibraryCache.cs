@@ -11,10 +11,11 @@ using FiveStar.Loader.Native;
 namespace FiveStar.Loader.Shims.D3D12X.Pipelines;
 
 /// <summary>
-/// The disk cache of built desktop pipelines (docs/d3d12x-pipelines.md, Pipeline cache): ID3D12PipelineLibrary1
+/// The disk cache of built desktop pipelines (docs/d3d12x-pipelines.md, Disk cache): ID3D12PipelineLibrary1
 /// segments in one folder, each pipeline named by <see cref="DesktopStream.Key"/>. Finished segments are mapped and
 /// only read; new pipelines go to this process's active library, which is written to its own segment file every
-/// <see cref="SaveInterval"/> and at disposal, and becomes a finished segment past <see cref="SegmentBytes"/>.
+/// <see cref="SaveInterval"/>, after <see cref="SaveBatch"/> new pipelines and at disposal, and becomes a finished
+/// segment past <see cref="SegmentBytes"/>.
 /// Segments the driver refuses (another adapter or driver version) are deleted; past <see cref="MaximumBytes"/> the
 /// oldest segments are deleted when the cache opens.
 /// </summary>
@@ -23,7 +24,10 @@ internal sealed unsafe class PipelineLibraryCache : IDisposable
     /// <summary>The cache's folder under the loader's work folder when no other is given.</summary>
     public const string FolderName = "pipeline-cache";
 
-    private const long SegmentBytes = 512L << 20;
+    private const long SegmentBytes = 256L << 20;
+
+    /// <summary>Pipelines stored since the last write that make the saver write at once, keeping the active library small.</summary>
+    private const int SaveBatch = 2048;
     private const long MaximumBytes = 32L << 30;
     private const double BytesPerMegabyte = 1 << 20;
     private const string Format = "fivestar pipeline cache 1";
@@ -37,6 +41,7 @@ internal sealed unsafe class PipelineLibraryCache : IDisposable
     private readonly List<string> _activeKeys = [];
     private readonly HashSet<string> _activeSet = new(StringComparer.Ordinal);
     private readonly ManualResetEventSlim _stop = new();
+    private readonly AutoResetEvent _wake = new(false);
     private readonly string _folder;
     private readonly nint _device1;
     private readonly byte[] _salt;
@@ -46,6 +51,7 @@ internal sealed unsafe class PipelineLibraryCache : IDisposable
     private string _activePath = string.Empty;
     private int _sequence;
     private bool _dirty;
+    private int _unsaved;
     private int _hits;
     private int _stored;
     private int _refused;
@@ -151,12 +157,20 @@ internal sealed unsafe class PipelineLibraryCache : IDisposable
             _activeKeys.Add(key);
             _activeSet.Add(key);
             _dirty = true;
+
+            if (++_unsaved >= SaveBatch)
+            {
+                _wake.Set();
+            }
         }
 
         Interlocked.Increment(ref _stored);
     }
 
-    /// <summary>Writes the active library to its segment file every <see cref="SaveInterval"/> until disposal.</summary>
+    /// <summary>
+    /// Writes the active library to its segment file every <see cref="SaveInterval"/>, and after every
+    /// <see cref="SaveBatch"/> stored pipelines, until disposal.
+    /// </summary>
     public void StartSaving()
     {
         _saver = new Thread(SaveLoop) { IsBackground = true, Name = "fivestar pipeline cache" };
@@ -194,6 +208,7 @@ internal sealed unsafe class PipelineLibraryCache : IDisposable
             }
 
             _dirty = false;
+            _unsaved = 0;
 
             if (size > SegmentBytes)
             {
@@ -221,11 +236,14 @@ internal sealed unsafe class PipelineLibraryCache : IDisposable
         }
 
         _stop.Dispose();
+        _wake.Dispose();
     }
 
     private void SaveLoop()
     {
-        while (!_stop.Wait(SaveInterval))
+        WaitHandle[] wakers = [_stop.WaitHandle, _wake];
+
+        while (WaitHandle.WaitAny(wakers, SaveInterval) != 0)
         {
             Save();
         }
