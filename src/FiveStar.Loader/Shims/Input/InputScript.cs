@@ -14,7 +14,7 @@ namespace FiveStar.Loader.Shims.Input;
 /// moves the cursor that many pixels a second for the hold time (the gamepad's right stick, full at 1000). A time
 /// written <c>+&lt;s&gt;</c> is that many seconds after the previous line's time.
 /// <para>
-/// A line <c>screen &lt;name&gt;</c> starts a block: its lines count their times from the moment the learned screen
+/// A line <c>screen &lt;name&gt; [&lt;max changed cells&gt;]</c> starts a block: its lines count their times from the moment the learned screen
 /// <c>name</c> showed, which is watched for once the block before it has begun. When a block begins, the presses,
 /// motions and marks of the blocks before it that have not started yet are dropped. The lines before the first
 /// <c>screen</c> line are block 0, which begins at loader start.
@@ -43,15 +43,17 @@ internal sealed class InputScript
     private const int CursorFields = 4;
     private const int LearnNameField = 2;
     private const int ScreenNameField = 1;
+    private const int ScreenLimitField = 2;
 
     private readonly double[] _starts;
 
-    private InputScript(IReadOnlyList<ScriptedPress> presses, IReadOnlyList<ScriptedMotion> motions, IReadOnlyList<ScriptedMark> marks, IReadOnlyList<string> screens)
+    private InputScript(IReadOnlyList<ScriptedPress> presses, IReadOnlyList<ScriptedMotion> motions, IReadOnlyList<ScriptedMark> marks, IReadOnlyList<string> screens, IReadOnlyList<int> limits)
     {
         Presses = presses;
         Motions = motions;
         Marks = marks;
         Screens = screens;
+        Limits = limits;
 
         _starts = new double[screens.Count];
         Array.Fill(_starts, double.NaN);
@@ -69,6 +71,9 @@ internal sealed class InputScript
 
     /// <summary>The screen each block waits for; block 0's is empty.</summary>
     public IReadOnlyList<string> Screens { get; }
+
+    /// <summary>The changed cells each block allows (<c>screen &lt;name&gt; &lt;max changed cells&gt;</c>); 0: the learned screen's limit.</summary>
+    public IReadOnlyList<int> Limits { get; }
 
     /// <summary>The last block that began.</summary>
     public int CurrentBlock
@@ -113,6 +118,7 @@ internal sealed class InputScript
         var motions = new List<ScriptedMotion>();
         var marks = new List<ScriptedMark>();
         var screens = new List<string> { string.Empty };
+        var limits = new List<int> { 0 };
         double previous = 0;
 
         foreach (string raw in lines)
@@ -127,6 +133,7 @@ internal sealed class InputScript
             if (fields[0].Equals(ScreenWord, StringComparison.OrdinalIgnoreCase))
             {
                 screens.Add(ScreenName(fields));
+                limits.Add(ScreenLimit(fields));
                 previous = 0;
 
                 continue;
@@ -142,7 +149,7 @@ internal sealed class InputScript
             ParseLine(fields, screens.Count - 1, presses, motions, marks);
         }
 
-        return new InputScript([.. presses.OrderBy(p => p.Block).ThenBy(p => p.Start)], motions, [.. marks.OrderBy(m => m.Block).ThenBy(m => m.Start)], screens);
+        return new InputScript([.. presses.OrderBy(p => p.Block).ThenBy(p => p.Start)], motions, [.. marks.OrderBy(m => m.Block).ThenBy(m => m.Start)], screens, limits);
     }
 
     /// <summary>Takes over the begun blocks of <paramref name="older"/> while its screens match this script's (a reload).</summary>
@@ -292,6 +299,16 @@ internal sealed class InputScript
         }
 
         return fields[LearnNameField];
+    }
+
+    private static int ScreenLimit(string[] fields)
+    {
+        if (fields.Length <= ScreenLimitField)
+        {
+            return 0;
+        }
+
+        return int.Parse(fields[ScreenLimitField], CultureInfo.InvariantCulture);
     }
 
     private static string ScreenName(string[] fields)

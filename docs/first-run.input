@@ -9,18 +9,23 @@
 #
 # Black "press a button" screen, logos, intro art and the option screens (minimap, text size, the Off option,
 # brightness, controls notice): a Space tap every 3 s until the legal screen shows. A tap does nothing on the legal
-# screen while its Legal item has the focus.
+# screen while its Copyright item has the focus.
 0 Space hold 0.3 repeat 400 every 3
 
-# Legal and photosensitivity: Down, then Down again once the photosensitivity item lets the focus go (about 15 s),
-# then Next.
+# Legal notices, focus on Copyright: Down to the photosensitivity warning, which keeps the focus for about 15 s, then
+# Down until Next has the focus.
 screen legal
 1 Down hold 0.3
-+16 Down hold 0.3
-+1 Space hold 0.3
++15 Down hold 0.3 repeat 10 every 3
 
-# Privacy policy and terms of service: two check boxes that Space toggles, then Confirm.
-screen terms
+# Legal notices, focus on Next: Space until the terms screen shows (the first press after the focus moved can be
+# dropped).
+screen legal-next
+1 Space hold 0.3 repeat 5 every 3
+
+# Privacy policy and terms of service: two check boxes that Space toggles, then Confirm. The policy text scrolls by
+# itself, so the screen allows 100 changed cells.
+screen terms 100
 2 Space hold 0.3
 +1 Down hold 0.3
 +1 Space hold 0.3

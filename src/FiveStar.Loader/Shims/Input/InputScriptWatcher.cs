@@ -236,6 +236,11 @@ internal sealed class InputScriptWatcher : IDisposable
             return;
         }
 
+        if (_script.Limits[block] > 0)
+        {
+            maxChanged = _script.Limits[block];
+        }
+
         int distance = learned.Distance(signature);
         _nearest = Math.Min(_nearest, distance);
         _matches = distance <= maxChanged ? _matches + 1 : 0;

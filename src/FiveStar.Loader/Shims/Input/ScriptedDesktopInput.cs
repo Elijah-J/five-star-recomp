@@ -9,7 +9,7 @@ namespace FiveStar.Loader.Shims.Input;
 /// <summary>
 /// A desktop source with the presses of an <see cref="InputScript"/> added to the keys held for real. The script can
 /// be replaced while the game runs (<see cref="Replace"/>); presses of the new script that already started are not
-/// announced again.
+/// announced again. Two threads poll it (keyboard and gamepad readings), so each press is claimed once.
 /// </summary>
 internal sealed class ScriptedDesktopInput : IDesktopSource
 {
@@ -27,18 +27,21 @@ internal sealed class ScriptedDesktopInput : IDesktopSource
         _inner = inner;
         _clock = clock;
         _log = log;
-        _state = new ScriptState(script, new bool[script.Presses.Count]);
+        _state = new ScriptState(script, new int[script.Presses.Count]);
     }
 
     /// <summary>Uses <paramref name="script"/> from the next poll on; any thread.</summary>
     public void Replace(InputScript script)
     {
         double seconds = _clock.Elapsed.TotalSeconds;
-        var announced = new bool[script.Presses.Count];
+        var announced = new int[script.Presses.Count];
 
         for (int i = 0; i < announced.Length; i++)
         {
-            announced[i] = script.Started(i, seconds);
+            if (script.Started(i, seconds))
+            {
+                announced[i] = 1;
+            }
         }
 
         _state = new ScriptState(script, announced);
@@ -80,9 +83,8 @@ internal sealed class ScriptedDesktopInput : IDesktopSource
     {
         for (int i = 0; i < state.Announced.Length; i++)
         {
-            if (!state.Announced[i] && state.Script.Started(i, seconds))
+            if (state.Announced[i] == 0 && state.Script.Started(i, seconds) && Interlocked.Exchange(ref state.Announced[i], 1) == 0)
             {
-                state.Announced[i] = true;
                 Log(state.Script.Presses[i], seconds);
             }
         }
