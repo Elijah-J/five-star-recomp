@@ -92,8 +92,15 @@ Structured is the default since the control-flow differential (see Testing) ran 
 side: their outputs are equal apart from fast-math rounding in dxc.
 
 `s_getpc; s_add_u32/s_sub_u32; s_addc_u32/s_subb_u32; s_setpc` on one register pair is a long branch and becomes a
-static branch. Other `s_setpc`/`s_swappc` (indirect jumps) are not supported, except the fetch-shader call at a
-vertex shader's entry.
+static branch to the `s_getpc` address + 4 + C. Other `s_setpc`/`s_swappc` (indirect jumps) are not supported, except
+the fetch-shader call at a vertex shader's entry.
+
+Three programs of the dump (`CS_RTShadowTrace32HQ_Tiled`, `CS_RTShadowTrace32TemporalHQ_Tiled`,
+`CS_RTShadowTrace32TemporalHQ_OneOver8RPP_Tiled`) end with a backward long jump whose C is 8 too large, as if measured
+from the end of the `s_sub_u32`. It lands on the `s_branch` of `s_cbranch_execz L; s_branch FAR`, re-entering the code
+that holds the jump: a loop without exit, which hangs the wave on the hardware. Every other long jump of the same shape
+returns to L. When C measured from the end of the `s_add_u32`/`s_sub_u32` gives exactly that conditional branch's
+target L, the jump goes to L (the three programs then translate structured).
 
 ## Resources
 
