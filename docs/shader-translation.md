@@ -398,7 +398,8 @@ fivestar shader translate <program.fssm | folder> <out> [--cache <dir>] [--retry
                           [--native-waves] [--mesh-fallbacks] [--llvm-disassembler] [--llvm <folder>] [--dxc <path>]
 ```
 
-Translates every `*.fssm` (in name order; `--step K` takes every K-th, `--limit N` the first N), writes
+Translates every `*.fssm` (selected in name order; `--step K` takes every K-th, `--limit N` the first N; worked on
+largest file first, so the few programs dxc needs minutes for do not run on alone at the end), writes
 `<out>/<name>.hlsl`, compiles it to `<name>.dxil` and writes `<out>/results.json`. `--cache` keeps translations and
 DXIL between runs (see Cache). `--retry` re-runs only programs whose status in that file is not final and merges the
 results. `--no-compile` skips dxc. `--dispatch` emits the dispatch form instead of structured control flow (see Control
@@ -408,7 +409,9 @@ results.json says so (`wave32 variant ok`). `--mesh-fallbacks` also compiles the
 that compiles (reason `fallback ok`, after `; ` when there is a superstep form), for GPUs without mesh shaders. A compiling
 run ends by writing `variants.json` (see Variant selection). `--llvm-disassembler` disassembles with
 llvm-mc/llvm-objdump instead of `RdnaDecoder` (see Disassembly). Every 10 seconds the command prints programs done,
-elapsed time, estimated time left and finish time, and the cache counts.
+elapsed time, estimated time left and finish time, and the cache counts. Every compile that runs (not one the cache
+answers) appends a line to `<out>/compile-times.tsv`: source file, profile, `-O3` or `-Od`, source characters, DXIL
+bytes, milliseconds and `ok`, `fail` or `timeout`.
 
 dxc runs as `dxc.exe -T <stage>_6_7 -E main -HV 2021 -I <out> -Fo <name>.dxil`, one process per compile, with a 180 s
 limit; a timed-out compile is retried with `-Od` for 300 s (900 s with `--retry`); fallback compiles have 600 s.
