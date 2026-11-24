@@ -63,6 +63,24 @@ uint2 buf_view(uint d0, uint d1, bool rw) {
 }
 uint buf_stride(uint d1) { return (d1 >> 16) & 0x3fffu; }
 
+// RDNA range checking: an out-of-range buffer load reads 0, and an out-of-range store or atomic is dropped. Programs
+// rely on it (append and argument writers run past their allocation, loops read zeros past an end). OOB_SELECT (V#
+// dword3 bits 28-29): 2 checks nothing; 3 (raw) checks index * stride + offset against num_records (dword2); 0 and 1
+// (structured) check the index (0 also the offset against the stride, left out: the shim's own records leave the field
+// at 0). A V# with stride 0 is raw. The offset is the VGPR offset plus the instruction offset; soffset is not checked.
+bool buf_ok(uint d1, uint d2, uint d3, uint index, uint offset) {
+    uint sel = (d3 >> 28) & 3u;
+    uint stride = buf_stride(d1);
+    if (sel == 2u) return true;
+    if (sel == 3u || stride == 0u) return index * stride + offset < d2;
+    return index < d2;
+}
+// s_buffer_load: the whole offset against num_records, counted in bytes (stride 0) or in strides.
+bool sbuf_ok(uint d1, uint d2, uint offset) {
+    uint stride = buf_stride(d1);
+    return (stride == 0u ? offset : offset / stride) < d2;
+}
+
 uint BufLoad(uint heap_index, uint off) {
     ByteAddressBuffer b = ResourceDescriptorHeap[heap_index];
     return b.Load(off & ~3u);

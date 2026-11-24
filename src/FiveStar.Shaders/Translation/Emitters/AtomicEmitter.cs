@@ -163,10 +163,13 @@ internal sealed partial class AtomicEmitter
         var vaddr = OperandParser.Parse(arguments[Address]);
         var soffset = OperandParser.Parse(arguments[SOffset]);
         var byteAddress = BufferAddress.Build(_operands, vaddr, resource, soffset, modifiers);
+        var inRange = BufferAddress.InRange(_operands, resource, BufferAddress.RangeOperands(_operands, vaddr, modifiers), 0);
         var view = BufferAddress.View(_operands, resource, true);
+
         var result = atomic.Result;
 
-        _state.Emit($"  uint {result} = 0; if (active) {{ RWByteAddressBuffer _b{result} = ResourceDescriptorHeap[{view}.x];");
+        // Out of range: no write, and the returned value is 0.
+        _state.Emit($"  uint {result} = 0; if (active && {inRange}) {{ RWByteAddressBuffer _b{result} = ResourceDescriptorHeap[{view}.x];");
         _state.Emit($"    _b{result}.{Operation(atomic, atomic.Data, $"({view}.y + {byteAddress})")}; }}");
     }
 

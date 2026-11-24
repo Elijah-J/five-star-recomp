@@ -16,6 +16,8 @@ internal static class BufferAddress
 {
     private const int BaseDword = 0;
     private const int StrideDword = 1;
+    private const int RecordsDword = 2;
+    private const int FormatDword = 3;
 
     /// <summary>A uint2 temporary holding the V#'s heap index (x) and the byte offset of its base in that view (y).</summary>
     public static string View(OperandAccess operands, Operand resource, bool writable)
@@ -47,6 +49,42 @@ internal static class BufferAddress
         }
 
         return address + ")";
+    }
+
+    /// <summary>
+    /// The index and the checked offset (VGPR offset + instruction offset, not soffset) of a MUBUF/MTBUF access, as
+    /// snapped temporaries for <see cref="InRange"/>.
+    /// </summary>
+    public static (string Index, string Offset) RangeOperands(OperandAccess operands, Operand vaddr, InstructionModifiers modifiers)
+    {
+        var indexed = modifiers.Has("idxen");
+        var offset = modifiers.Has("offen");
+        var index = "0u";
+        var bytes = $"{modifiers.Integer("offset", 0)}u";
+
+        if (indexed && offset)
+        {
+            index = operands.Read(vaddr, Low);
+            bytes += $" + {operands.Read(vaddr, High)}";
+        }
+        else if (indexed)
+        {
+            index = operands.Read(vaddr);
+        }
+        else if (offset)
+        {
+            bytes += $" + {operands.Read(vaddr)}";
+        }
+
+        var values = operands.Snap(index, bytes);
+
+        return (values[0], values[1]);
+    }
+
+    /// <summary>The prelude's range check (buf_ok) of an access <paramref name="extraBytes"/> past <paramref name="at"/>.</summary>
+    public static string InRange(OperandAccess operands, Operand resource, (string Index, string Offset) at, int extraBytes)
+    {
+        return $"buf_ok({operands.Read(resource, StrideDword)}, {operands.Read(resource, RecordsDword)}, {operands.Read(resource, FormatDword)}, {at.Index}, {at.Offset} + {extraBytes}u)";
     }
 
     private static string Stride(OperandAccess operands, Operand resource)
