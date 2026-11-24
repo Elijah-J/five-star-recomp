@@ -179,10 +179,13 @@ internal sealed class BodyWriter
         return lines;
     }
 
-    /// <summary>The wave-uniform block dispatch: every lane follows the same pc; divergence lives in <c>active</c>.</summary>
+    /// <summary>
+    /// The wave-uniform block dispatch: every lane follows the same pc; divergence lives in <c>active</c>. It stops after
+    /// <see cref="LoopGuard.DispatchSteps"/> blocks.
+    /// </summary>
     private List<string> Dispatch(bool dropOutputs)
     {
-        var lines = new List<string> { "  [loop] while (pc < PC_YIELD) {", "    switch (pc) {" };
+        var lines = new List<string> { $"  [loop] for (uint pc_steps = 0; pc < PC_YIELD && pc_steps < {LoopGuard.DispatchHex}; pc_steps++) {{", "    switch (pc) {" };
 
         foreach (var block in _state.Blocks)
         {

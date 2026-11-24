@@ -62,7 +62,8 @@ targets and the instruction after a branch or an early `s_endpgm`; blocks not re
 after the last `s_endpgm`) are skipped. A program without branches is emitted as straight-line code.
 
 **Dispatch form** (`--dispatch`, `TranslationOptions.StructuredControlFlow` false). Blocks become `case`s of a
-`switch (pc)` inside `[loop] while (pc < PC_YIELD)`; each block ends by setting `pc` (`PC_END` after `s_endpgm`).
+`switch (pc)` inside `[loop] for (uint pc_steps = 0; pc < PC_YIELD && pc_steps < ...; pc_steps++)` (see Loop guard);
+each block ends by setting `pc` (`PC_END` after `s_endpgm`).
 
 **Structured form** (the default). The blocks become nested statements:
 
@@ -90,6 +91,17 @@ exits (`loop without exit`; DXIL requires every loop to have a break).
 
 Structured is the default since the control-flow differential (see Testing) ran both forms of real programs side by
 side: their outputs are equal apart from fast-math rounding in dxc.
+
+### Loop guard
+
+Every loop is bounded (`LoopGuard`): a structured loop counts its iterations in `uint loop_guardN` and leaves after
+65,536 through `break` (a loop with several exits then takes the one numbered 0), and the dispatch `while` stops after
+2^24 blocks. A console program's loops end on the data the console gives it; on the PC one wrong input keeps a loop
+going until the driver removes the device. In the story load, `InstanceCulling~CS_Prop_BatchCull` (counted loops that
+end when a counter equals a bound read from a buffer) and then `scattering_transmittance_system~CS_DensityShadowMapCheckerboard`
+(a ray march whose float step counter, incremented by 1.0, must reach a step count converted from a float) never
+finished. The guard turns such a hang into wrong output for that dispatch; the inputs themselves are the open
+question.
 
 `s_getpc; s_add_u32/s_sub_u32; s_addc_u32/s_subb_u32; s_setpc` on one register pair is a long branch and becomes a
 static branch to the `s_getpc` address + 4 + C. Other `s_setpc`/`s_swappc` (indirect jumps) are not supported, except
