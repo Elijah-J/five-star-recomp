@@ -7,6 +7,42 @@ namespace FiveStar.Loader.Shims.Xg;
 internal static class XgAddress
 {
     /// <summary>
+    /// GetTexelElementOffsetBytes: the offset from the resource start of element (x, y) of a mip of an array (or depth)
+    /// slice, or 0 when the plane, mip or slice does not exist.
+    /// </summary>
+    [HotPath]
+    public static ulong Texel(in XgSurface surface, uint planeIndex, uint mipIndex, ulong x, uint y, uint slice)
+    {
+        if (planeIndex >= (uint)surface.PlaneCount)
+        {
+            return 0;
+        }
+
+        ref readonly XgPlane plane = ref surface.Planes[(int)planeIndex];
+
+        if (mipIndex >= (uint)plane.MipCount || slice >= (uint)plane.Slices || x > uint.MaxValue)
+        {
+            return 0;
+        }
+
+        return Element(plane, (int)mipIndex, (int)slice, (uint)x, y);
+    }
+
+    /// <summary>GetMipLevelOffsetBytes: the offset from the resource start of a mip of array slice 0, or 0 when it does not exist.</summary>
+    [HotPath]
+    public static ulong Mip(in XgSurface surface, uint planeIndex, uint mipIndex)
+    {
+        if (planeIndex >= (uint)surface.PlaneCount || mipIndex >= (uint)surface.Planes[(int)planeIndex].MipCount)
+        {
+            return 0;
+        }
+
+        ref readonly XgPlane plane = ref surface.Planes[(int)planeIndex];
+
+        return plane.Offset + plane.Mips[(int)mipIndex].Offset;
+    }
+
+    /// <summary>
     /// The offset from the resource start of element (x, y) of a mip of an array slice. Blocks are row-major across
     /// the mip's padded pitch; a tail mip is addressed with the whole block's swizzle from its first element.
     /// </summary>

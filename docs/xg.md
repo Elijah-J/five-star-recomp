@@ -14,6 +14,7 @@ thunks at 0x145f3ff40 and 0x145f3ff50.
 | 0x140979c75 | 0x140979c40 | yes | slot 2 (layout): keeps a mip's Size, Slice2DSize and PitchBytes; slot 9 later reads the mip back (0x140979e30) |
 | 0x1416f7141 | 0x1416f7100 | no | slot 8 for every mip of every array slice, then Release: tiles row-major data into the resource |
 | 0x145121a5e | 0x145121980 | yes | slot 2, then Release: caches one plane entry (0x6c8 bytes); 0x145121690 and 0x14555ea00 take a mip's address (slice x stride + Offset), Size, Slice2DSize and PitchBytes from it |
+| 0x1455acdd0, inlined at 0x145151d98, 0x145151e7d, 0x1451a0ddb, 0x1451de676, 0x1451df086 | the computer of 0x140979c40 | return is an offset | slot 6: adds the offset to the tiled resource base to address one element (x and y divided by 4 for BC formats) |
 | 0x144eccca2, 0x140c4b3ce | `XGSuggestSwizzleMode` | passed on | `(desc, 0, &desc->Layout)` when the asset asks for a suggested mode (mode byte 0xFF) |
 
 ## Description
@@ -47,11 +48,20 @@ A native object: vtable, reference count and the computed layout. Slots seen in 
 |---|---|---|
 | 1 | Release | |
 | 2 | GetResourceLayout | `XG_RESOURCE_LAYOUT*` |
+| 3 | UINT64 GetResourceSizeBytes | |
+| 4 | UINT64 GetResourceBaseAlignmentBytes | |
+| 5 | UINT64 GetMipLevelOffsetBytes | plane, mip |
+| 6 | UINT64 GetTexelElementOffsetBytes | plane, mip, UINT64 x, y, z or slice, sample, `UINT*` bit offset (null) |
 | 8 | CopyIntoSubresource | resource, plane, subresource, linear, row pitch, slice pitch |
 | 9 | CopyFromSubresource | linear, plane, subresource, a UINT the game passes as 0, resource, row pitch, slice pitch |
 | 10 | GetResourceTiling | as `ID3D12Device::GetResourceTiling` after the resource: tile count, packed mip info, tile shape, in/out count, first, tilings |
 
-Slot 0 is taken as AddRef. Slots 3-7 and 11-15 are stubs that log their first call and return E_NOTIMPL.
+Slot 0 is taken as AddRef. The names follow the XDK method order (AddRef, Release, GetResourceLayout, GetResourceSizeBytes,
+GetResourceBaseAlignmentBytes, GetMipLevelOffsetBytes, GetTexelElementOffsetBytes, GetTexelCoordinate, CopyIntoSubresource,
+CopyFromSubresource, GetResourceTiling), which slots 2 and 6-10 match in arguments; the game was not seen calling 3-5.
+Slot 6's mip is the wrapper's mip index (0x140979cce), its slice an override or the caller's z, its sample 0; offsets count
+from the resource start, the base the game also passes to CopyFromSubresource. Offsets of a plane, mip or slice that
+does not exist are 0. Slots 7 and 11-15 are stubs that log their first call and return E_NOTIMPL.
 A subresource is mip + slice x mips; the plane is passed apart.
 
 `XG_RESOURCE_LAYOUT` is 0x1B40 bytes (the game's stack buffers). Fields marked read are the ones the game reads; the
@@ -110,7 +120,7 @@ the same way. Tile indices from GetResourceTiling count 64 KB tiles of this layo
 
 ## Unknown
 
-- The XG names and meaning of slots 0 and 3-7 and of the fourth CopyFromSubresource argument; the
+- Slot 7 (GetTexelCoordinate by the XDK order) and the meaning of the fourth CopyFromSubresource argument; the
   `XGSuggestSwizzleMode` second argument.
 - The plane and mip fields the game does not read; whether SizeBytes of a tail mip is the tail's or the mip's.
 - The swizzle modes behind the `.ttpf` layout bases and the exact XG suggestion rule.

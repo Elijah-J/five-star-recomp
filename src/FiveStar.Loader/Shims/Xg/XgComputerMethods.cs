@@ -7,8 +7,8 @@ using FiveStar.Loader.Native;
 namespace FiveStar.Loader.Shims.Xg;
 
 /// <summary>
-/// The implemented slots of the XGTextureAddressComputer vtable. Signatures come from the game's calls (docs/xg.md):
-/// the slot numbers and argument lists are the ones its four call sites use.
+/// The implemented slots of the XGTextureAddressComputer vtable. Signatures come from the game's calls (docs/xg.md);
+/// slots 3-5, which the game was not seen calling, follow the XDK method order that slots 2 and 6-10 match.
 /// </summary>
 internal static unsafe class XgComputerMethods
 {
@@ -46,6 +46,47 @@ internal static unsafe class XgComputerMethods
         XgLayoutWriter.Write(((XgComputerObject*)self)->Surface, layout);
 
         return HResult.Ok;
+    }
+
+    /// <summary>Slot 3: UINT64 GetResourceSizeBytes().</summary>
+    [HotPath]
+    [UnmanagedCallersOnly]
+    public static ulong GetResourceSizeBytes(nint self)
+    {
+        return ((XgComputerObject*)self)->Surface.Size;
+    }
+
+    /// <summary>Slot 4: UINT64 GetResourceBaseAlignmentBytes().</summary>
+    [HotPath]
+    [UnmanagedCallersOnly]
+    public static ulong GetResourceBaseAlignmentBytes(nint self)
+    {
+        return ((XgComputerObject*)self)->Surface.Alignment;
+    }
+
+    /// <summary>Slot 5: UINT64 GetMipLevelOffsetBytes(UINT plane, UINT mip).</summary>
+    [HotPath]
+    [UnmanagedCallersOnly]
+    public static ulong GetMipLevelOffsetBytes(nint self, uint plane, uint mip)
+    {
+        return XgAddress.Mip(((XgComputerObject*)self)->Surface, plane, mip);
+    }
+
+    /// <summary>
+    /// Slot 6: UINT64 GetTexelElementOffsetBytes(UINT plane, UINT mip, UINT64 x, UINT y, UINT zOrSlice, UINT sample,
+    /// UINT* bitOffset). x and y count elements (the game divides BC coordinates by 4); the sample is ignored (no MSAA
+    /// layouts) and the bit offset is 0 (no sub-byte elements).
+    /// </summary>
+    [HotPath]
+    [UnmanagedCallersOnly]
+    public static ulong GetTexelElementOffsetBytes(nint self, uint plane, uint mip, ulong x, uint y, uint zOrSlice, uint sample, uint* bitOffset)
+    {
+        if (bitOffset != null)
+        {
+            *bitOffset = 0;
+        }
+
+        return XgAddress.Texel(((XgComputerObject*)self)->Surface, plane, mip, x, y, zOrSlice);
     }
 
     /// <summary>Slot 8: CopyIntoSubresource(void* resource, UINT plane, UINT subresource, const void* linear, UINT rowPitch, UINT slicePitch).</summary>

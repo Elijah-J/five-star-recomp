@@ -22,6 +22,10 @@ internal sealed unsafe class XgComputers : IDisposable
     private const int AddRefSlot = 0;
     private const int ReleaseSlot = 1;
     private const int GetResourceLayoutSlot = 2;
+    private const int GetResourceSizeBytesSlot = 3;
+    private const int GetResourceBaseAlignmentBytesSlot = 4;
+    private const int GetMipLevelOffsetBytesSlot = 5;
+    private const int GetTexelElementOffsetBytesSlot = 6;
     private const int CopyIntoSubresourceSlot = 8;
     private const int CopyFromSubresourceSlot = 9;
     private const int GetResourceTilingSlot = 10;
@@ -91,6 +95,12 @@ internal sealed unsafe class XgComputers : IDisposable
         delegate* unmanaged<nint, uint> addRef = &XgComputerMethods.AddRef;
         delegate* unmanaged<nint, uint> release = &XgComputerMethods.Release;
         delegate* unmanaged<nint, byte*, int> layout = &XgComputerMethods.GetResourceLayout;
+
+        delegate* unmanaged<nint, ulong> size = &XgComputerMethods.GetResourceSizeBytes;
+        delegate* unmanaged<nint, ulong> alignment = &XgComputerMethods.GetResourceBaseAlignmentBytes;
+        delegate* unmanaged<nint, uint, uint, ulong> mipOffset = &XgComputerMethods.GetMipLevelOffsetBytes;
+        delegate* unmanaged<nint, uint, uint, ulong, uint, uint, uint, uint*, ulong> texelOffset = &XgComputerMethods.GetTexelElementOffsetBytes;
+
         delegate* unmanaged<nint, byte*, uint, uint, byte*, uint, uint, int> copyInto = &XgComputerMethods.CopyIntoSubresource;
         delegate* unmanaged<nint, byte*, uint, uint, uint, byte*, uint, uint, int> copyFrom = &XgComputerMethods.CopyFromSubresource;
         delegate* unmanaged<nint, uint*, XgPackedMipInfo*, XgTileShape*, uint*, uint, XgSubresourceTiling*, void> tiling = &XgComputerMethods.GetResourceTiling;
@@ -98,6 +108,12 @@ internal sealed unsafe class XgComputers : IDisposable
         vtable[AddRefSlot] = (nint)addRef;
         vtable[ReleaseSlot] = (nint)release;
         vtable[GetResourceLayoutSlot] = (nint)layout;
+
+        vtable[GetResourceSizeBytesSlot] = (nint)size;
+        vtable[GetResourceBaseAlignmentBytesSlot] = (nint)alignment;
+        vtable[GetMipLevelOffsetBytesSlot] = (nint)mipOffset;
+        vtable[GetTexelElementOffsetBytesSlot] = (nint)texelOffset;
+
         vtable[CopyIntoSubresourceSlot] = (nint)copyInto;
         vtable[CopyFromSubresourceSlot] = (nint)copyFrom;
         vtable[GetResourceTilingSlot] = (nint)tiling;
