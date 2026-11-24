@@ -68,6 +68,13 @@ internal sealed unsafe class TlsHostAttacher
         image.TlsIndex = index;
         image.TlsCallbackCount = template.Callbacks.Count;
         _log.Info($"  TLS: {template.RawData.Length} template bytes + {template.ZeroFill} zero-fill, {template.Callbacks.Count} callback(s); host {Path.GetFileName(path)} @ 0x{host:x}, _tls_index={index}");
+
+        if (template.OwnsSlotZero)
+        {
+            image.TlsSlotZeroSaveOffset = TlsSlotZero.SaveOffset(template);
+            int threads = TlsSlotZeroThreads.EnterExisting(index, image.TlsSlotZeroSaveOffset);
+            _log.Info($"  TLS: slot 0 of {threads} thread(s) started before the host points at the executable's block");
+        }
     }
 
     private static TlsTemplate ReadTemplate(LoadedImage image, byte* directory)

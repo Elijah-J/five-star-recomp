@@ -31,4 +31,14 @@ internal static unsafe class Ntdll
 
     [DllImport(Library)]
     public static extern int NtQueryInformationProcess(nint process, int informationClass, void* information, int length, int* returnLength);
+
+    [DllImport(Library)]
+    public static extern int NtQueryInformationThread(nint thread, int informationClass, void* information, int length, int* returnLength);
+
+    /// <summary>Enters the loader lock, which thread attach and detach (with their TLS blocks) also hold.</summary>
+    [DllImport(Library)]
+    public static extern int LdrLockLoaderLock(uint flags, uint* disposition, nint* cookie);
+
+    [DllImport(Library)]
+    public static extern int LdrUnlockLoaderLock(uint flags, nint cookie);
 }

@@ -181,6 +181,12 @@ internal sealed class ImageLoader
 
         if (image.TlsHost != 0)
         {
+            // ntdll frees every thread's block of the slot; slot 0 of the other threads must not point at one by then.
+            if (image.TlsSlotZeroSaveOffset >= 0)
+            {
+                _ = TlsSlotZeroThreads.LeaveExisting(image.TlsIndex, image.TlsSlotZeroSaveOffset);
+            }
+
             _ = Kernel32.FreeLibrary(image.TlsHost);
         }
 
