@@ -29,6 +29,9 @@ public sealed partial class CorpusTranslator
     /// <summary>The note of a mesh program whose superstep form also compiled as a fallback.</summary>
     public const string SuperstepFallbackReady = SuperstepFallbackNote + ReadySuffix;
 
+    /// <summary>The note of a program whose native form no GPU of the run picks (<see cref="CorpusOptions.Waves"/>).</summary>
+    public const string NativeSkipped = "native form not compiled";
+
     /// <summary>What a note of a form that compiled ends with.</summary>
     public const string ReadySuffix = " ok";
 
@@ -175,13 +178,32 @@ public sealed partial class CorpusTranslator
             return new ProgramResult(translated.Name, stageName, ProgramStatus.Ok, null);
         }
 
-        var (status, reason) = Compile(_compiler, hlslPath, translated.Hlsl, translated);
+        var (native, variant) = Forms(translated, options.Waves);
+        var status = ProgramStatus.Ok;
+        string? reason = null;
         var notes = new List<string>();
 
-        if (status == ProgramStatus.Ok && translated.GroupWave is not null)
+        if (native)
+        {
+            (status, reason) = Compile(_compiler, hlslPath, translated.Hlsl, translated);
+        }
+        else
+        {
+            // No GPU of the run picks it: an older run's DXIL of it must not stay behind.
+            File.Delete(Path.ChangeExtension(hlslPath, ".dxil"));
+            notes.Add(NativeSkipped);
+        }
+
+        if (status == ProgramStatus.Ok && translated.GroupWave is not null && variant)
         {
             var variantPath = Path.Combine(options.OutputFolder, translated.Name + GroupWaveSuffix);
-            notes.Add(CompileGroupWave(_compiler, variantPath, translated, translated.GroupWave));
+            var note = CompileGroupWave(_compiler, variantPath, translated, translated.GroupWave);
+            notes.Add(note);
+
+            if (!native && note != GroupWaveReady)
+            {
+                return new ProgramResult(translated.Name, stageName, ProgramStatus.CompileFailure, note);
+            }
         }
 
         if (translated.Stage == ShaderStage.Mesh && _fallback is not null && status is ProgramStatus.Ok or ProgramStatus.OkMeshFallback)
@@ -241,6 +263,34 @@ public sealed partial class CorpusTranslator
         }
 
         return notes;
+    }
+
+    /// <summary>
+    /// Which of a program's native form and wave variant the run's GPUs (<see cref="CorpusOptions.Waves"/>) pick: a
+    /// mesh program runs natively where the narrowest wave reaches its floor and as its superstep form elsewhere; a
+    /// pinned compute program natively where the pin is a hardware wave size and as its wave32 variant elsewhere. Both
+    /// without GPUs, for other programs and when the variant did not translate.
+    /// </summary>
+    private static (bool Native, bool Variant) Forms(TranslatedProgram program, IReadOnlyList<WaveRange>? waves)
+    {
+        if (waves is null || waves.Count == 0 || program.GroupWave?.Hlsl is null)
+        {
+            return (true, true);
+        }
+
+        var facts = Analysis.WaveFacts.Read(program.Hlsl!);
+
+        if (program.Stage == ShaderStage.Mesh && facts.Floor is { } floor)
+        {
+            return (waves.Any(wave => floor <= wave.Min), waves.Any(wave => floor > wave.Min));
+        }
+
+        if (program.Stage == ShaderStage.Compute && facts.WavePin is { } pin)
+        {
+            return (waves.Any(wave => wave.Offers(pin)), waves.Any(wave => !wave.Offers(pin)));
+        }
+
+        return (true, true);
     }
 
     /// <summary>The note of a mesh fallback that was compiled: <c>&lt;note&gt; ok</c> or why it failed.</summary>

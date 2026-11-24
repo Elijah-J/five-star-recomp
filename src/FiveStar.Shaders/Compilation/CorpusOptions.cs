@@ -19,4 +19,10 @@ public sealed record CorpusOptions(string OutputFolder, IReadOnlySet<ShaderStage
     /// shaders (a program over the PC output limits always gets it).
     /// </summary>
     public bool MeshFallbacks { get; init; }
+
+    /// <summary>
+    /// The GPUs the run is for; null compiles every form. With them, of a program with a wave variant (a pinned compute
+    /// program, a mesh program with a superstep form) only the forms one of these GPUs picks are compiled.
+    /// </summary>
+    public IReadOnlyList<WaveRange>? Waves { get; init; }
 }

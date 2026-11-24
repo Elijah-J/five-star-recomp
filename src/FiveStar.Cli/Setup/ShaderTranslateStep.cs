@@ -40,10 +40,13 @@ internal sealed class ShaderTranslateStep : ISetupStep
     /// <summary>The setup option that asks for mesh fallbacks whatever the GPUs.</summary>
     public const string MeshFallbacksFlag = "mesh-fallbacks";
 
+    /// <summary>The setup option that compiles every form of every program, whatever the GPUs (for another machine).</summary>
+    public const string AllFormsFlag = "all-forms";
+
     private static readonly string[] ToolOptions = ["llvm", "dxc"];
 
     private string? _tool;
-    private bool? _fallbacks;
+    private List<AdapterInfo>? _gpus;
 
     public string Name => StepName;
 
@@ -67,7 +70,7 @@ internal sealed class ShaderTranslateStep : ISetupStep
     {
         _tool ??= Identity(context.Arguments);
 
-        return new StepFingerprint(Fingerprints.Combine(Fingerprints.OfContent(context.ManifestPath), context.Sample, Fallbacks(context).ToString()), _tool);
+        return new StepFingerprint(Fingerprints.Combine(Fingerprints.OfContent(context.ManifestPath), context.Sample, Fallbacks(context).ToString(), Waves(context) ?? AllFormsFlag), _tool);
     }
 
     public bool HasOutputs(SetupContext context) =>
@@ -136,9 +139,32 @@ internal sealed class ShaderTranslateStep : ISetupStep
     /// </summary>
     private bool Fallbacks(SetupContext context)
     {
-        _fallbacks ??= context.Arguments.Flag(MeshFallbacksFlag) || AdapterCatalog.List().Any(adapter => adapter is { Software: false, ShaderModel: not null, MeshShaders: false });
+        return context.Arguments.Flag(MeshFallbacksFlag) || Gpus().Any(adapter => !adapter.MeshShaders);
+    }
 
-        return _fallbacks.Value;
+    /// <summary>
+    /// The wave sizes of this machine's GPUs for <c>--waves</c>, so only the forms they pick are compiled (a NVIDIA GPU
+    /// never runs the native form of a mesh program whose floor is above 32 lanes); null with <c>--all-forms</c> or
+    /// without a GPU, which compiles every form.
+    /// </summary>
+    private string? Waves(SetupContext context)
+    {
+        var gpus = Gpus();
+
+        if (context.Arguments.Flag(AllFormsFlag) || gpus.Count == 0)
+        {
+            return null;
+        }
+
+        return string.Join(",", gpus.Select(adapter => new WaveRange(adapter.WaveLaneCountMin, adapter.WaveLaneCountMax).ToString()).Distinct());
+    }
+
+    /// <summary>The hardware adapters with a D3D12 device.</summary>
+    private List<AdapterInfo> Gpus()
+    {
+        _gpus ??= AdapterCatalog.List().Where(adapter => adapter is { Software: false, ShaderModel: not null }).ToList();
+
+        return _gpus;
     }
 
     private static string ResultsPath(SetupContext context)
@@ -154,6 +180,11 @@ internal sealed class ShaderTranslateStep : ISetupStep
         if (Fallbacks(context))
         {
             arguments.Add("--" + MeshFallbacksFlag);
+        }
+
+        if (Waves(context) is { } waves)
+        {
+            arguments.AddRange(["--waves", waves]);
         }
 
         if (context.Limit is not null)

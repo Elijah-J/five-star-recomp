@@ -33,7 +33,7 @@ internal static class TranslateCommand
         if (arguments.Positional.Count != TwoPaths)
         {
             throw new ArgumentException(
-                "translate <fssm-or-folder> <out> [--cache <dir>] [--retry results.json] [--stages ps,vs,cs,ms,gs] [--jobs N] [--dispatch] [--native-waves] [--mesh-fallbacks] [--llvm-disassembler]");
+                "translate <fssm-or-folder> <out> [--cache <dir>] [--retry results.json] [--stages ps,vs,cs,ms,gs] [--jobs N] [--dispatch] [--native-waves] [--mesh-fallbacks] [--waves min-max,...] [--llvm-disassembler]");
         }
 
         var programs = Programs(arguments);
@@ -43,6 +43,7 @@ internal static class TranslateCommand
         {
             Translation = new TranslationOptions(!arguments.Flag(DispatchFlag), PinWaveSize: true, EmulateWaveSize: !arguments.Flag(NativeWavesFlag)),
             MeshFallbacks = arguments.Flag(MeshFallbacksFlag),
+            Waves = Waves(arguments.Option("waves")),
         };
 
         var dxc = Compiler(arguments, retry is not null);
@@ -82,6 +83,17 @@ internal static class TranslateCommand
         }
 
         return Success;
+    }
+
+    /// <summary>The GPUs of <c>--waves 32-32,32-64</c>: only the forms they pick are compiled; null compiles all.</summary>
+    private static IReadOnlyList<WaveRange>? Waves(string? list)
+    {
+        if (list is null)
+        {
+            return null;
+        }
+
+        return WaveRange.ParseList(list);
     }
 
     /// <summary>The usage record of this translator and compiler build in the cache, or null without a cache.</summary>
