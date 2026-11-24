@@ -15,7 +15,14 @@ namespace FiveStar.Loader.Shims.D3D12X.Pipelines;
 /// </summary>
 internal sealed unsafe class PipelineFactory
 {
+    /// <summary>
+    /// DXIL size from which a pipeline is built alone: the NVIDIA driver took over 40 GB and minutes for one of the
+    /// 10 MB ray-traced shadow programs (docs/d3d12x-pipelines.md), so two at once can exhaust memory.
+    /// </summary>
+    public const long HeavyShaderBytes = 4L << 20;
+
     private readonly object _gate = new();
+    private readonly object _heavy = new();
     private readonly nint _device2;
     private readonly nint _rootSignature;
     private readonly IProgramLibrary _programs;
@@ -31,7 +38,10 @@ internal sealed unsafe class PipelineFactory
     /// <param name="warnings">Where failures are reported, once each.</param>
     /// <param name="rectangles">Told every graphics pipeline, for its rectangle-list variant; null for none.</param>
     /// <param name="standIns">Hands out pipelines the driver takes too long for.</param>
-    public PipelineFactory(nint device2, nint rootSignature, IProgramLibrary programs, ProgramSignatures signatures, OnceLog warnings, RectanglePipelines? rectangles, StandInPipelines standIns)
+    /// <param name="cache">The disk cache of built pipelines; null for none.</param>
+    public PipelineFactory(
+        nint device2, nint rootSignature, IProgramLibrary programs, ProgramSignatures signatures, OnceLog warnings, RectanglePipelines? rectangles, StandInPipelines standIns,
+        PipelineLibraryCache? cache)
     {
         _device2 = device2;
         _rootSignature = rootSignature;
@@ -39,9 +49,14 @@ internal sealed unsafe class PipelineFactory
         _signatures = signatures;
 
         _warnings = warnings;
+
         _rectangles = rectangles;
         StandIns = standIns;
+        Cache = cache;
     }
+
+    /// <summary>The disk cache of built pipelines, or null.</summary>
+    public PipelineLibraryCache? Cache { get; }
 
     /// <summary>Pipelines handed out before the driver built them.</summary>
     public StandInPipelines StandIns { get; }
@@ -50,6 +65,42 @@ internal sealed unsafe class PipelineFactory
     public PipelineCreationsInFlight InFlight { get; } = new();
 
     public int Graphics(GraphicsPipelineDescription description, Guid* iid, nint* result)
+    {
+        var recipe = PrepareGraphics(description);
+
+        if (recipe is null)
+        {
+            return HResult.NotFound;
+        }
+
+        InFlight.Describe(recipe.Names);
+        Action<nint> built = pipeline => _rectangles?.Remember(pipeline, recipe.Desktop!, recipe.Programs);
+        var hr = Create(recipe.Stream, iid, result, recipe.Names, built);
+
+        return Remember(description, hr, result, recipe.Names);
+    }
+
+    public int Compute(ComputePipelineDescription description, Guid* iid, nint* result)
+    {
+        var recipe = PrepareCompute(description);
+
+        if (recipe is null)
+        {
+            return HResult.NotFound;
+        }
+
+        InFlight.Describe(recipe.Names);
+        var hr = Create(recipe.Stream, iid, result, recipe.Names, null);
+        Report(hr, recipe.Names);
+
+        return hr;
+    }
+
+    /// <summary>
+    /// The desktop stream of a graphics description: its translated programs, the vertex elements renamed to the
+    /// translated attributes. Null when a shader has no translation (reported once).
+    /// </summary>
+    public PipelineRecipe? PrepareGraphics(GraphicsPipelineDescription description)
     {
         var programs = new List<TranslatedProgram>();
         IReadOnlyList<SignatureElement>? inputs = null;
@@ -60,7 +111,7 @@ internal sealed unsafe class PipelineFactory
 
             if (program is null)
             {
-                return HResult.NotFound;
+                return null;
             }
 
             if (program.Stage == HardwareStage.Vertex)
@@ -79,28 +130,21 @@ internal sealed unsafe class PipelineFactory
         }
 
         var names = string.Join(" + ", programs.Select(program => program.Name));
-        InFlight.Describe(names);
-        var wanted = *iid;
-        var hr = StandIns.Create(() => BuildGraphics(desktop, programs, wanted), result, names, built => _rectangles?.Remember(built, desktop, programs));
 
-        return Remember(description, hr, result, names);
+        return new PipelineRecipe(DesktopPipelineBuilder.GraphicsStream(_device2, _rootSignature, desktop, programs), desktop, programs, names);
     }
 
-    public int Compute(ComputePipelineDescription description, Guid* iid, nint* result)
+    /// <summary>The desktop stream of a compute description; null when its shader has no translation.</summary>
+    public PipelineRecipe? PrepareCompute(ComputePipelineDescription description)
     {
         var program = Resolve(description.Shader);
 
         if (program is null)
         {
-            return HResult.NotFound;
+            return null;
         }
 
-        InFlight.Describe(program.Name);
-        var wanted = *iid;
-        var hr = StandIns.Create(() => BuildCompute(program, wanted), result, program.Name, null);
-        Report(hr, program.Name);
-
-        return hr;
+        return new PipelineRecipe(DesktopPipelineBuilder.ComputeStream(_rootSignature, program), null, [program], program.Name);
     }
 
     /// <summary>A graphics pipeline made by this factory with some of its fixed-function descs replaced.</summary>
@@ -148,18 +192,55 @@ internal sealed unsafe class PipelineFactory
         }
     }
 
-    private PipelineResult BuildGraphics(GraphicsPipelineDescription description, List<TranslatedProgram> programs, Guid iid)
+    /// <summary>
+    /// The pipeline of <paramref name="stream"/>: from the cache on this thread when it is there, else built on the
+    /// build threads (<see cref="StandInPipelines"/>) and stored in the cache. Takes ownership of the stream.
+    /// </summary>
+    private int Create(DesktopStream stream, Guid* iid, nint* result, string names, Action<nint>? built)
     {
-        nint pipeline = 0;
-        int hr = DesktopPipelineBuilder.Graphics(_device2, _rootSignature, description, programs, &iid, &pipeline);
+        if (Cache is not null && !HResult.Failed(Cache.Load(stream, iid, result)))
+        {
+            stream.Dispose();
+            built?.Invoke(*result);
 
-        return new PipelineResult(hr, pipeline);
+            return HResult.Ok;
+        }
+
+        *result = 0;
+        var wanted = *iid;
+
+        return StandIns.Create(() => Build(stream, wanted), result, names, built);
     }
 
-    private PipelineResult BuildCompute(TranslatedProgram program, Guid iid)
+    /// <summary>
+    /// Builds the pipeline of <paramref name="stream"/> on this thread and stores it in the cache; disposes the stream.
+    /// Pipelines with <see cref="HeavyShaderBytes"/> of DXIL or more are built one at a time.
+    /// </summary>
+    public PipelineResult Build(DesktopStream stream, Guid iid)
+    {
+        using (stream)
+        {
+            if (stream.ShaderBytes < HeavyShaderBytes)
+            {
+                return BuildNow(stream, iid);
+            }
+
+            lock (_heavy)
+            {
+                return BuildNow(stream, iid);
+            }
+        }
+    }
+
+    private PipelineResult BuildNow(DesktopStream stream, Guid iid)
     {
         nint pipeline = 0;
-        int hr = DesktopPipelineBuilder.Compute(_device2, _rootSignature, program, &iid, &pipeline);
+        int hr = stream.Create(_device2, &iid, &pipeline);
+
+        if (!HResult.Failed(hr) && pipeline != 0)
+        {
+            Cache?.Store(stream.Key, pipeline);
+        }
 
         return new PipelineResult(hr, pipeline);
     }

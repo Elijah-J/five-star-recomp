@@ -31,9 +31,7 @@ internal static class HostComposition
             manual.UnionWith(ShippedCrt);
         }
 
-        string workDirectory = options.WorkDirectory ?? Path.Combine(AppContext.BaseDirectory, WorkFolder);
-
-        return new LoaderOptions(options.SearchDirectories, manual, options.Unresolved, options.CallEntryPoints, workDirectory, options.MainModule, Environment.ProcessId);
+        return new LoaderOptions(options.SearchDirectories, manual, options.Unresolved, options.CallEntryPoints, WorkDirectory(options), options.MainModule, Environment.ProcessId);
     }
 
     public static GdkOptions CreateGdkOptions(HostOptions options)
@@ -48,7 +46,20 @@ internal static class HostComposition
 
     public static PipelineFolders CreatePipelineFolders(HostOptions options)
     {
-        return new PipelineFolders(options.ShaderDirectory, options.TranslatedDirectory);
+        string? cache = null;
+
+        if (!options.NoPipelineCache)
+        {
+            cache = options.PipelineCache ?? Path.Combine(WorkDirectory(options), PipelineLibraryCache.FolderName);
+        }
+
+        return new PipelineFolders(options.ShaderDirectory, options.TranslatedDirectory, cache);
+    }
+
+    /// <summary>--work-dir, or the work folder beside the loader.</summary>
+    private static string WorkDirectory(HostOptions options)
+    {
+        return options.WorkDirectory ?? Path.Combine(AppContext.BaseDirectory, WorkFolder);
     }
 
     public static LoaderEnvironment CreateEnvironment()

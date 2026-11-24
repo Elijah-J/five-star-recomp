@@ -233,9 +233,27 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         var builds = new PipelineBuildQueue(Environment.ProcessorCount / PipelineSlots.CoresPerBuildThread);
         builds.Start();
         var standIns = new StandInPipelines(PipelineSlots.CreationBudget, builds, warnings);
-        Pipelines = new PipelineSlots(new PipelineFactory(device2, root, library, new ProgramSignatures(programs), warnings, rectangles, standIns), warnings);
+
+        var cache = OpenCache(device2);
+        Pipelines = new PipelineSlots(new PipelineFactory(device2, root, library, new ProgramSignatures(programs), warnings, rectangles, standIns, cache), warnings);
         PipelineSlotHandlers.Register(Objects);
         _log.Detail($"  [d3d12_xs] pipeline slots on: programs {programs}, translated {translated}");
+    }
+
+    /// <summary>The pipeline disk cache of --pipeline-cache, saving in the background; null without one.</summary>
+    private PipelineLibraryCache? OpenCache(nint device2)
+    {
+        var folder = _pipelineFolders.Cache;
+
+        if (folder is null)
+        {
+            return null;
+        }
+
+        var cache = PipelineLibraryCache.Open(folder, device2, _log);
+        cache?.StartSaving();
+
+        return cache;
     }
 
     /// <summary>Reads back the presents <paramref name="capture"/> names; with <paramref name="traceDraws"/> also traces draws.</summary>
@@ -255,6 +273,8 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
     public void Dispose()
     {
         _log.Info($"  [d3d12_xs] {ListSubmissions.Waits} submission(s) waited for the list's previous run");
+        Pipelines?.Cache?.Dispose();
+
         Presenter.Dispose();
         Fences.Dispose();
         Textures.Dispose();

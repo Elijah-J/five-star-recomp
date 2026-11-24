@@ -68,6 +68,15 @@ internal sealed class TranslatedProgramLibrary : IProgramLibrary
         return null;
     }
 
+    /// <summary>Drops the DXIL read so far; programs in use stay with their users.</summary>
+    public void Forget()
+    {
+        lock (_gate)
+        {
+            _loaded.Clear();
+        }
+    }
+
     public IReadOnlyList<string> Names(ReadOnlySpan<byte> prefix)
     {
         return [.. _index.Find(prefix)];

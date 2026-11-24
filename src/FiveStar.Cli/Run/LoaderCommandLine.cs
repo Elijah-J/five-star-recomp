@@ -9,9 +9,11 @@ namespace FiveStar.Cli.Run;
 internal static class LoaderCommandLine
 {
     private const string AbiOption = "--gdk-abi";
+    private const string CacheOption = "--pipeline-cache";
+    private const string NoCacheOption = "--no-pipeline-cache";
 
     /// <summary>
-    /// Maps and runs the game executable with the work folder's shaders, TLS folder and GDK table, the full log in
+    /// Maps and runs the game executable with the work folder's shaders, pipeline cache, TLS folder and GDK table, the full log in
     /// <paramref name="logFile"/>, then the extra loader arguments. An extra <c>--gdk-abi</c> replaces the work folder's table.
     /// </summary>
     public static IReadOnlyList<string> Build(RunPlan plan, string logFile)
@@ -31,6 +33,11 @@ internal static class LoaderCommandLine
         }
 
         arguments.AddRange(["--shader-dir", plan.ProgramFolder, "--translated-dir", plan.TranslatedFolder]);
+
+        if (!plan.Options.LoaderArguments.Any(argument => argument is CacheOption or NoCacheOption))
+        {
+            arguments.AddRange([CacheOption, plan.Context.PipelineLibraryFolder]);
+        }
 
         if (File.Exists(plan.Context.AbiTable) && !plan.Options.LoaderArguments.Contains(AbiOption))
         {

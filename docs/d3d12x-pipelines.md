@@ -75,6 +75,59 @@ it is not built the list sets nothing and drops its draws, dispatches and Execut
 SetPipelineState (counted in the sample summary). A derive (slot 55) from a stand-in uses the description kept
 under the stand-in's address; the rectangle-list variant is made from the built pipeline.
 
+### Disk cache
+
+The driver's own shader cache stores a compile only once it finishes, so a boot that ends before the largest
+programs are built compiles them again next time. `PipelineLibraryCache` keeps every built desktop pipeline in
+`ID3D12PipelineLibrary1` files in `--pipeline-cache <dir>` (default `<work-dir>\pipeline-cache`; `--no-pipeline-cache`
+turns it off).
+
+```mermaid
+flowchart LR
+  desc["game description"] --> stream["desktop stream + key"]
+  stream --> hit{"key in the cache?"}
+  hit -->|"yes"| load["LoadPipeline on the calling thread"]
+  hit -->|"no, or the driver refuses the load"| build["build thread (stand-in after 1 s)"]
+  build --> store["StorePipeline into this process's library"]
+  store --> file["written every minute or 2,048 pipelines, at the end of a timed-out run and at exit"]
+```
+
+| Item | Rule |
+|---|---|
+| Key (pipeline name) | the first 16 bytes of a SHA-256 over the stream: each subobject's type and payload, the DXIL itself in place of shader pointers, the input elements' semantic names and fields; the root signature is left out (the salt covers it). The padding of the blend and depth-stencil descs is zeroed first (`StatePadding`): the game leaves stack bytes there, which gave one pipeline a new key on every boot |
+| Salt | SHA-256 of a format string and the serialized bindless root signature; files with another salt are deleted |
+| Segment file `<utc time>-<pid>-<n>.psolib` | `FSPL`, u32 version 1, the 32-byte salt, u32 name count, u32 0, u64 library size, the 16-byte names, then the serialized library at a 256-byte boundary |
+| Opening | every segment is mapped read-only and its names indexed; a background thread gives the segments, newest first, to `CreatePipelineLibrary` (8 segments, 830 MB: 0.9 s) while the device is created. A pipeline whose segment is not open yet is built as if not cached. A segment the driver refuses (D3D12_ERROR_ADAPTER_NOT_FOUND, D3D12_ERROR_DRIVER_VERSION_MISMATCH, a damaged blob) is deleted |
+| New pipelines | go to an empty library of this process. Every minute, after every 2,048 new ones and at exit it is sealed (a new empty library takes new ones at once), written to a segment file of its own through a `.tmp` file and a rename, and replaced by that file mapped read-only; no lock the game waits on is held while the driver serializes |
+| Size | past 32 GiB the oldest segments are deleted when the cache opens |
+
+Processes never write each other's segments, so the game and the warm-up can share the folder. A cache hit is
+synchronous: the game gets the desktop pipeline itself, never a stand-in. The sample summary counts loads, stores and
+loads the driver refused.
+
+### Warm-up
+
+`fivestar-loader --warm-pipelines <shaders.rpf | cache blob> --shader-dir <fssm> --translated-dir <dxil>
+[--pipeline-cache <dir>] [--warm-jobs N] [--warm-step K] [--warm-match text]` runs no game. On the default adapter it
+reads the console pipeline cache ([pipeline-cache.md](pipeline-cache.md)), turns every compute and graphics record
+into the description slots 67 and 57 would get, and builds each through the same factory as the game, on
+`--warm-jobs` threads (default 4), without a time limit. No build starts while less than 8 GB of commit is available; a pipeline with 4 MiB of DXIL or more is built alone on its own thread and only with 40 GB of commit available, else it is left out (logged) for a later run or the game: one ray-traced shadow program passed 30 GB in the NVIDIA driver. Compute pipelines go first, the
+largest code first. A pipeline whose key is cached is skipped, so a stopped run (Ctrl+C finishes the running builds
+and writes the cache) resumes; pipelines the driver refuses are listed in `warm-failures.txt` in the cache folder
+and not retried while their key stays the same. Builds over 20 s are named in the log; every 30 s it prints the
+counts. `--warm-step K` takes every K-th record, `--warm-match` only records with a program whose name contains the
+text. `fivestar setup` runs it as the `pipeline-warm` step ([setup.md](setup.md)).
+
+Slot 86 streams and slot 55 derives are not in the console cache; they are cached when a run builds them.
+
+**Measured (RTX 4090, 64 GB, 4 jobs, driver cache partly warm).** Every 20th record (1,409 pipelines): 1,367 handled
+in 26 minutes, 981 built into 137 MB (about 140 KiB each), the rest refused by the runtime (E_INVALIDARG, the stage
+linkage errors under Unknown). Graphics pipelines with a mesh shader take 2 to 6.5 minutes each and dominate, so the
+full 28,164 take about 9 hours. Alone, the screen-probe compute programs take 73 to 109 s; the ray-traced shadow
+programs in the dispatch-loop form took over 500 s and more than 30 GB in the driver. A 180 s boot after an empty
+cache stores about 56,000 pipelines (the other 15,000 are still queued when it ends); the next boot loads them
+without stand-ins: no stand-in in its first 10 s (against 5,000 cold), 108 presents by then (115 cold).
+
 ## Pipeline-state stream (slot 86)
 
 0x14086f090 zeroes 0x2B0 bytes and writes a fixed stream; the desc is `{u64 0x2B0, stream}`. Each subobject is a u32
@@ -225,12 +278,19 @@ Without `variants.json` every program loads `<name>.dxil` and a warning says so.
 
 When the device is created and the loader has `--shader-dir` and `--translated-dir`, `XboxDeviceFactory` builds the
 `PipelineSlots` (a `PipelineFactory` over the desktop `ID3D12Device2`, `BindlessRoot.Create`, a
-`TranslatedProgramLibrary` and the `StandInPipelines` with their build threads) and `PipelineSlotHandlers.Register` binds slots 55, 57, 62, 67 and 86 through
+`TranslatedProgramLibrary`, the `StandInPipelines` with their build threads and the disk cache) and `PipelineSlotHandlers.Register` binds slots 55, 57, 62, 67 and 86 through
 `XboxObjects.SetHandler`. Without the folders the slots stay logged E_NOTIMPL stubs. Pipeline states are returned
 unwrapped, so slot 55 receives the desktop pointer it registered.
 
 ## Unknown
 
+- Why `LoadPipeline` refuses (E_INVALIDARG) about 1,600 cached pipelines per boot with the same key, mostly shadow,
+  linear-depth and puddle passes, also within the run that stored them; they are built anew.
+- Whether the 15-block cycle without an exit edge in the ray-traced shadow programs (`*_Tiled`: from 0x11fd8 through a
+  far-jump island at 0x38758 back to 0x11fd8, the jumps made with `s_getpc_b64`/`s_sub_u32`/`s_setpc_b64`) is the
+  console's code or an island target off by one instruction (0x11fd4 holds the loop's `s_cbranch_execz`). The
+  structurizer refuses it ("loop without exit"), so these programs translate to the dispatch-loop form (3,700 cases,
+  10 MB of DXIL), which the driver compiles for minutes with tens of gigabytes.
 - The other graphics pipelines the desktop runtime refuses with E_INVALIDARG: the debug layer reports stage
   linkage (errors 660, 662: an output in another register or with fewer components than the pixel shader reads;
   666: a mesh shader without the pixel shader's `TEXCOORD22`), so the translated signatures differ between stages.

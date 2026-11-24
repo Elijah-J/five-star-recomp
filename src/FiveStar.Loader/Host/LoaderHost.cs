@@ -329,9 +329,24 @@ internal sealed class LoaderHost
     {
         _runtime.D3D12X.Presenter.LogSummary();
         _runtime.Cpu.LogSummary();
+        SavePipelineCache();
         _log.Info($"done, exit code {ExecutableRunner.TimedOut} (the game's threads are still running: the process ends without cleanup)");
         Console.Out.Flush();
         _ = Kernel32.TerminateProcess(Kernel32.GetCurrentProcess(), (uint)ExecutableRunner.TimedOut);
+    }
+
+    /// <summary>Writes the pipelines built so far to the disk cache, as the process ends without cleanup.</summary>
+    private void SavePipelineCache()
+    {
+        var cache = _runtime.D3D12X.Pipelines?.Cache;
+
+        if (cache is null)
+        {
+            return;
+        }
+
+        cache.Save();
+        _log.Info($"  [d3d12_xs] {cache.Summary}");
     }
 
     private void Finish()

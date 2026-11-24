@@ -81,6 +81,9 @@ internal sealed unsafe class PipelineSlots
     /// <summary>Pipelines handed out before the driver built them.</summary>
     public StandInPipelines StandIns => _factory.StandIns;
 
+    /// <summary>The disk cache of built pipelines, or null.</summary>
+    public PipelineLibraryCache? Cache => _factory.Cache;
+
     /// <summary>Pipeline creations the game asked for so far, how many returned a pipeline, stand-ins and those running.</summary>
     public string Summary
     {
@@ -89,7 +92,7 @@ internal sealed unsafe class PipelineSlots
             var running = _factory.InFlight.Summary();
             var counts = $"{Volatile.Read(ref _requests)} pipelines requested, {Volatile.Read(ref _created)} created, {_factory.StandIns.Summary}";
 
-            var parts = new[] { counts, _failures.Summary(), running }.Where(part => part.Length > 0);
+            var parts = new[] { counts, _failures.Summary(), running, _factory.Cache?.Summary ?? string.Empty }.Where(part => part.Length > 0);
 
             return string.Join(", ", parts);
         }

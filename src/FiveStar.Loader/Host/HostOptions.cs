@@ -62,6 +62,24 @@ internal sealed record HostOptions
     /// <summary>Translated DXIL programs (`fivestar shader translate`) for pipeline creation.</summary>
     public string? TranslatedDirectory { get; set; }
 
+    /// <summary>The pipeline disk cache folder (<c>--pipeline-cache</c>); null means the work folder's.</summary>
+    public string? PipelineCache { get; set; }
+
+    /// <summary><c>--no-pipeline-cache</c>: pipelines are neither loaded from nor stored in a disk cache.</summary>
+    public bool NoPipelineCache { get; set; }
+
+    /// <summary>The console pipeline cache (shaders.rpf or the blob) whose pipelines <c>--warm-pipelines</c> builds.</summary>
+    public string? WarmSource { get; set; }
+
+    /// <summary>Pipelines the warm-up builds at once; null for the default (4).</summary>
+    public int? WarmJobs { get; set; }
+
+    /// <summary>The warm-up builds every n-th pipeline only (a sample).</summary>
+    public int WarmStep { get; set; } = 1;
+
+    /// <summary>The warm-up builds only pipelines with a program whose name contains one of these.</summary>
+    public List<string> WarmMatches { get; } = [];
+
     /// <summary>The PC FidelityFX API DLL the console FidelityFX calls are forwarded to; null leaves FidelityFX off.</summary>
     public string? FidelityFxLibrary { get; set; }
 

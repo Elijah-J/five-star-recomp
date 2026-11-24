@@ -68,11 +68,13 @@ flowchart LR
    ```
    fivestar-loader --load <dump>\game_scarlett_master.exe --no-exports --work-dir <work>\loader\tls
      --log <work>\logs\run-<time>.log --run [--run-timeout s] --shader-dir <work>\shaders\fssm
-     --translated-dir <work>\shaders\hlsl [--gdk-abi <work>\loader\gdk-abi.txt] [--d3d12-debug] [<loader options>]
+     --translated-dir <work>\shaders\hlsl --pipeline-cache <work>\pipeline-cache [--gdk-abi <work>\loader\gdk-abi.txt]
+     [--d3d12-debug] [<loader options>]
    ```
 
    The console shows the loader's milestones (`==` lines, errors, faults with their address, presents); the full log
-   is the file. At the end run prints a summary from the loader's lines, for example
+   is the file. `--pipeline-cache` is left out when the loader options name `--pipeline-cache` or
+   `--no-pipeline-cache`. At the end run prints a summary from the loader's lines, for example
    `fivestar-loader exit code 3: 293 presents, 0 faults, 43 warnings; full log ...`. Ctrl+C reaches the loader as well;
    run waits for it to end before the summary.
 
@@ -85,6 +87,7 @@ flowchart LR
 | `shaders/hlsl` | translated HLSL and DXIL, `variants.json`, `results.json`, `rect-gs/` |
 | `shader-cache/` | translations and compiles by hash; a re-translate after an update reuses them |
 | `loader/gdk-abi.txt`, `loader/tls/` | the GDK call table; the loader's TLS host DLLs |
+| `pipeline-cache/` | the desktop pipelines built by runs and by the `pipeline-warm` setup step ([d3d12x-pipelines.md](d3d12x-pipelines.md#disk-cache)) |
 | `logs/run-<yyyyMMdd-HHmmss>.log` | the full loader log of each run; the newest 5 are kept |
 
 Saves go to the loader's default, `%LOCALAPPDATA%\FiveStar\GdkData\<TitleId>`. The default work folder is on the

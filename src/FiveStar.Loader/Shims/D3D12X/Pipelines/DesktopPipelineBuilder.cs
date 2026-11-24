@@ -16,7 +16,15 @@ internal static unsafe class DesktopPipelineBuilder
     public static int Graphics(
         nint device2, nint rootSignature, GraphicsPipelineDescription description, IReadOnlyList<TranslatedProgram> programs, Guid* iid, nint* result)
     {
-        using var stream = new DesktopStream();
+        using var stream = GraphicsStream(device2, rootSignature, description, programs);
+
+        return stream.Create(device2, iid, result);
+    }
+
+    /// <summary>The desktop stream of a graphics pipeline; the caller disposes it.</summary>
+    public static DesktopStream GraphicsStream(nint device2, nint rootSignature, GraphicsPipelineDescription description, IReadOnlyList<TranslatedProgram> programs)
+    {
+        var stream = new DesktopStream();
         stream.AddPointer(PipelineStateSubObjectType.RootSignature, rootSignature);
         var mesh = false;
 
@@ -26,10 +34,10 @@ internal static unsafe class DesktopPipelineBuilder
             stream.AddShader(StageType(program.Stage), program.Dxil);
         }
 
-        stream.AddBytes(PipelineStateSubObjectType.Blend, DesktopStateRules.Blend(description.Blend));
+        stream.AddBytes(PipelineStateSubObjectType.Blend, StatePadding.Blend(DesktopStateRules.Blend(description.Blend)));
         stream.AddWords(PipelineStateSubObjectType.SampleMask, [unchecked((int)description.SampleMask)]);
         stream.AddBytes(PipelineStateSubObjectType.Rasterizer, DesktopStateRules.Rasterizer(description.Rasterizer, description.DepthStencil));
-        stream.AddBytes(PipelineStateSubObjectType.DepthStencil1, description.DepthStencil);
+        stream.AddBytes(PipelineStateSubObjectType.DepthStencil1, StatePadding.DepthStencil(description.DepthStencil));
 
         if (!mesh)
         {
@@ -40,16 +48,17 @@ internal static unsafe class DesktopPipelineBuilder
         stream.AddWords(PipelineStateSubObjectType.DepthStencilFormat, [description.DepthStencilFormat]);
         stream.AddWords(PipelineStateSubObjectType.SampleDescription, [description.SampleCount, description.SampleQuality]);
 
-        return stream.Create(device2, iid, result);
+        return stream;
     }
 
-    public static int Compute(nint device2, nint rootSignature, TranslatedProgram program, Guid* iid, nint* result)
+    /// <summary>The desktop stream of a compute pipeline; the caller disposes it.</summary>
+    public static DesktopStream ComputeStream(nint rootSignature, TranslatedProgram program)
     {
-        using var stream = new DesktopStream();
+        var stream = new DesktopStream();
         stream.AddPointer(PipelineStateSubObjectType.RootSignature, rootSignature);
         stream.AddShader(PipelineStateSubObjectType.ComputeShader, program.Dxil);
 
-        return stream.Create(device2, iid, result);
+        return stream;
     }
 
     private static void InputAssembler(DesktopStream stream, GraphicsPipelineDescription description)

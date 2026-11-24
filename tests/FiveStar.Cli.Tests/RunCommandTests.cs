@@ -88,6 +88,7 @@ public sealed class RunCommandTests : IDisposable
                 "--run-timeout", "30",
                 "--shader-dir", Path.Combine(shaders, "fssm"),
                 "--translated-dir", Path.Combine(shaders, "hlsl"),
+                "--pipeline-cache", Path.Combine(_work, "pipeline-cache"),
                 "--gdk-abi", Path.Combine(_work, "loader", "gdk-abi.txt"),
                 "--d3d12-debug",
                 "--present-test",

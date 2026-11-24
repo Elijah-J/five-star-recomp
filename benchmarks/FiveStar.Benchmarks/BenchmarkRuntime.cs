@@ -23,7 +23,7 @@ internal static class BenchmarkRuntime
         var gdk = new GdkOptions(null, Path.GetTempPath(), Path.GetTempPath(), Path.GetTempPath(), DeviceType, new Version(), NetworkOptions.Offline);
         var environment = new LoaderEnvironment(string.Empty, TimeProvider.System, IgnoreFailure);
 
-        return new LoaderRuntime(options, gdk, new PipelineFolders(null, null), environment, log);
+        return new LoaderRuntime(options, gdk, new PipelineFolders(null, null, null), environment, log);
     }
 
     /// <summary>The native entry point of a GDK shim.</summary>
