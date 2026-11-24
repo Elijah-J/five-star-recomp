@@ -410,7 +410,9 @@ flowchart LR
   UAV per 256 MiB of its buffer (each view up to 512 MiB, the raw element limit; no UAV on the upload buffer), from 4
   reserved remap pages (8,192 pairs), and the map in write-combined system memory names, per 64 KiB page, its
   chunk's pair and offset ([shader-translation.md](shader-translation.md#resources) has the layout; 64 spans of
-  4 GiB). Ranges added before the game's view heap exists wait for it.
+  4 GiB). Ranges added before the game's view heap exists wait for it. The boot's first clears read a record in the
+  slot-133 pool: header 0x8e3 (positions from byte 16, 28 bytes apart), header 0xee4 (colours from byte 28), a
+  full-screen triangle and opaque black (0, 0, 0, 1), so their targets stay black (RGB) either way.
 - **Draws and dispatches (12 to 14, 61)** upload the bind point's 128 dwords when they changed (a 64 MiB upload ring
   of 512-byte blocks, a block reused after 131,072 others) and point root parameter 0 at them; ExecuteIndirect
   unwraps its signature and buffers. Reset (10, 139) clears the list's binding state.
@@ -607,8 +609,9 @@ Two readback aids (`DrawTrace`, `FrameCapture`; debug only, they allocate and wa
 
 - `--d3d12-trace-draws` logs the first 24 draws, and 32 after each captured present: pipeline (programs, input
   layout, target formats, blend, rasterizer and depth state), render targets, viewport, scissor, depth view, vertex
-  buffers with their first vertices, the graphics user SGPRs, and the first 8 records of every table with the view
-  each names, the game's own record and a buffer's first values. After each traced draw the first render target is
+  buffers with their first vertices, the graphics user SGPRs, the first 8 records of every table with the view
+  each names, the game's own record and a buffer's first values, and every root CBV, SRV or UAV with its address and
+  the first 16 dwords there. After each traced draw the first render target is
   copied inside the game's list (`DrawProbes`) and summarized two presents later (non-black pixels, their box, mean
   colour). The game executes some closed lists again, so a probe's buffer is released only once its list was reset
   (releasing it at the report removed the device, debug-layer error #921).

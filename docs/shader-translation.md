@@ -556,8 +556,8 @@ translator's output. Covered: pixel shaders (VALU, SALU, packed f16, cross-lane,
 memory, formatted loads with hardware format words and swizzles, exports), compute (ids, LDS, wave32/wave64 wave
 operations, buffer and global memory, atomics, a V# built from a root descriptor's address as `VS_Clear` builds it,
 read and written through the address map), ray
-intersection, the mesh path and its fallback (including overflow), vertex fetch, a handwritten GS and the real
-VoxelizeGeneric GS programs.
+intersection, the mesh path and its fallback (including overflow), vertex fetch, a handwritten GS, the real
+VoxelizeGeneric GS programs and the executable's real `VS_Clear`, which draws from a record at a root SRV address.
 
 Run `dotnet test tests/FiveStar.Shaders.Tests`. `FIVESTAR_LLVM` (LLVM bin folder) and `FIVESTAR_DXC` (dxc path) override
 the default tool locations; the decoder comparison on real programs needs LLVM; the real-GS tests and it need `FIVESTAR_DUMP` and
