@@ -290,7 +290,10 @@ and descriptor work will use (on the console GPU address == CPU address). Update
 (cross-adapter) heaps, so one resource cannot span sections; the page store therefore gives a multi-page allocation
 consecutive pages of one section, in the address order of the placeholder it is mapped into
 ([physical-memory.md](physical-memory.md)). The game's 0xAE00000-byte pool (three pieces of one placeholder, mapped
-later piece first) is one run and one buffer. A range with no mapped page gets a committed buffer that is not shared.
+later piece first) is one run and one buffer. A range with no mapped page in memory the game committed itself (3,259
+buffers in a boot, such as the 0x283 / PAGE_GRAPHICS_READWRITE allocation) shares the buffer over that allocation
+(below); its offsets stay console ones, so buffer views (`BufferViewRanges`), CopyBufferRegion (list slot 15) and
+ExecuteIndirect move them to that buffer (`BufferCopies`). Elsewhere it gets a committed buffer that is not shared.
 A texture at a game address becomes a committed desktop texture of its own, filled from the game's bytes unless the
 GPU writes it ([gpu-resources.md](gpu-resources.md)).
 
@@ -304,8 +307,24 @@ outside known memory or off the desktop's 256-byte alignment (the console takes 
 0x300000 on textures), a console layout (0x100 + XG swizzle mode, set at 0x1403440f7) made UNKNOWN, and
 ALLOW_UNORDERED_ACCESS dropped from textures when no format of their DXGI cast family (the typeless format and its
 members, `FormatFamilies`) reports D3D12_FORMAT_SUPPORT1_TYPED_UNORDERED_ACCESS_VIEW, the rule the runtime applies
-(B5G5R5A1_UNORM; R32G8X24_TYPELESS, the desktop form of the console's D16_UNORM_S8_UINT). Should the runtime refuse a
-desc anyway, the allocation-info query runs again without the flag.
+(R32G8X24_TYPELESS, the desktop form of the console's D16_UNORM_S8_UINT). Should the runtime refuse a desc anyway, the
+allocation-info query runs again without the flag. A depth-stencil texture loses ALLOW_RENDER_TARGET,
+ALLOW_UNORDERED_ACCESS and ALLOW_SIMULTANEOUS_ACCESS (the console sets UAV on depth, debug error #599), and a UAV of
+any texture made without the flag becomes a null view (it would remove the device). Render-target and UAV textures in
+B5G6R5, B5G5R5A1 or B4G4R4A4 take a substitute format; see [gpu-resources.md](gpu-resources.md#render-target-formats).
+
+**Resource Map (slots 8, 9).** A resource the game placed (slot 133) maps to its own memory, as on the console;
+0x145121891 maps a texture and writes a mip at its XG offset. Others map on the desktop.
+
+**Spare allocators.** The game takes a list and an allocator from separate pools (0x140188430) and resets the list on
+an allocator that may back another recording list, which the console allows; the desktop answers E_INVALIDARG and the
+game breaks at 0x142474ce1. The list then records on a spare allocator kept for that game allocator and reset with it
+(allocator slot 8; SpareAllocators). Barriers leave out write states the desktop resource has no flag for
+(ResourceStates.Allowed; error #523 on a depth texture moved to UNORDERED_ACCESS).
+**Buffer views on split buffers.** A slot-133 buffer over pages in two sections is two desktop buffers, and the
+game's object is the first. A slot 18/19 buffer view goes to the run that holds its first element and is cut at the
+run's end (BufferViewRanges); a view past the first run's end removed the device (error #31). 16 of 3,388 buffers
+in a boot split; the elements past a cut read 0 until such a buffer is one desktop resource.
 
 **Committed resources (slot 127).** Created in the state of the initial barrier layout (buffers COMMON), heap flags
 0 (the game passes 8). On the console D3D12.X takes their memory from the title's XMemAlloc hook, and the game checks

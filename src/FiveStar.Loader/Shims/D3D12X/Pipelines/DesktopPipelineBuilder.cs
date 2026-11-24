@@ -36,7 +36,7 @@ internal static unsafe class DesktopPipelineBuilder
             InputAssembler(stream, description);
         }
 
-        stream.AddWords(PipelineStateSubObjectType.RenderTargetFormats, TargetWords(description.RenderTargetFormats));
+        stream.AddWords(PipelineStateSubObjectType.RenderTargetFormats, TargetWords(device2, description.RenderTargetFormats));
         stream.AddWords(PipelineStateSubObjectType.DepthStencilFormat, [description.DepthStencilFormat]);
         stream.AddWords(PipelineStateSubObjectType.SampleDescription, [description.SampleCount, description.SampleQuality]);
 
@@ -67,14 +67,14 @@ internal static unsafe class DesktopPipelineBuilder
         stream.AddWords(PipelineStateSubObjectType.PrimitiveTopology, [description.TopologyType]);
     }
 
-    /// <summary>D3D12_RT_FORMAT_ARRAY: eight DXGI formats, then the target count.</summary>
-    private static int[] TargetWords(IReadOnlyList<int> formats)
+    /// <summary>D3D12_RT_FORMAT_ARRAY: eight DXGI formats (render-target substitutes in, <see cref="TargetFormats"/>), then the target count.</summary>
+    private static int[] TargetWords(nint device, IReadOnlyList<int> formats)
     {
         var words = new int[PipelineLayout.RenderTargetSlots + 1];
 
         for (var slot = 0; slot < formats.Count && slot < PipelineLayout.RenderTargetSlots; slot++)
         {
-            words[slot] = formats[slot];
+            words[slot] = TargetFormats.GpuWritten(device, formats[slot]);
         }
 
         words[PipelineLayout.RenderTargetSlots] = Math.Min(formats.Count, PipelineLayout.RenderTargetSlots);

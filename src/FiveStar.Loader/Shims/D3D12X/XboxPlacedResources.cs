@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Five Star Recomp contributors.
+// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using FiveStar.Loader.Diagnostics;
@@ -13,7 +13,8 @@ namespace FiveStar.Loader.Shims.D3D12X;
 /// each page section is opened as a heap (ID3D12Device3::OpenExistingHeapFromAddress), so the GPU reads and writes the
 /// same memory as the game's CPU views. Each run of pages that is contiguous in one section becomes a buffer placed at
 /// the run's offset; the game's resource object is the first run's buffer, and every run's console and desktop
-/// addresses go into <see cref="Addresses"/>. A range with no mapped page gets a committed buffer that is not shared.
+/// addresses go into <see cref="Addresses"/>. A range with no mapped page in memory the game committed itself shares that memory's buffer;
+/// elsewhere it gets a committed buffer that is not shared.
 /// </summary>
 internal sealed unsafe class XboxPlacedResources
 {
@@ -24,6 +25,10 @@ internal sealed unsafe class XboxPlacedResources
 
     /// <summary>ID3D12Resource::GetGPUVirtualAddress (d3d12.h).</summary>
     private const int GetGpuAddressSlot = 11;
+    private const int GetDescSlot = 10;
+
+    /// <summary>IUnknown::AddRef.</summary>
+    private const int AddRefSlot = 1;
 
     /// <summary>
     /// D3D12_RESOURCE_STATE_COMMON, D3D12_HEAP_FLAG_NONE, D3D12_HEAP_TYPE_DEFAULT and
@@ -60,6 +65,9 @@ internal sealed unsafe class XboxPlacedResources
     /// <summary>Console GPU address to desktop GPU address, for every buffer made here.</summary>
     public AddressTable Addresses { get; } = new();
 
+    /// <summary>The buffers over memory the game committed itself; set once both exist.</summary>
+    public XboxGameMemoryBuffers? GameMemory { get; set; }
+
     /// <summary>Creates the buffers over the game's pages at <paramref name="address"/> and returns the first wrapped.</summary>
     public int Create(nint device, ulong address, ResourceDescription* description, int initialLayout, void* clear, nint* resource)
     {
@@ -77,6 +85,11 @@ internal sealed unsafe class XboxPlacedResources
 
             if (inner == 0)
             {
+                inner = InGameMemory(address, description->Width);
+            }
+
+            if (inner == 0)
+            {
                 inner = CreateCommitted(device, address, description);
             }
 
@@ -88,7 +101,7 @@ internal sealed unsafe class XboxPlacedResources
             }
 
             *resource = _objects.WrapResource(inner, address);
-            ResourceStates.Record(_objects.AsResource(*resource), ResourceStates.BufferDimension, ResourceStates.Common);
+            ResourceStates.Record(_objects.AsResource(*resource), ResourceStates.BufferDimension, ResourceStates.Common, AllowUnorderedAccess);
             _log.Detail($"  [d3d12_xs] ID3D12Device.X::Slot133 CreatePlacedResource(0x{address:x}, 0x{description->Width:x} bytes) -> {runs.Count} page runs");
 
             return HResult.Ok;
@@ -111,7 +124,7 @@ internal sealed unsafe class XboxPlacedResources
         }
 
         *resource = _objects.WrapResource(inner, address);
-        ResourceStates.Record(_objects.AsResource(*resource), description->Dimension, state);
+        ResourceStates.Record(_objects.AsResource(*resource), description->Dimension, state, DesktopFlags(inner));
 
         return hr;
     }
@@ -201,6 +214,15 @@ internal sealed unsafe class XboxPlacedResources
         return desktop;
     }
 
+    /// <summary>The desktop resource's D3D12_RESOURCE_FLAGS (ID3D12Resource::GetDesc).</summary>
+    private static int DesktopFlags(nint resource)
+    {
+        ResourceDescription desc;
+        _ = ((delegate* unmanaged<nint, ResourceDescription*, ResourceDescription*>)ComObject.Slot(resource, GetDescSlot))(resource, &desc);
+
+        return desc.Flags;
+    }
+
     private static ulong GpuAddress(nint resource)
     {
         return ((delegate* unmanaged<nint, ulong>)ComObject.Slot(resource, GetGpuAddressSlot))(resource);
@@ -222,6 +244,23 @@ internal sealed unsafe class XboxPlacedResources
         LogFailure("CreatePlacedResource", hr);
 
         return resource;
+    }
+
+    /// <summary>
+    /// A buffer in memory the game committed itself (no XMem page): the desktop buffer over that whole allocation,
+    /// referenced once more, so the GPU sees the game's writes. Its offsets are console ones; views and copies move
+    /// them (<see cref="Resources.BufferViewRanges"/>, <see cref="BufferCopies"/>). 0 when no such buffer covers it.
+    /// </summary>
+    private nint InGameMemory(ulong address, ulong size)
+    {
+        if (GameMemory is null || !GameMemory.TryFind(address, out var range) || range.Resource == 0 || address + size > range.GameAddress + range.Size)
+        {
+            return 0;
+        }
+
+        ((delegate* unmanaged<nint, uint>)ComObject.Slot(range.Resource, AddRefSlot))(range.Resource);
+
+        return range.Resource;
     }
 
     private nint CreateCommitted(nint device, ulong address, ResourceDescription* description)

@@ -121,6 +121,7 @@ internal static unsafe class ResourceBarrierSlots
 
         int home = wrapper->HomeState;
         int current = states.Current(resource, home);
+        after = ResourceStates.Allowed(after, wrapper->Flags);
 
         if (current == after)
         {

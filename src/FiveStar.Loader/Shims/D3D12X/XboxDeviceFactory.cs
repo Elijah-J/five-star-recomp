@@ -60,6 +60,7 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         Textures = new GpuTextures(MemorySource, Descriptions, log);
         PlacedResources = new XboxPlacedResources(memory, Objects, Textures, log);
         GameMemory = new XboxGameMemoryBuffers(Objects, PlacedResources.Addresses, log);
+        PlacedResources.GameMemory = GameMemory;
 
         Uploads = new UploadArena(Objects, PlacedResources.Addresses, log);
         AddressBuffers = new AddressBufferViews(GameMemory);
@@ -85,6 +86,9 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
 
     /// <summary>Resource descs made desktop ones, with the device's format support.</summary>
     public DesktopResourceDescriptions Descriptions { get; } = new();
+
+    /// <summary>Allocators lent to lists whose game allocator backs another recording list.</summary>
+    public SpareAllocators SpareAllocators { get; } = new();
 
     /// <summary>Warnings logged once per key, for slots the game calls often.</summary>
     public OnceLog Warnings { get; }
@@ -372,6 +376,17 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         Objects.SetHandler(XboxInterfaceKind.CommandQueue, XboxQueueMethods.ExecuteCommandListsXSlot, (nint)executeX);
         Objects.SetHandler(XboxInterfaceKind.CommandQueue, XboxQueueMethods.ExecuteCommandListsSlot, (nint)execute);
         Objects.SetHandler(XboxInterfaceKind.Resource, ResourceGpuAddressSlot, (nint)gpuAddress);
+
+        delegate* unmanaged<XboxResourceObject*, uint, void*, void**, int> map = &XboxObjectMethods.Map;
+        delegate* unmanaged<XboxResourceObject*, uint, void*, void> unmap = &XboxObjectMethods.Unmap;
+        Objects.SetHandler(XboxInterfaceKind.Resource, XboxObjectMethods.MapSlot, (nint)map);
+        Objects.SetHandler(XboxInterfaceKind.Resource, XboxObjectMethods.UnmapSlot, (nint)unmap);
+
+        delegate* unmanaged<XboxObject*, nint, ulong, nint, ulong, ulong, void> copyBuffer = &BufferCopies.CopyBufferRegion;
+        Objects.SetHandler(XboxInterfaceKind.CommandList, BufferCopies.CopyBufferRegionSlot, (nint)copyBuffer);
+
+        delegate* unmanaged<XboxObject*, int> resetAllocator = &XboxObjectMethods.ResetAllocator;
+        Objects.SetHandler(XboxInterfaceKind.CommandAllocator, XboxObjectMethods.AllocatorResetSlot, (nint)resetAllocator);
 
         delegate* unmanaged<XboxFenceObject*, ulong*> fenceValue = &FenceValueMirror.CompletedValueAddress;
         delegate* unmanaged<XboxFenceObject*, uint> releaseFence = &FenceValueMirror.ReleaseFence;
