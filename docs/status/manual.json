@@ -26,10 +26,10 @@
       "title": "Shaders translated",
       "unit": " programs",
       "groups": [
-        { "name": "Pixel", "done": 12049, "partial": 0, "todo": 0 },
+        { "name": "Pixel", "done": 12067, "partial": 0, "todo": 0 },
         { "name": "Mesh", "done": 8719, "partial": 46, "todo": 0, "note": "46 compile only through the mesh fallback" },
-        { "name": "Compute", "done": 2684, "partial": 0, "todo": 0 },
-        { "name": "Vertex", "done": 2191, "partial": 0, "todo": 0 },
+        { "name": "Compute", "done": 2689, "partial": 0, "todo": 0 },
+        { "name": "Vertex", "done": 2192, "partial": 0, "todo": 0 },
         { "name": "Geometry", "done": 195, "partial": 0, "todo": 0 }
       ]
     },
@@ -75,7 +75,7 @@
       "area": "Running the game",
       "items": [
         { "name": "Story load", "note": "the GPU hangs in meshlet culling's indirect dispatch" },
-        { "name": "Brightness symbol", "note": "black; a pipeline's program is missing" },
+        { "name": "Root descriptors", "note": "a third of the programs read them as heap indices" },
         { "name": "Memory", "note": "the story load reaches 62 to 65 GB; allocator of the large blocks unknown" },
         { "name": "Pipeline warm-up", "note": "about 9 hours for the full set; the cache makes later boots warm" }
       ]

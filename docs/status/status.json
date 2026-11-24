@@ -91,7 +91,7 @@
       "groups": [
         {
           "name": "Pixel",
-          "done": 12049,
+          "done": 12067,
           "partial": 0,
           "todo": 0
         },
@@ -104,13 +104,13 @@
         },
         {
           "name": "Compute",
-          "done": 2684,
+          "done": 2689,
           "partial": 0,
           "todo": 0
         },
         {
           "name": "Vertex",
-          "done": 2191,
+          "done": 2192,
           "partial": 0,
           "todo": 0
         },
@@ -211,8 +211,8 @@
           "note": "the GPU hangs in meshlet culling\u0027s indirect dispatch"
         },
         {
-          "name": "Brightness symbol",
-          "note": "black; a pipeline\u0027s program is missing"
+          "name": "Root descriptors",
+          "note": "a third of the programs read them as heap indices"
         },
         {
           "name": "Memory",
