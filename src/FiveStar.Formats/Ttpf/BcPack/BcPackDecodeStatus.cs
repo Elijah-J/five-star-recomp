@@ -26,4 +26,7 @@ public enum BcPackDecodeStatus
 
     /// <summary>The stream ended before the chunk did and the rest is not zero padding.</summary>
     TrailingData,
+
+    /// <summary>The lanes converged, but some block records name no valid block (an unused BC7 control code or BC6H mode).</summary>
+    InvalidBlock,
 }

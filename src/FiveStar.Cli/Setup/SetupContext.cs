@@ -33,6 +33,9 @@ internal sealed record SetupContext(string Dump, string Work, int? Limit, int Ev
     /// <summary>The thunk ABI table of the <c>gdk-abi</c> step, for <c>fivestar-loader --gdk-abi</c>.</summary>
     public string AbiTable => Path.Combine(LoaderFolder, "gdk-abi.txt");
 
+    /// <summary>The user's BCPack tables as the <c>bcpack-tables</c> step imported them, for <c>fivestar-loader --bcpack-tables</c>.</summary>
+    public string BcPackTables => Path.Combine(LoaderFolder, Formats.Ttpf.BcPack.BcPackTables.FileName);
+
     /// <summary>Where <c>fivestar run</c> lets the loader write its TLS host DLLs (<c>--work-dir</c>).</summary>
     public string TlsFolder => Path.Combine(LoaderFolder, "tls");
 

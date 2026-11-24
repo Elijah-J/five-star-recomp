@@ -8,6 +8,7 @@ with the same state before it starts the game.
 ```
 fivestar setup <dump folder> [--work <dir>] [--only <step,...>] [--force] [--limit N] [--step K] [--jobs N]
                              [--dxc <dxc.exe>] [--gdk-lib <xgameruntime.lib>] [--loader <fivestar-loader.exe>]
+                             [--bcpack-tables <bcpack-tables.bin>]
 fivestar setup <dump folder> --status
 fivestar setup <dump folder> --clean-cache
 ```
@@ -20,6 +21,7 @@ flowchart LR
   extract --> translate["shader-translate"]
   translate --> rect["rect-gs"]
   extract --> cache["pipeline-cache"]
+  tables["bcpack-tables"] --> textures
   verify --> textures["textures"]
   verify --> gdk["gdk-abi"]
   translate --> warm["pipeline-warm"]
@@ -29,11 +31,12 @@ flowchart LR
 | Step | Does | Output in the work folder |
 |---|---|---|
 | `verify` | reads the title id and version from `MicrosoftGame.Config`; checks `shaders.rpf` and the texture page files exist. Another title fails; another version gives a warning | none |
+| `bcpack-tables` | checks the BCPack table file given with `--bcpack-tables` (or `FIVESTAR_BCPACK_TABLES`) by size and SHA-256 and copies it into the work folder. The project does not ship the file ([textures.md](textures.md#bcpack-tables)); without it the step finishes with a note, and BC3, BC6H and BC7 textures are not exported | `loader/bcpack-tables.bin` |
 | `shader-extract` | `fivestar shader extract` of `shaders.rpf` and the executable | `shaders/dxbc`, `shaders/fssm` |
 | `shader-translate` | `fivestar shader translate --mesh-fallbacks` of every program, compiled with dxc through the shader cache | `shaders/hlsl` (HLSL, DXIL, `results.json`, `variants.json`), `shader-cache` |
 | `rect-gs` | `fivestar shader rect-gs` of the translated vertex programs: the geometry shaders the loader draws rectangle lists with | `shaders/hlsl/rect-gs` |
 | `pipeline-cache` | `fivestar shader psocache` of the console pipeline cache, matched to the programs | `pipelines` (`pipelines.json`, `code/`) |
-| `textures` | `fivestar texture extract` of every page file | `textures/<page file path>/*.dds` |
+| `textures` | `fivestar texture extract` of every page file, with the imported BCPack tables when present | `textures/<page file path>/*.dds` |
 | `gdk-abi` | `fivestar platform gdk-abi` from the PC GDK's `xgameruntime.lib`, for `fivestar-loader --gdk-abi`. Without a GDK it finishes with a note | `loader/gdk-abi.txt` |
 | `pipeline-warm` | `fivestar-loader --warm-pipelines` of `shaders.rpf` with `--warm-step` = `--step`: builds every pipeline of the console pipeline cache with the desktop driver ([d3d12x-pipelines.md](d3d12x-pipelines.md#warm-up)), so the first boot loads them. `fivestar run` does not wait for it | `pipeline-cache` |
 
@@ -62,11 +65,12 @@ or the step fails, and the step then shows as interrupted.
 | Step | Inputs | Tool |
 |---|---|---|
 | `verify` | path, size and write time of the config, `shaders.rpf` and the page files | a version number in the code |
+| `bcpack-tables` | the content of the given file, or of the imported copy | FiveStar.Formats |
 | `shader-extract` | `shaders.rpf` and `game_scarlett_master.exe` (path, size, write time) | FiveStar.Shaders |
 | `shader-translate` | `shaders/dxbc/_manifest.tsv` (it lists every container hash), the sample options | the shader-cache identity (below) |
 | `rect-gs` | `shaders/hlsl/variants.json` | the shader-cache identity, FiveStar.Shaders |
 | `pipeline-cache` | `shaders.rpf` | FiveStar.Shaders, FiveStar.Formats |
-| `textures` | every page file, the sample options | FiveStar.Formats |
+| `textures` | every page file, the sample options, the imported BCPack tables | FiveStar.Formats |
 | `gdk-abi` | the GDK library and the dump's modules, or none | FiveStar.Formats |
 | `pipeline-warm` | `shaders.rpf`, the sample options | the `fivestar-loader.exe` file |
 
@@ -82,7 +86,7 @@ step runs when it has no record, its record differs, its outputs are gone or it 
 - `pipeline-warm` skips every pipeline the cache already holds. Its outputs count as gone when the cache folder has
   no segment, which is also the case after a driver update (the loader deletes the segments the new driver refuses).
 
-Every step prints `[n/8] <title>`, the reason it runs, its expected time and the overall time left. The expected time is
+Every step prints `[n/9] <title>`, the reason it runs, its expected time and the overall time left. The expected time is
 the last measured duration of the step, or before the first run an estimate: 3.2 s of one job per shader program
 (about an hour for all programs on 24 jobs, 5.8 hours on 4), 100 MiB of page files per second for textures. The shader and texture steps print
 progress, time left and finish time every 10 seconds.

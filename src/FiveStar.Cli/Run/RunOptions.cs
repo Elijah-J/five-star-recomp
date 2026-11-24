@@ -29,7 +29,7 @@ internal sealed record RunOptions(
 
     private static readonly HashSet<string> Flags = [DebugFlag];
 
-    private static readonly HashSet<string> ValueOptions = ["work", "timeout", "shaders", "translated", "loader", "dxc", "gdk-lib", "jobs"];
+    private static readonly HashSet<string> ValueOptions = ["work", "timeout", "shaders", "translated", "loader", "dxc", "gdk-lib", "jobs", "bcpack-tables"];
 
     /// <summary>Whether prebuilt shader folders replace the shader steps of setup.</summary>
     public bool PrebuiltShaders => Programs is not null;
