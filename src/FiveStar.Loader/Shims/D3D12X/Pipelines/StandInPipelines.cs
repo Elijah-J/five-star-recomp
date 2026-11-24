@@ -22,6 +22,7 @@ internal sealed unsafe class StandInPipelines
     private readonly object _gate = new();
     private readonly HashSet<nint> _live = [];
     private readonly Dictionary<nint, Action> _waiting = [];
+    private readonly Dictionary<nint, StandInWork> _work = [];
     private readonly TimeSpan _budget;
     private readonly PipelineBuildQueue _builds;
     private readonly PipelineBuildQueue _heavyBuilds;
@@ -74,7 +75,8 @@ internal sealed unsafe class StandInPipelines
         }
 
         long started = Stopwatch.GetTimestamp();
-        var build = queue.Enqueue(create);
+        var queued = queue.Queue(create, urgent: false);
+        var build = queued.Done.Task;
 
         if (build.Wait(budget))
         {
@@ -89,6 +91,7 @@ internal sealed unsafe class StandInPipelines
         }
 
         nint standIn = NewStandIn();
+        Track(standIn, new StandInWork { Creation = (queued, queue) });
         build.ContinueWith(task => Complete(standIn, task.Result, what, started, built), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
         Interlocked.Increment(ref _created);
         _warnings.Warn("standin", $"[d3d12_xs] pipeline {what} not built in time: the game gets a stand-in, its draws and dispatches are skipped until the driver is done (counted in the sample summary)");
@@ -114,7 +117,7 @@ internal sealed unsafe class StandInPipelines
                 used();
                 var queue = heavy ? _heavyBuilds : _builds;
                 long started = Stopwatch.GetTimestamp();
-                queue.Enqueue(create).ContinueWith(task => Complete(standIn, task.Result, what, started, built), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
+                queue.Queue(create, urgent: true).Done.Task.ContinueWith(task => Complete(standIn, task.Result, what, started, built), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
             };
         }
 
@@ -134,6 +137,7 @@ internal sealed unsafe class StandInPipelines
     public int Waiting(Func<bool, Task> programs, Func<PendingBuild?> prepare, nint* result, Action? used)
     {
         nint standIn = NewStandIn();
+        Track(standIn, new StandInWork { Programs = programs });
         Interlocked.Increment(ref _created);
         Interlocked.Increment(ref _onDemand);
 
@@ -189,7 +193,62 @@ internal sealed unsafe class StandInPipelines
         }
 
         var queue = build.Heavy ? _heavyBuilds : _builds;
-        queue.Enqueue(build.Create).ContinueWith(task => Complete(standIn, task.Result, build.What, started, build.Built), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
+        PipelineBuild queued;
+
+        lock (_gate)
+        {
+            // A stand-in a command list set already goes first; one set later is promoted then (Promote).
+            queued = queue.Queue(build.Create, Volatile.Read(ref ((StandInPipelineObject*)standIn)->Used) == 1);
+
+            if (_work.TryGetValue(standIn, out var work))
+            {
+                work.Creation = (queued, queue);
+            }
+        }
+
+        queued.Done.Task.ContinueWith(task => Complete(standIn, task.Result, build.What, started, build.Built), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
+    }
+
+    private void Track(nint standIn, StandInWork work)
+    {
+        lock (_gate)
+        {
+            _work[standIn] = work;
+        }
+    }
+
+    /// <summary>
+    /// A command list set <paramref name="standIn"/> for the first time: its programs and its creation go before all
+    /// speculative work (pipelines built at creation from the journal, prefetched programs).
+    /// </summary>
+    private void Promote(nint standIn)
+    {
+        StandInWork? work;
+
+        lock (_gate)
+        {
+            _work.TryGetValue(standIn, out work);
+        }
+
+        if (work is null)
+        {
+            return;
+        }
+
+        if (work.Programs is not null)
+        {
+            _ = work.Programs(true);
+        }
+
+        lock (_gate)
+        {
+            var creation = work.Creation;
+
+            if (creation.HasValue)
+            {
+                creation.Value.Queue.Promote(creation.Value.Build);
+            }
+        }
     }
 
     /// <summary>
@@ -209,6 +268,12 @@ internal sealed unsafe class StandInPipelines
         var standIn = (StandInPipelineObject*)pipeline;
         nint desktop = Volatile.Read(ref standIn->Desktop);
         pending = desktop == 0;
+
+        // Used first, so a deferred stand-in started below queues its creation as urgent.
+        if (pending && Volatile.Read(ref standIn->Used) == 0 && Interlocked.Exchange(ref standIn->Used, 1) == 0)
+        {
+            Promote(pipeline);
+        }
 
         if (pending && Volatile.Read(ref standIn->Deferred) == 1 && Interlocked.Exchange(ref standIn->Deferred, 0) == 1)
         {
@@ -255,6 +320,7 @@ internal sealed unsafe class StandInPipelines
         {
             _live.Remove((nint)standIn);
             _waiting.Remove((nint)standIn);
+            _work.Remove((nint)standIn);
             desktop = standIn->Desktop;
         }
 
@@ -305,6 +371,11 @@ internal sealed unsafe class StandInPipelines
 
         if (HResult.Failed(built.Hr) || built.Pipeline == 0)
         {
+            lock (_gate)
+            {
+                _work.Remove(standIn);
+            }
+
             _warnings.Warn($"late-{what}", $"[d3d12_xs] pipeline {what} failed after {took.TotalSeconds:F0} s: {HResult.Format(built.Hr)}; its draws and dispatches stay skipped");
 
             return;
@@ -314,6 +385,8 @@ internal sealed unsafe class StandInPipelines
 
         lock (_gate)
         {
+            _work.Remove(standIn);
+
             if (_live.Contains(standIn))
             {
                 Volatile.Write(ref ((StandInPipelineObject*)standIn)->Desktop, built.Pipeline);

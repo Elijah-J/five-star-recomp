@@ -9,7 +9,8 @@ namespace FiveStar.Loader.Shims.D3D12X.Pipelines;
 /// A fixed set of background threads that run desktop pipeline creations in order, so creations the game no longer
 /// waits for (<see cref="StandInPipelines"/>) never take more driver compiler threads than these. A thread starts a
 /// creation only while the machine has the memory for it: the driver's compiles of a story load's backlog took a
-/// 64 GB machine to its commit limit, which ended the process (docs/d3d12x-pipelines.md#stand-ins).
+/// 64 GB machine to its commit limit, which ended the process (docs/d3d12x-pipelines.md#stand-ins). Urgent creations,
+/// those of pipelines a command list has set, start before all others; a queued creation can be made urgent later.
 /// </summary>
 internal sealed class PipelineBuildQueue
 {
@@ -18,6 +19,7 @@ internal sealed class PipelineBuildQueue
     /// <summary>For <see cref="PipelineBuildQueue(int, Func{int, bool})"/>: creations start whenever a thread is free.</summary>
     public static readonly Func<int, bool> AnyTime = _ => true;
 
+    private readonly BlockingCollection<PipelineBuild> _urgent = [];
     private readonly BlockingCollection<PipelineBuild> _builds = [];
     private readonly Func<int, bool> _room;
     private int _waiting;
@@ -35,7 +37,7 @@ internal sealed class PipelineBuildQueue
     public int Workers { get; }
 
     /// <summary>Creations queued and not yet started.</summary>
-    public int Backlog => _builds.Count;
+    public int Backlog => _urgent.Count + _builds.Count;
 
     /// <summary>Threads waiting for memory before their next creation.</summary>
     public int WaitingForMemory => Volatile.Read(ref _waiting);
@@ -53,17 +55,51 @@ internal sealed class PipelineBuildQueue
     /// <summary>Queues <paramref name="create"/>; the task ends with its result.</summary>
     public Task<PipelineResult> Enqueue(Func<PipelineResult> create)
     {
-        var build = new PipelineBuild(create, new TaskCompletionSource<PipelineResult>(TaskCreationOptions.RunContinuationsAsynchronously));
-        _builds.Add(build);
+        return Queue(create, urgent: false).Done.Task;
+    }
 
-        return build.Done.Task;
+    /// <summary>Queues <paramref name="create"/>, before every creation that is not urgent when <paramref name="urgent"/>.</summary>
+    public PipelineBuild Queue(Func<PipelineResult> create, bool urgent)
+    {
+        var build = new PipelineBuild(create, urgent);
+
+        if (urgent)
+        {
+            _urgent.Add(build);
+        }
+        else
+        {
+            _builds.Add(build);
+        }
+
+        return build;
+    }
+
+    /// <summary>Moves a queued <paramref name="build"/> before every creation that is not urgent.</summary>
+    public void Promote(PipelineBuild build)
+    {
+        if (build.MakeUrgent())
+        {
+            _urgent.Add(build);
+        }
     }
 
     private void Run()
     {
-        foreach (var build in _builds.GetConsumingEnumerable())
+        BlockingCollection<PipelineBuild>[] queues = [_urgent, _builds];
+
+        while (true)
         {
+            // Memory first, then the work: a thread waiting for memory holds no creation, so an urgent one queued
+            // meanwhile is the next taken. TakeFromAny takes from the first queue that has work.
             WaitForRoom();
+            BlockingCollection<PipelineBuild>.TakeFromAny(queues, out var build);
+
+            if (!build!.Claim())
+            {
+                continue;
+            }
+
             Interlocked.Increment(ref _running);
 
             try

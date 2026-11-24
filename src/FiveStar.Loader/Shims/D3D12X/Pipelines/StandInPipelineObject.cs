@@ -23,5 +23,7 @@ internal unsafe struct StandInPipelineObject
     public int References;
     /// <summary>1 while the build waits for the first use (<see cref="StandInPipelines.Deferred"/>), else 0.</summary>
     public int Deferred;
+    /// <summary>1 once a command list has set the stand-in: its work goes before speculative work (<see cref="StandInPipelines.Desktop"/>).</summary>
+    public int Used;
     public nint Owner;
 }
