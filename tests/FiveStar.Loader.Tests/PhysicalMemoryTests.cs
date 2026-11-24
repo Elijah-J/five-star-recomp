@@ -175,6 +175,7 @@ public sealed unsafe class PhysicalMemoryTests : IDisposable
         words[DestinationWord] = (ulong)pages;
         words[FirstPageOffsetWord] = Offset;
         words[SizeWord] = 0x20;
+
         var data = new byte[0x20];
         data[0] = 1;
         data[0x10] = 2;
