@@ -1,0 +1,74 @@
+// Copyright (c) 2026 Five Star Recomp contributors.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+using FiveStar.Shaders.Dxil.Container;
+using FiveStar.Shaders.Dxil.Hlsl;
+using FiveStar.Shaders.Dxil.Lowering;
+using FiveStar.Shaders.Translation;
+
+namespace FiveStar.Shaders.Dxil;
+
+/// <summary>
+/// The DXIL backend: compiles translated HLSL (the translator's output and its runtime headers) straight to a DXIL
+/// container, without dxc. It handles the HLSL the translator writes, not HLSL in general; anything else throws
+/// <see cref="DxilBackendException"/>. docs/dxil-backend.md describes it.
+/// </summary>
+public static class DxilBackend
+{
+    // Deep chains of joins make deep SSA lookups; a compile runs on a thread with a large stack.
+    private const int StackBytes = 256 * 1024 * 1024;
+
+    /// <summary>Whether the backend compiles programs of this profile (ps, vs, cs, ms, gs).</summary>
+    public static bool Supports(string profile)
+    {
+        return profile == "cs";
+    }
+
+    /// <summary>The DXIL container of <paramref name="hlsl"/>, compiled for <paramref name="profile"/>.</summary>
+    public static byte[] Compile(string hlsl, string profile)
+    {
+        if (!Supports(profile))
+        {
+            throw new DxilBackendException($"profile {profile} is not supported");
+        }
+
+        byte[]? result = null;
+        Exception? failure = null;
+        var thread = new Thread(
+            () =>
+            {
+                try
+                {
+                    result = CompileCompute(hlsl);
+                }
+                catch (Exception exception)
+                {
+                    failure = exception;
+                }
+            },
+            StackBytes);
+        thread.Start();
+        thread.Join();
+
+        if (failure is DxilBackendException backend)
+        {
+            throw backend;
+        }
+
+        if (failure is not null)
+        {
+            throw new DxilBackendException($"internal error: {failure.GetType().Name}: {failure.Message}");
+        }
+
+        return result!;
+    }
+
+    private static byte[] CompileCompute(string hlsl)
+    {
+        var tokens = Preprocessor.Run(hlsl, RuntimeIncludes.Read);
+        var declarations = Parser.Parse(tokens);
+        var (module, main, description) = ShaderLowering.Compute(declarations);
+
+        return ShaderContainer.Write(module, main, description);
+    }
+}

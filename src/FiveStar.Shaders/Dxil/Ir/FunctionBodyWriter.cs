@@ -31,8 +31,8 @@ internal sealed class FunctionBodyWriter
         _types = types;
     }
 
-    /// <summary>Lays the blocks out, finds the live instructions and numbers their results.</summary>
-    public void NumberInstructions()
+    /// <summary>Lays the blocks out and finds the live instructions.</summary>
+    public void Analyze()
     {
         _layout = ReversePostorder(_function.Blocks[0]);
 
@@ -42,6 +42,29 @@ internal sealed class FunctionBodyWriter
         }
 
         MarkLive();
+    }
+
+    /// <summary>The functions the live instructions call and the globals they address.</summary>
+    public HashSet<Value> Referenced()
+    {
+        var referenced = new HashSet<Value>();
+
+        foreach (var instruction in _live)
+        {
+            if (instruction.Callee is not null)
+            {
+                referenced.Add(instruction.Callee);
+            }
+
+            referenced.UnionWith(instruction.Operands.OfType<GlobalVariable>());
+        }
+
+        return referenced;
+    }
+
+    /// <summary>Numbers the live results after the module-level values.</summary>
+    public void NumberInstructions()
+    {
         _base = _ids.Count;
         var next = _base;
 

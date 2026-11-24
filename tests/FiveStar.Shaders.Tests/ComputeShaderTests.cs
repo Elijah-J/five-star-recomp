@@ -55,6 +55,15 @@ public sealed class ComputeShaderTests : IClassFixture<WarpFixture>
 
     [WarpTheory]
     [MemberData(nameof(Cases))]
+    public void The_dxil_backend_computes_what_the_isa_defines(string name)
+    {
+        var mismatches = new ComputeCaseRunner(_fixture).RunDirect(ComputeCases.Find(name));
+
+        Assert.True(mismatches.Count == 0, $"{mismatches.Count} mismatches:\n{string.Join("\n", mismatches.Take(16))}");
+    }
+
+    [WarpTheory]
+    [MemberData(nameof(Cases))]
     [MemberData(nameof(FullWaveCases), Skip = FullWaveReason)]
     public void A_compute_program_computes_what_the_isa_defines(string name)
     {

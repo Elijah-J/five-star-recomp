@@ -32,6 +32,8 @@ internal static class ShaderCommands
         "        [--cache <dir>] [--retry results.json] [--stages ps,vs,cs,ms,gs] [--jobs N] [--limit N] [--step K] [--no-compile] [--dispatch]",
         "        [--native-waves] [--mesh-fallbacks]; also writes <out>/variants.json (the forms and wave floors of every compiled program)",
         "  disasm and translate decode in-process; --llvm-disassembler uses llvm-mc/llvm-objdump instead",
+        "  dxil <hlsl file or folder>             compile translated compute HLSL with the DXIL backend (no dxc), report coverage and times",
+        "        [--out <dir>] [--validate] [--limit N] [--step K] [--jobs N]",
         "  waves <out> <fssm-folder>              classify translated programs by wave-size dependence",
         "  pso <out> [--adapter <index|name>]     create a D3D12 pipeline state per compiled program, write <out>/pso-<adapter>.jsonl",
         "        [--stages ...] [--limit N] [--step K] [--jobs N] [--timeout S] [--max-memory GB]",
@@ -70,6 +72,8 @@ internal static class ShaderCommands
                     return DecodeCheckCommand.Run(rest);
                 case "translate":
                     return TranslateCommand.Run(rest);
+                case "dxil":
+                    return DxilCommand.Run(rest);
                 case "waves":
                     return WaveReport.Run(rest);
                 case "pso":

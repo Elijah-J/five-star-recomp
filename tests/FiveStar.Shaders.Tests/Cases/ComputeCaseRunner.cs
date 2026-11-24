@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using FiveStar.Shaders.Containers;
+using FiveStar.Shaders.Dxil;
 using FiveStar.Shaders.Hardware;
 using FiveStar.Shaders.Tests.Toolchain;
 using FiveStar.Shaders.Tests.Warp;
@@ -52,6 +53,12 @@ public sealed class ComputeCaseRunner
         return Run(testCase with { Threads = (2 * testCase.Wave, 1, 1) }, program => HlslTranslator.SuperstepVariant(program, options));
     }
 
+    /// <summary>Runs a case compiled by the DXIL backend instead of dxc (the same translation, the same expectations).</summary>
+    public IReadOnlyList<string> RunDirect(ComputeCase testCase)
+    {
+        return Run(testCase, null, direct: true);
+    }
+
     private static string GroupWave(ShaderProgram program)
     {
         // As the corpus builds it: structured (WARP's shader compiler crashes on barriers in the dispatch switch).
@@ -62,7 +69,12 @@ public sealed class ComputeCaseRunner
 
     private List<string> Run(ComputeCase testCase, Func<ShaderProgram, string>? variant)
     {
-        var shader = Build(testCase, variant);
+        return Run(testCase, variant, direct: false);
+    }
+
+    private List<string> Run(ComputeCase testCase, Func<ShaderProgram, string>? variant, bool direct)
+    {
+        var shader = Build(testCase, variant, direct);
         uint[] user = [.. ComputeCase.Descriptor(ComputeCase.OutputHeap), .. testCase.SecondDescriptor, .. testCase.User, .. new uint[ComputeCase.UserSgprCount]];
         var output = new BufferResource(ComputeCase.OutputHeap, [.. Enumerable.Repeat(testCase.Fill, testCase.TotalThreads * testCase.Outputs)], Writable: true);
         var bindings = new Bindings { UserSgprs = user[..ComputeCase.UserSgprCount], Buffers = [output, .. testCase.Buffers] };
@@ -79,7 +91,7 @@ public sealed class ComputeCaseRunner
         return Compare(testCase, result.Buffers, wave);
     }
 
-    private byte[] Build(ComputeCase testCase, Func<ShaderProgram, string>? variant)
+    private byte[] Build(ComputeCase testCase, Func<ShaderProgram, string>? variant, bool direct)
     {
         var assembled = _fixture.Workbench.Assemble(testCase.Name, Source(testCase), testCase.Wave);
         var groupIds = testCase.GroupAxes.Select((axis, index) => new GroupIdSgpr(axis, ComputeCase.UserSgprCount + index)).ToList();
@@ -107,6 +119,11 @@ public sealed class ComputeCaseRunner
         if (variant is not null)
         {
             return _fixture.Workbench.Compile($"{testCase.Name}_w32_{testCase.ThreadsPerGroup}", variant(program), "cs");
+        }
+
+        if (direct)
+        {
+            return DxilBackend.Compile(ShaderWorkbench.Translate(program), "cs");
         }
 
         return _fixture.Workbench.Compile(testCase.Name, ShaderWorkbench.Translate(program), "cs");

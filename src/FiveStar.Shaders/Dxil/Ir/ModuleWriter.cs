@@ -41,6 +41,8 @@ public sealed class ModuleWriter
     private readonly DxilModule _module;
     private readonly BitstreamWriter _out = new();
     private readonly Dictionary<Value, int> _ids = [];
+    private List<GlobalVariable> _globals = [];
+    private List<IrFunction> _functions = [];
 
     private ModuleWriter(DxilModule module)
     {
@@ -65,13 +67,17 @@ public sealed class ModuleWriter
         WriteTypes();
         _out.TextRecord((int)ModuleCode.Triple, [], Triple);
         _out.TextRecord((int)ModuleCode.DataLayout, [], DataLayout);
+
+        var entry = _module.Functions.First(function => function.HasBody);
+        var body = new FunctionBodyWriter(_out, _ids, entry, _module.Types);
+        body.Analyze();
+        var referenced = body.Referenced();
+        _globals = [.. _module.Globals.Where(referenced.Contains)];
+        _functions = [.. _module.Functions.Where(function => function == entry || referenced.Contains(function))];
         NumberModuleValues();
         WriteGlobals();
         WriteFunctionDeclarations();
         WriteConstants();
-
-        var entry = _module.Functions.First(function => function.HasBody);
-        var body = new FunctionBodyWriter(_out, _ids, entry, _module.Types);
         body.NumberInstructions();
         WriteMetadata();
         WriteSymbols();
@@ -171,12 +177,12 @@ public sealed class ModuleWriter
 
     private void NumberModuleValues()
     {
-        foreach (var global in _module.Globals)
+        foreach (var global in _globals)
         {
             _ids[global] = _ids.Count;
         }
 
-        foreach (var function in _module.Functions)
+        foreach (var function in _functions)
         {
             _ids[function] = _ids.Count;
         }
@@ -189,7 +195,7 @@ public sealed class ModuleWriter
 
     private void WriteGlobals()
     {
-        foreach (var global in _module.Globals)
+        foreach (var global in _globals)
         {
             ulong constant = 0;
             ulong initializer = 0;
@@ -209,7 +215,7 @@ public sealed class ModuleWriter
 
     private void WriteFunctionDeclarations()
     {
-        foreach (var function in _module.Functions)
+        foreach (var function in _functions)
         {
             ulong prototype = function.HasBody ? 0UL : 1UL;
             _out.Record((int)ModuleCode.Function, [(ulong)function.FunctionType.Id, 0, prototype, 0, (ulong)function.Attribute, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
@@ -309,12 +315,12 @@ public sealed class ModuleWriter
     {
         _out.Enter(BlockId.ValueSymbolTable, WideWidth);
 
-        foreach (var global in _module.Globals)
+        foreach (var global in _globals)
         {
             _out.TextRecord((int)SymbolCode.Entry, [(ulong)_ids[global]], global.Name);
         }
 
-        foreach (var function in _module.Functions)
+        foreach (var function in _functions)
         {
             _out.TextRecord((int)SymbolCode.Entry, [(ulong)_ids[function]], function.Name);
         }

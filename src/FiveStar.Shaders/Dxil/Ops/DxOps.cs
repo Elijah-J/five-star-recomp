@@ -34,6 +34,8 @@ public sealed class DxOps
         CbufferResult = types.Struct("dx.types.CBufRet.i32", [types.Int32, types.Int32, types.Int32, types.Int32]);
         Int32Result = types.Struct("dx.types.ResRet.i32", [types.Int32, types.Int32, types.Int32, types.Int32, types.Int32]);
         FourInt32 = types.Struct("dx.types.fouri32", [types.Int32, types.Int32, types.Int32, types.Int32]);
+        Dimensions = types.Struct("dx.types.Dimensions", [types.Int32, types.Int32, types.Int32, types.Int32]);
+        FloatResult = types.Struct("dx.types.ResRet.f32", [types.Float, types.Float, types.Float, types.Float, types.Int32]);
     }
 
     public IrType Handle { get; }
@@ -47,6 +49,10 @@ public sealed class DxOps
     public IrType Int32Result { get; }
 
     public IrType FourInt32 { get; }
+
+    public IrType Dimensions { get; }
+
+    public IrType FloatResult { get; }
 
     private DxilModule Module => _builder.Module;
 
