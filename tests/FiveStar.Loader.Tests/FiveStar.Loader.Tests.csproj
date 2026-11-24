@@ -12,6 +12,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The synthetic BCPack BC1 streams of bcpack-rs (vendor/bcpack-rs/PROVENANCE.md). -->
+    <None Include="..\..\vendor\bcpack-rs\tests\vectors\*.json" Link="BcPackVectors\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\FiveStar.Loader\FiveStar.Loader.csproj" />
   </ItemGroup>
 </Project>

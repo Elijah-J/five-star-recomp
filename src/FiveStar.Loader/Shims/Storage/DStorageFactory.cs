@@ -37,7 +37,11 @@ internal sealed unsafe class DStorageFactory : IDisposable
         _overlay = overlay;
         _sink = sink;
         _log = log;
+        BcPack = new BcPackPages(log);
     }
+
+    /// <summary>The BCPack page decoder every queue shares, with its placeholder switch and totals.</summary>
+    public BcPackPages BcPack { get; }
 
     /// <summary>DStorageGetFactory: the one factory object for any interface id.</summary>
     public int GetFactory(Guid* iid, nint* result)
@@ -127,7 +131,7 @@ internal sealed unsafe class DStorageFactory : IDisposable
         }
 
         var settings = QueueSettings.Read(desc);
-        var executor = new RequestExecutor(Volatile.Read(ref _stagingBytes), _sink, _log);
+        var executor = new RequestExecutor(Volatile.Read(ref _stagingBytes), _sink, BcPack, _log);
         var queue = new StorageQueue(settings, executor, _log);
         queue.Start();
 
@@ -158,7 +162,7 @@ internal sealed unsafe class DStorageFactory : IDisposable
         long failed = queues.Sum(q => q.RequestsFailed);
         long bytes = queues.Sum(q => q.BytesDelivered);
 
-        return $"{queues.Length} queues: {enqueued} entries enqueued, {submitted} submitted, {run} requests run ({failed} failed), 0x{bytes:x} bytes delivered";
+        return $"{queues.Length} queues: {enqueued} entries enqueued, {submitted} submitted, {run} requests run ({failed} failed), 0x{bytes:x} bytes delivered; {BcPack.Summary()}";
     }
 
     /// <summary>Stops every queue; the native objects the game still holds are left to the process exit.</summary>

@@ -166,6 +166,7 @@ internal sealed class LoaderHost
         _runtime.D3D12X.Presenter.ShowTestPattern = _options.PresentTest;
         _runtime.BvhBuilder.Enabled = _options.RayTracing;
         _runtime.XDsp.Convolve = _options.XDspConvolution;
+        _runtime.Storage.BcPack.FailMissing = _options.FailMissingBcPack;
 
         if (_options.FidelityFxLibrary is not null)
         {
