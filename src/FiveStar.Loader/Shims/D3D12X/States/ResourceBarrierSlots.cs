@@ -41,6 +41,8 @@ internal static unsafe class ResourceBarrierSlots
             return;
         }
 
+        GpuBreadcrumbs.Before(self, RecordedCommand.ResourceBarrier);
+
         var d3d12x = D3D12X;
         var states = d3d12x.ListStates.For(self);
 

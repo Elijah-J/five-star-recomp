@@ -3,6 +3,7 @@
 
 using System.Runtime.InteropServices;
 using FiveStar.Loader.Native;
+using FiveStar.Loader.Shims.D3D12X.DebugLayer;
 
 namespace FiveStar.Loader.Shims.D3D12X;
 
@@ -24,6 +25,8 @@ internal static unsafe class BufferCopies
     {
         nint desktopDestination = Desktop(destination, ref destinationOffset);
         nint desktopSource = Desktop(source, ref sourceOffset);
+        GpuBreadcrumbs.Before(self, RecordedCommand.CopyBuffer);
+
         nint inner = self->Inner;
         var copy = (delegate* unmanaged<nint, nint, ulong, nint, ulong, ulong, void>)ComObject.Slot(inner, DesktopCopyBufferRegion);
         copy(inner, desktopDestination, destinationOffset, desktopSource, sourceOffset, bytes);

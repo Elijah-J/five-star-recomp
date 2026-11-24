@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Runtime.InteropServices;
+using FiveStar.Loader.Shims.D3D12X.DebugLayer;
 
 namespace FiveStar.Loader.Shims.D3D12X.States;
 
@@ -62,6 +63,8 @@ internal static unsafe class EnhancedBarrierSlots
         {
             return;
         }
+
+        GpuBreadcrumbs.Before(self, RecordedCommand.EnhancedBarrier);
 
         var d3d12x = D3D12X;
         var states = d3d12x.ListStates.For(self);

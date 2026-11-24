@@ -85,10 +85,11 @@ With an empty save folder the game shows a black screen that waits for a press (
 (default Off), brightness calibration, a controls notice, the legal and photosensitivity screens, and a privacy
 policy and terms of service screen, before it loads story mode (a spinner on dark blue). Keys of the
 keyboard-and-mouse gamepad: A (Space) confirms, a short press too; arrows move the focus. The photosensitivity item
-keeps the focus for about 15 s. Each terms item is checked only after its text was scrolled to the end with the right
-stick (move the mouse down) and some seconds passed; then Confirm is enabled. With the input script followed while
+keeps the focus for about 15 s. The two terms items are check boxes that A toggles (scrolling their text with the right
+stick, the mouse, is not required); with both checked Confirm is enabled. While pipelines compile the game can miss a
+0.2 s press. With the input script followed while
 running ([loader.md](loader.md#running-the-executable)) these can be answered from a second shell;
-`-- --input-script docs/first-run.input` answers them all unattended (the story load starts about 610 s in). B
+`-- --input-script docs/first-run.input` answers them all unattended (the story load starts about 580 s in). B
 (C) goes back to the previous screen. The screens' text, headings and logos render in full; the brightness-calibration
 symbol is still missing (black at every brightness level). Each frame's first draw uses a stream pipeline (slot 86)
 whose program (key `7f2680d5a629ff03...`) is not among the extracted programs, so it is skipped; whether that draw is

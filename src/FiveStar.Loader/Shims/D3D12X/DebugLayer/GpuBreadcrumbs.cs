@@ -114,6 +114,23 @@ internal static unsafe class GpuBreadcrumbs
         Write(list, activity, marker);
     }
 
+    /// <summary>Before a copy or barrier: notes it as <paramref name="command"/> in place of a pipeline and marks the work before it done.</summary>
+    [HotPath]
+    public static void Before(XboxObject* list, RecordedCommand command)
+    {
+        var activity = ListActivity.Of(list);
+        nint pipeline = activity->Pipeline;
+        activity->Pipeline = (nint)command;
+        Before(list);
+        activity->Pipeline = pipeline;
+    }
+
+    /// <summary>A command noted in place of a pipeline, by its kind.</summary>
+    public static string CommandName(nint pipeline)
+    {
+        return ((RecordedCommand)pipeline).ToString();
+    }
+
     /// <summary>At Close: marks the list finished once its work is.</summary>
     [HotPath]
     public static void Close(XboxObject* list)
@@ -135,16 +152,21 @@ internal static unsafe class GpuBreadcrumbs
         }
 
         int count = Math.Min(Volatile.Read(ref _slots), Slots);
+        var lines = new SortedList<int, string>();
 
         for (int slot = 0; slot < count; slot++)
         {
             nint list = Lists[slot];
-            var submission = ListSubmission.Of(list);
 
-            if (list != 0 && submission->Fence == fence && submission->Value == value)
+            if (list != 0 && ListSubmission.Of(list)->Fence == fence && ListSubmission.Of(list)->Value == value)
             {
-                text.Append("\n        ").Append(Where((XboxObject*)list, _markers[slot], pipelineName));
+                lines[ListActivity.Of((XboxObject*)list)->Position] = Where((XboxObject*)list, _markers[slot], pipelineName);
             }
+        }
+
+        foreach (var (position, line) in lines)
+        {
+            text.Append(CultureInfo.InvariantCulture, $"\n        #{position} ").Append(line);
         }
     }
 

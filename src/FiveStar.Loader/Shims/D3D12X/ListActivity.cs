@@ -24,6 +24,9 @@ internal unsafe struct ListActivity
     public uint Serial;
     public int Operations;
 
+    /// <summary>The list's place in its last ExecuteCommandLists.</summary>
+    public int Position;
+
     /// <summary>The list's marker slot (+1) and the pipeline of each operation; kept over Reset.</summary>
     public int Slot;
     public nint* Pipelines;

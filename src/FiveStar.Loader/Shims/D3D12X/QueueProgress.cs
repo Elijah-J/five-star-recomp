@@ -76,6 +76,7 @@ internal static unsafe class QueueProgress
             }
 
             var activity = ListActivity.Of((XboxObject*)list);
+            activity->Position = (int)i;
             entry.Draws += activity->Draws;
             entry.Dispatches += activity->Dispatches;
             entry.Indirect += activity->Indirect;
@@ -284,6 +285,11 @@ internal static unsafe class QueueProgress
         if (pipeline == 0)
         {
             return "none";
+        }
+
+        if (Enum.IsDefined((RecordedCommand)pipeline))
+        {
+            return GpuBreadcrumbs.CommandName(pipeline);
         }
 
         return PipelineNames.GetValueOrDefault(pipeline, $"0x{pipeline:x}");
