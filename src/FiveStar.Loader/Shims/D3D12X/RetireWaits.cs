@@ -28,6 +28,8 @@ internal static unsafe class RetireWaits
     private static int _queues;
     private static long _writes;
     private static long _waits;
+    private static ulong _lastValue;
+    private static ulong _lastAddress;
     private static LoaderLog? _log;
 
     /// <summary>Whether submissions with a retire write wait for the other queues.</summary>
@@ -50,10 +52,34 @@ internal static unsafe class RetireWaits
         }
     }
 
+    /// <summary>The number of the queue whose shim fence is <paramref name="fence"/>; 0 for none.</summary>
+    public static int QueueOf(nint fence)
+    {
+        int queues = Math.Min(Volatile.Read(ref _queues), MaxQueues);
+
+        for (int i = 0; i < queues; i++)
+        {
+            var queue = (XboxQueueObject*)Volatile.Read(ref Queues[i]);
+
+            if (queue != null && queue->Fence == fence)
+            {
+                return queue->Number;
+            }
+        }
+
+        return 0;
+    }
+
+    /// <summary>The value of the last slot-74 write and where it went, for reports.</summary>
+    public static (ulong Value, ulong Address) LastWrite => (Volatile.Read(ref _lastValue), Volatile.Read(ref _lastAddress));
+
     /// <summary>A slot-74 write of <paramref name="value"/> to <paramref name="address"/> recorded in <paramref name="list"/>.</summary>
     [HotPath]
     public static void Recorded(XboxObject* list, ulong address, ulong value)
     {
+        Volatile.Write(ref _lastValue, value);
+        Volatile.Write(ref _lastAddress, address);
+
         if (!Enabled)
         {
             return;

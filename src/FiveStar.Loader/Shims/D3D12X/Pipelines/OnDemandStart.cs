@@ -38,7 +38,20 @@ internal sealed class OnDemandStart
         Root = root;
         Jobs = jobs;
         _compiler = compiler;
-        _identity = Task.Run(() => ContentHash.OfText(ShadersIdentity(), nameof(RdnaDecoder), CorpusOptions.DefaultTranslation.ToString(), compiler.Identity));
+        _identity = Task.Run(() => Identity(compiler));
+    }
+
+    /// <summary>The translator and compiler build's identity; programs that trace their stores (--trace-pool-stores) have their own.</summary>
+    private static string Identity(DxcLibraryCompiler compiler)
+    {
+        string identity = ContentHash.OfText(ShadersIdentity(), nameof(RdnaDecoder), CorpusOptions.DefaultTranslation.ToString(), compiler.Identity);
+
+        if (DebugLayer.PoolStoreTrace.Enabled)
+        {
+            return ContentHash.OfText(identity, "store-trace");
+        }
+
+        return identity;
     }
 
     /// <summary>The program cache folder.</summary>

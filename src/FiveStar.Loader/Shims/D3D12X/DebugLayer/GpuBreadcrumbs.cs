@@ -371,6 +371,33 @@ internal static unsafe class GpuBreadcrumbs
         ((delegate* unmanaged<nint, uint, WriteParameter*, int*, void>)ComObject.Slot(inner, WriteBufferImmediateSlot))(inner, 1, &parameter, &mode);
     }
 
+    /// <summary>
+    /// The submission of recording <paramref name="serial"/>: the queue fence and value it ends at (0 when not submitted
+    /// yet); false when the recording's slot was taken by a newer one.
+    /// </summary>
+    public static bool TryRecording(uint serial, out nint fence, out ulong value)
+    {
+        fence = 0;
+        value = 0;
+
+        if (_recordings == null || serial == 0)
+        {
+            return false;
+        }
+
+        var recording = _recordings + (serial & (Recordings - 1));
+
+        if (recording->Serial != serial)
+        {
+            return false;
+        }
+
+        fence = recording->Fence;
+        value = recording->Value;
+
+        return true;
+    }
+
     /// <summary>Whether a device has the markers.</summary>
     public static bool Active => _markers != null;
 

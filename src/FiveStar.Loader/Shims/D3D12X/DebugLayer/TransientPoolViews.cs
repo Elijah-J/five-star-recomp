@@ -79,6 +79,22 @@ internal static unsafe class TransientPoolViews
         }
 
         _views[desktop] = new View { Start = start, Bytes = bytes };
+
+        if (start != 0 && TransientPoolHits.InPool(start, bytes))
+        {
+            PoolStoreTrace.AddView(desktop);
+        }
+    }
+
+    /// <summary>The game address a buffer UAV at <paramref name="desktop"/> starts at; 0 for none.</summary>
+    public static ulong StartOf(uint desktop)
+    {
+        if (_views == null || desktop >= MaxViews)
+        {
+            return 0;
+        }
+
+        return _views[desktop].Start;
     }
 
     /// <summary>The table UAVs that overlap the pool, for marked operation <paramref name="index"/> of recording <paramref name="serial"/>.</summary>

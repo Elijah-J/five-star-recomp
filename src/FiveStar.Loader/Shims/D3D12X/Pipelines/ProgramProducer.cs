@@ -116,6 +116,11 @@ internal sealed class ProgramProducer
             (hlsl, source) = (program.GroupWave!.Hlsl!, name + CorpusTranslator.GroupWaveSuffix);
         }
 
+        if (DebugLayer.PoolStoreTrace.Enabled)
+        {
+            hlsl = DebugLayer.PoolStoreTrace.Header(name) + hlsl;
+        }
+
         var slow = hlsl.Length > _compiler.Options.LargeSourceLength || _slow.Contains(source);
 
         return new ProgramForm(name, new CompileRequest(Path.Combine(_folder, source), hlsl, profile, slow), null);
