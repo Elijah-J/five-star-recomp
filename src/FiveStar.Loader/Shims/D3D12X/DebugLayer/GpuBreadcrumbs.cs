@@ -273,13 +273,14 @@ internal static unsafe class GpuBreadcrumbs
 
         int index = recording->Operations++;
 
+        if (operation->Kind != MarkedKind.Command)
+        {
+            operation->Pipeline = ListActivity.Of(list)->Pipeline;
+            TransientPoolHits.Note(list, recording->Serial, index, operation->Kind, operation->Pipeline);
+        }
+
         if (index < KeptOperations)
         {
-            if (operation->Kind != MarkedKind.Command)
-            {
-                operation->Pipeline = ListActivity.Of(list)->Pipeline;
-            }
-
             recording->Marked[index] = *operation;
         }
 
@@ -368,5 +369,84 @@ internal static unsafe class GpuBreadcrumbs
         int mode = MarkerOut;
         nint inner = list->Inner;
         ((delegate* unmanaged<nint, uint, WriteParameter*, int*, void>)ComObject.Slot(inner, WriteBufferImmediateSlot))(inner, 1, &parameter, &mode);
+    }
+
+    /// <summary>Whether a device has the markers.</summary>
+    public static bool Active => _markers != null;
+
+    /// <summary>The number of markers, the length of a <see cref="Snapshot"/>.</summary>
+    public static int Slots => Recordings;
+
+    /// <summary>Copies every recording's marker into <paramref name="markers"/>.</summary>
+    public static void Snapshot(uint[] markers)
+    {
+        if (_markers == null)
+        {
+            return;
+        }
+
+        for (int slot = 0; slot < Recordings; slot++)
+        {
+            markers[slot] = Volatile.Read(ref _markers[slot]);
+        }
+    }
+
+    /// <summary>
+    /// Appends each operation that ended between snapshots <paramref name="before"/> and <paramref name="after"/>, and
+    /// the one each such recording runs at <paramref name="after"/>; adds their (serial, index) to
+    /// <paramref name="operations"/>. Returns how many it appended.
+    /// </summary>
+    public static int DescribeWindow(StringBuilder text, uint[] before, uint[] after, HashSet<(uint, int)> operations, int limit, Func<nint, string> pipelineName)
+    {
+        int appended = 0;
+
+        for (int slot = 0; slot < Recordings && appended < limit; slot++)
+        {
+            var recording = _recordings + slot;
+            uint serial = recording->Serial & IndexMask;
+
+            if (before[slot] == after[slot] || recording->List == 0 || after[slot] >> SerialShift != serial)
+            {
+                continue;
+            }
+
+            (int first, int last, bool running) = Range(recording, before[slot], after[slot]);
+
+            for (int index = first; index <= last && appended < limit; index++)
+            {
+                operations.Add((recording->Serial, index));
+                string state = running && index == last ? "running" : "done";
+                string operation = "?";
+
+                if (index < KeptOperations)
+                {
+                    operation = Operation(recording->Marked + index, pipelineName);
+                }
+
+                text.Append(CultureInfo.InvariantCulture, $"\n    recording {recording->Serial} (list 0x{recording->List:x}) operation {index} {state}: {operation}");
+                appended++;
+            }
+        }
+
+        return appended;
+    }
+
+    /// <summary>The operations a recording went through between two of its markers; the last one may still run.</summary>
+    private static (int First, int Last, bool Running) Range(Recording* recording, uint before, uint after)
+    {
+        uint serial = recording->Serial & IndexMask;
+        int first = 0;
+
+        if (before >> SerialShift == serial)
+        {
+            first = (int)(before & IndexMask);
+        }
+
+        if ((after & IndexMask) == Finished)
+        {
+            return (first, recording->Operations - 1, false);
+        }
+
+        return (first, (int)(after & IndexMask), true);
     }
 }

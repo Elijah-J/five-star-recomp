@@ -90,6 +90,15 @@ queue as last seen ([queue progress](d3d12x-shim.md#queue-progress)). Root CBV, 
 to 46) that fall in the pool are kept in a ring of 4,096 with the list's pipeline; the report lists the newest 24 in
 the corrupted block, which names the GPU work that used it. The game's code is read, never changed.
 
+With `--d3d12-breadcrumbs` as well, the watch copies every recording's marker before each check, keeps the copy from
+the last clean check, and copies them again after the check that first sees the corrupted node. The report lists the
+operations between the two (done, or still running at the second copy) with their pipelines, which bounds the GPU
+work that wrote the node to that window. Each marked draw, dispatch and ExecuteIndirect also has its user data
+searched for dword pairs whose 48-bit value reaches into the pool (a root descriptor's address, or a V#'s base with
+its stride and record count in the next dwords); a ring keeps 65,536 of them with the operation and its pipeline, and
+the report lists those of the window's operations that reach the corrupted block, then the newest of any operation.
+Descriptor tables are not searched.
+
 ## Hang watchdog
 
 The game ends itself when its main loop stops for 30 s. A watchdog thread (0x142215a60) checks once a second that
