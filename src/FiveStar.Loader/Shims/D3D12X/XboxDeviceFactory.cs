@@ -138,6 +138,9 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
     /// <summary>Device slots 78 to 80, the frame events on a timer.</summary>
     public FramePacer Pacer { get; } = new();
 
+    /// <summary>Keeps the game within a few presents of the GPU (<see cref="GpuFrameThrottle"/>).</summary>
+    public GpuFrameThrottle FrameThrottle { get; } = new();
+
     /// <summary>Desktop textures for console memory, by address (docs/gpu-resources.md).</summary>
     public GpuTextures Textures { get; }
 

@@ -527,6 +527,12 @@ nothing. Boot presents one plane: the 3840x2160 render target from slot 127 (R8G
   S_FALSE, a wait for a type slot 79 never scheduled (other than the origin) E_INVALIDARG, as in XCL's
   implementation. The game's three call sites break only on a failing HRESULT (0x14248463e, 0x14248244e;
   0x14248240d through 0x144e9b660) and never pass a finite non-zero timeout.
+- GPU lag (`GpuFrameThrottle`). The frame events come from a timer, so on their own they let the game run ahead of a
+  GPU that falls behind, as during the story load. Each present notes how far every queue has been submitted (its
+  shim fence), then waits until the GPU has finished everything submitted up to the present two before. A wait gives
+  up after 5 s, counted in the sample line (`presents waited for the GPU`). This is why: the game retires transient
+  memory by frames while GPU passes of earlier frames still wrote argument records into it, over the pool's block-end
+  nodes (boot 6, sooner with 1 ms timers).
 - A present uses up its plane's token: the current token is at least the last presented one + 1 (reset with the
   grid). The render thread takes the current token (0x142482448), waits for event 2 of the frame two presents back
   (0x142482405) and presents; with a token per origin that wait sleeps, and the game runs at its interval (33.3 ms
