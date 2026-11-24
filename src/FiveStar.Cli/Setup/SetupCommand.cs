@@ -25,6 +25,7 @@ internal static class SetupCommand
         "  --limit N --step K   a sample: the first N programs of every K-th, N textures per page file",
         "  --jobs N             programs translated at once (default: every processor)",
         "  --mesh-fallbacks     compile the mesh fallbacks even when every GPU here has mesh shaders",
+        "  --warm-all           pipeline-warm builds every console pipeline, not only those earlier boots used",
         "  --dxc <dxc.exe> --gdk-lib <xgameruntime.lib> --loader <fivestar-loader.exe>   tool locations",
     ];
 
@@ -32,7 +33,7 @@ internal static class SetupCommand
     {
         try
         {
-            return Start(new CommandArguments(args, new HashSet<string> { StatusFlag, CleanCacheFlag, ForceFlag, ShaderTranslateStep.MeshFallbacksFlag }));
+            return Start(new CommandArguments(args, new HashSet<string> { StatusFlag, CleanCacheFlag, ForceFlag, ShaderTranslateStep.MeshFallbacksFlag, PipelineWarmStep.WarmAllFlag }));
         }
         catch (ArgumentException exception)
         {

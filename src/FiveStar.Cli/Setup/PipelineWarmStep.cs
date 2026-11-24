@@ -8,10 +8,12 @@ using FiveStar.Cli.Exe;
 namespace FiveStar.Cli.Setup;
 
 /// <summary>
-/// Builds every pipeline of the console pipeline cache with the desktop driver into the loader's pipeline cache
-/// (<c>&lt;work&gt;/pipeline-cache</c>, the folder <c>fivestar run</c> gives the loader), so the game's first boot
-/// loads them instead of waiting minutes for the largest compute programs: runs <c>fivestar-loader --warm-pipelines</c>.
-/// An interrupted run keeps every pipeline built so far, and the next run resumes.
+/// Builds pipelines with the desktop driver into the loader's pipeline cache (<c>&lt;work&gt;/pipeline-cache</c>, the
+/// folder <c>fivestar run</c> gives the loader), so the game loads them instead of waiting for the driver: runs
+/// <c>fivestar-loader --warm-pipelines</c>. By default only the pipelines earlier boots used (the loader's
+/// <c>pipelines-used.bin</c>; without one there is nothing to do, since the game builds pipelines on first use), with
+/// <c>--warm-all</c> also every pipeline of the console pipeline cache. An interrupted run keeps every pipeline built
+/// so far, and the next run resumes.
 /// </summary>
 internal sealed class PipelineWarmStep : ISetupStep
 {
@@ -23,8 +25,17 @@ internal sealed class PipelineWarmStep : ISetupStep
     private const string SegmentPattern = "*.psolib";
     private const string LoaderOption = "loader";
 
+    /// <summary>The setup option that warms every pipeline of the console pipeline cache too.</summary>
+    public const string WarmAllFlag = "warm-all";
+
+    // The loader's journal of the pipelines the game used (PipelineJournal.FileName).
+    private const string JournalName = "pipelines-used.bin";
+
     // Measured on an RTX 4090 with 4 jobs: every 20th pipeline in 26 minutes; the mesh pipelines take minutes each.
     private static readonly TimeSpan TypicalTime = TimeSpan.FromHours(9);
+
+    // Before a measurement of a journal-only warm-up: an assumption.
+    private static readonly TimeSpan UsedTime = TimeSpan.FromMinutes(30);
 
     public string Name => StepName;
 
@@ -32,7 +43,7 @@ internal sealed class PipelineWarmStep : ISetupStep
 
     public IReadOnlyList<string> DependsOn => [ShaderTranslateStep.StepName, PipelineCacheStep.StepName];
 
-    public TimeSpan Estimate(SetupContext context) => TypicalTime;
+    public TimeSpan Estimate(SetupContext context) => All(context) ? TypicalTime : UsedTime;
 
     public StepFingerprint Fingerprint(SetupContext context)
     {
@@ -44,11 +55,13 @@ internal sealed class PipelineWarmStep : ISetupStep
             tool = Fingerprints.OfFiles(Path.GetDirectoryName(loader)!, [loader]);
         }
 
-        return new StepFingerprint(Fingerprints.Combine(Fingerprints.OfFiles(context.Dump, [context.ShaderArchive]), context.Sample), tool);
+        var inputs = Fingerprints.Combine(Fingerprints.OfFiles(context.Dump, [context.ShaderArchive]), context.Sample, All(context).ToString(), Fingerprints.OfFiles(context.Work, [Journal(context)]));
+
+        return new StepFingerprint(inputs, tool);
     }
 
     /// <summary>The cache has segments; a driver update makes the next loader run delete them, which redoes the step.</summary>
-    public bool HasOutputs(SetupContext context) =>
+    public bool HasOutputs(SetupContext context) => (!All(context) && !File.Exists(Journal(context))) ||
         Directory.Exists(context.PipelineLibraryFolder) && Directory.EnumerateFiles(context.PipelineLibraryFolder, SegmentPattern).Any();
 
     public long RequiredBytes(SetupContext context) => Math.Max(0, ExpectedBytes - StepText.FolderSize(context.PipelineLibraryFolder));
@@ -65,6 +78,11 @@ internal sealed class PipelineWarmStep : ISetupStep
 
     public StepResult Run(SetupContext context)
     {
+        if (!All(context) && !File.Exists(Journal(context)))
+        {
+            return StepResult.Done($"nothing to warm yet: the game builds pipelines on first use and records them in {Journal(context)} for the next run (--warm-all warms the console pipeline cache)");
+        }
+
         Directory.CreateDirectory(context.LogFolder);
         var log = Path.Combine(context.LogFolder, $"pipeline-warm-{DateTime.Now:yyyyMMdd-HHmmss}.log");
         var start = new ProcessStartInfo(Loader(context)!) { UseShellExecute = false };
@@ -77,6 +95,11 @@ internal sealed class PipelineWarmStep : ISetupStep
             "--warm-step", context.Every.ToString(CultureInfo.InvariantCulture),
             "--log", log,
         ];
+
+        if (!All(context))
+        {
+            start.ArgumentList.Add("--warm-used-only");
+        }
 
         foreach (var argument in arguments)
         {
@@ -93,6 +116,10 @@ internal sealed class PipelineWarmStep : ISetupStep
 
         return StepResult.Done($"pipelines in {context.PipelineLibraryFolder} ({StepText.Size(StepText.FolderSize(context.PipelineLibraryFolder))})");
     }
+
+    private static bool All(SetupContext context) => context.Arguments.Flag(WarmAllFlag);
+
+    private static string Journal(SetupContext context) => Path.Combine(context.PipelineLibraryFolder, JournalName);
 
     private static string? Loader(SetupContext context)
     {
