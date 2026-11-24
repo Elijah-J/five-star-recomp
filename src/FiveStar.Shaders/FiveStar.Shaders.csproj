@@ -3,6 +3,8 @@
   <PropertyGroup>
     <!-- Part of fivestar-loader: trim and AOT analysis on every build (docs/aot.md). -->
     <IsAotCompatible>true</IsAotCompatible>
+    <!-- The DXIL validator wrapper calls dxil.dll through COM function pointers. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
