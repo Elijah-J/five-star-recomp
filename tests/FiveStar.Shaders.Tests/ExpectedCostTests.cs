@@ -28,6 +28,9 @@ public sealed class ExpectedCostTests
             var costs = ExpectedCosts.Of([slow, unlogged], folder.FullName);
 
             Assert.Equal([4000.0, 12000.0], costs);
+
+            // The form whose -O3 compile timed out goes to -Od at once next time.
+            Assert.Equal(["slow.w32.hlsl"], ExpectedCosts.TimedOut(folder.FullName));
         }
         finally
         {

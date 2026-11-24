@@ -58,6 +58,7 @@ public sealed partial class CorpusTranslator
     private readonly MeshFallbackCompiler? _fallback;
     private readonly TranslationCache? _translations;
     private readonly IProgress<CorpusProgress>? _progress;
+    private HashSet<string> _timedOut = [];
 
     /// <summary>
     /// Without a compiler the programs are only translated (status ok when the translation succeeds); without a
@@ -104,6 +105,7 @@ public sealed partial class CorpusTranslator
         var results = new ProgramResult[paths.Count];
         var parallel = new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, options.Parallelism) };
         var costs = ExpectedCosts.Of(paths, options.OutputFolder);
+        _timedOut = ExpectedCosts.TimedOut(options.OutputFolder);
         var total = costs.Sum();
 
         var done = 0;
@@ -478,7 +480,7 @@ public sealed partial class CorpusTranslator
     private (string Status, string? Reason) Compile(IShaderCompiler compiler, string hlslPath, string hlsl, TranslatedProgram program)
     {
         var profile = ShaderStages.ProfileName(program.Stage!.Value);
-        var large = hlsl.Length > compiler.Options.LargeSourceLength;
+        var large = hlsl.Length > compiler.Options.LargeSourceLength || _timedOut.Contains(Path.GetFileName(hlslPath));
         var outcome = compiler.Compile(new CompileRequest(hlslPath, hlsl, profile, large), compiler.Options.CompileTimeout);
 
         if (outcome.TimedOut)
