@@ -3,22 +3,20 @@
 #
 # fivestar-loader --input-script: answers the first-run screens of an empty save folder unattended, up to the story
 # load (docs/running.md#first-run-in-the-game). Times are seconds from loader start. With a warm pipeline cache the
-# black "press a button" screen showed 45 to 220 s in. While pipelines compile the game runs at 10 to 20 frames a
-# second and can miss a 0.2 s press, so every press here is held 0.3 s or longer.
+# black "press a button" screen showed 45 to 220 s in. Presses are held 0.3 s: while pipelines compile the game runs
+# at 10 to 20 frames a second and missed 0.2 s presses, and from about 0.5 s a held arrow repeats.
 #
 # A tap passes the black screen, skips the logos and confirms each option screen (minimap, text size, the Off
 # option, brightness, controls notice); on the legal screen it does nothing while the Legal item has the focus.
 40 Space hold 0.3 repeat 91 every 4
 # Legal and photosensitivity: focus down twice (the photosensitivity item keeps the focus about 15 s), then Next.
-410 Down hold 0.6
-430 Down hold 0.6
-450 Space hold 0.6
-# Privacy policy and terms of service: each item is a check box that A toggles, so one press each. The texts are
-# scrolled with the right stick (cursor down at 800 px/s) first, as a player would. Confirm starts the story load.
-465 cursor 0 800 hold 30
-505 Space hold 0.6
-512 Down hold 0.6
-520 cursor 0 800 hold 30
-560 Space hold 0.6
-567 Down hold 0.6
-575 Space hold 0.6
+410 Down hold 0.3
+430 Down hold 0.3
+450 Space hold 0.3
+# Privacy policy and terms of service: each item is a check box that A toggles (its text need not be scrolled), so
+# one press each; then Confirm starts the story load.
+470 Space hold 0.3
+476 Down hold 0.3
+482 Space hold 0.3
+488 Down hold 0.3
+494 Space hold 0.3

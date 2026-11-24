@@ -566,10 +566,22 @@ memory line of the thread sampler. A removed device sets every fence to UINT64_M
 as last seen, without the debug layer as well.
 
 `--d3d12-breadcrumbs` (`GpuBreadcrumbs`) adds where each list of an unfinished execution stopped: before every draw,
-dispatch and ExecuteIndirect, and at Close, a list writes its recording number and the operation's index to its own
+dispatch, ExecuteIndirect, CopyBufferRegion, ResourceBarrier and Barrier, and at Close, a list writes its recording number and the operation's index to its own
 dword of a readback buffer with WriteBufferImmediate(MARKER_OUT), which waits for the work before it, and keeps the
-pipeline of each operation. The report then says per list `not started`, `finished` or `STOPPED at operation n`
-with that operation's pipeline. Each marker drains the GPU, so it is a diagnosis mode, not for play.
+pipeline of each operation. The report then lists them in submission order with `not started`, `finished` or`
+`STOPPED at operation n` and that operation's pipeline or command. Work between markers that has no handler of its own
+(clears, texture copies, queries, X-only slots) shows as the operation after it; a list with no marked operation that
+is `not started` while the one before it `finished` stopped inside such work. Each marker drains the GPU, so it is a diagnosis mode, not for play.
+
+**The story-load hang.** Five unattended boots to the story load ended the same way about 400 s after the load started
+(boot 1 instead reached the commit limit first, see [d3d12x-pipelines.md](d3d12x-pipelines.md#stand-ins)): the first
+executions on the four compute queues (meshlet culling, strand and imposter work), which stay idle until then, and the
+direct queue's next execution (depth pyramid, then 32 lists of post-processing dispatches) never finish, and 2 to 5 s
+later the device is removed with DXGI_ERROR_DEVICE_HUNG. Memory was not short then (10.7 GB physical free, 15 GB of
+commit). With breadcrumbs, compute queue #2's first list stopped at operation 12 of 20, under the pipeline
+`meshlet_culling~CS_AllocBatchCSCullOutput` (no loop in its translation; the list's one ExecuteIndirect is the likely
+operation, so its arguments, built for the X-only argument type 0x69 that becomes DISPATCH, are the open question);
+every other list had not started. The buffer-stride fix in descriptor records did not change it.
 
 Two readback aids (`DrawTrace`, `FrameCapture`; debug only, they allocate and wait for the GPU):
 

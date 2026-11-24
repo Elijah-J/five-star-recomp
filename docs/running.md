@@ -87,9 +87,9 @@ policy and terms of service screen, before it loads story mode (a spinner on dar
 keyboard-and-mouse gamepad: A (Space) confirms, a short press too; arrows move the focus. The photosensitivity item
 keeps the focus for about 15 s. The two terms items are check boxes that A toggles (scrolling their text with the right
 stick, the mouse, is not required); with both checked Confirm is enabled. While pipelines compile the game can miss a
-0.2 s press. With the input script followed while
+0.2 s press, and an arrow held 0.5 s or longer repeats. With the input script followed while
 running ([loader.md](loader.md#running-the-executable)) these can be answered from a second shell;
-`-- --input-script docs/first-run.input` answers them all unattended (the story load starts about 580 s in). B
+`-- --input-script docs/first-run.input` answers them all unattended (the story load starts about 500 s in). B
 (C) goes back to the previous screen. The screens' text, headings and logos render in full; the brightness-calibration
 symbol is still missing (black at every brightness level). Each frame's first draw uses a stream pipeline (slot 86)
 whose program (key `7f2680d5a629ff03...`) is not among the extracted programs, so it is skipped; whether that draw is
