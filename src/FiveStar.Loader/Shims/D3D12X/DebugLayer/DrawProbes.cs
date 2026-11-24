@@ -12,12 +12,15 @@ namespace FiveStar.Loader.Shims.D3D12X.DebugLayer;
 /// Debug readback of a render target right after a draw, inside the game's own command list: the target goes from the
 /// state it is in on that list to COPY_SOURCE, is copied into a readback buffer and goes back, so the copy sees exactly
 /// what the draw left. <see cref="Report"/> maps the buffers once the GPU finished (the caller waited) and logs what
-/// each holds. Not for per-frame use: each probe makes a buffer of the target's size.
+/// each holds. The game executes some closed lists more than once, so a buffer is released only at a later report
+/// after the list it was copied on has been reset (the GPU is idle then and no execution can name it any more). Not for
+/// per-frame use: each probe makes a buffer of the target's size.
 /// </summary>
 internal sealed unsafe class DrawProbes
 {
     private readonly object _gate = new();
-    private readonly List<(string Label, ID3D12Resource Buffer, PlacedSubresourceFootPrint Footprint, uint Rows, ulong RowBytes, int Width, int Format)> _pending = [];
+    private readonly List<(string Label, ID3D12Resource Buffer, PlacedSubresourceFootPrint Footprint, uint Rows, ulong RowBytes, int Width, int Format, nint List, long Generation)> _pending = [];
+    private readonly List<(ID3D12Resource Buffer, nint List, long Generation)> _reported = [];
     private readonly LoaderLog _log;
 
     public DrawProbes(LoaderLog log)
@@ -26,7 +29,8 @@ internal sealed unsafe class DrawProbes
     }
 
     /// <summary>Records the copy of <paramref name="target"/> (in <paramref name="state"/> on the list) into the desktop list <paramref name="list"/>.</summary>
-    public void Record(nint device, nint list, nint target, int state, string label)
+    /// <paramref name="key"/> and <paramref name="generation"/> name the game's list and how often it was reset.
+    public void Record(nint device, nint list, nint target, int state, string label, nint key, long generation)
     {
         Marshal.AddRef(device);
         using var desktop = new ID3D12Device(device);
@@ -51,19 +55,31 @@ internal sealed unsafe class DrawProbes
 
         lock (_gate)
         {
-            _pending.Add((label, buffer, footprints[0], rows[0], rowBytes[0], (int)description.Width, (int)description.Format));
+            _pending.Add((label, buffer, footprints[0], rows[0], rowBytes[0], (int)description.Width, (int)description.Format, key, generation));
         }
     }
 
-    /// <summary>Logs what every recorded probe holds; the GPU has finished the lists that recorded them.</summary>
-    public void Report()
+    /// <summary>
+    /// Logs what every recorded probe holds; the GPU has finished the lists that recorded them. Buffers of lists reset
+    /// since their probe (<paramref name="generation"/> of a list key) are released.
+    /// </summary>
+    public void Report(Func<nint, long> generation)
     {
         lock (_gate)
         {
+            for (int i = _reported.Count - 1; i >= 0; i--)
+            {
+                if (generation(_reported[i].List) != _reported[i].Generation)
+                {
+                    _reported[i].Buffer.Dispose();
+                    _reported.RemoveAt(i);
+                }
+            }
+
             foreach (var probe in _pending)
             {
                 _log.Info($"  [draws] after {probe.Label}: {Summary(probe.Buffer, probe.Footprint, probe.Rows, probe.RowBytes, probe.Width, probe.Format)}");
-                probe.Buffer.Dispose();
+                _reported.Add((probe.Buffer, probe.List, probe.Generation));
             }
 
             _pending.Clear();

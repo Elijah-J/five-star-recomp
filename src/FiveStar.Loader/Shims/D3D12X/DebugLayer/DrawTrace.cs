@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 Five Star Recomp contributors.
+// Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Collections.Concurrent;
@@ -24,7 +24,7 @@ namespace FiveStar.Loader.Shims.D3D12X.DebugLayer;
 internal sealed unsafe class DrawTrace
 {
     private const int FirstDraws = 24;
-    private const int WindowDraws = 8;
+    private const int WindowDraws = 32;
     private const long ReportDelay = 2;
     private const uint RecordsShown = 8;
     private const uint VerticesShown = 3;
@@ -193,8 +193,17 @@ internal sealed unsafe class DrawTrace
         }
 
         int current = _d3d12.ListStates.Find(list)?.Current(target.Resource, target.Home) ?? target.Home;
-        _probes.Record(_d3d12.Objects.DesktopDevice, list->Inner, target.Resource, current, $"draw {draw} (target 0x{target.Resource:x})");
+        _probes.Record(_d3d12.Objects.DesktopDevice, list->Inner, target.Resource, current, $"draw {draw} (target 0x{target.Resource:x})", (nint)list, state.Resets);
         Interlocked.CompareExchange(ref _reportAt, Volatile.Read(ref _lastPresent) + ReportDelay, 0);
+    }
+
+    /// <summary>The game reset <paramref name="list"/>: probes copied on it can no longer run again.</summary>
+    public void Reset(XboxObject* list)
+    {
+        if (_lists.TryGetValue((nint)list, out var state))
+        {
+            state.Resets++;
+        }
     }
 
     /// <summary>Called after every present; true when probes are due (the caller then waits for the GPU and calls <see cref="Report"/>).</summary>
@@ -213,8 +222,18 @@ internal sealed unsafe class DrawTrace
     /// <summary>Logs the probes; the GPU finished everything submitted.</summary>
     public void Report()
     {
-        _probes.Report();
+        _probes.Report(Resets);
         Volatile.Write(ref _reportAt, 0);
+    }
+
+    private long Resets(nint list)
+    {
+        if (_lists.TryGetValue(list, out var state))
+        {
+            return state.Resets;
+        }
+
+        return 0;
     }
 
     private DrawTraceList List(XboxObject* list)
