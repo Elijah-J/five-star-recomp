@@ -82,10 +82,16 @@ public static class DeadCode
             phi.Operands.RemoveAt(index);
             phi.Targets.RemoveAt(index);
 
+            // A phi has one entry per edge: a switch may reach the block on several cases.
             foreach (var source in sources)
             {
-                phi.Operands.Add(value);
-                phi.Targets.Add(source);
+                var edges = source.Terminator!.Targets.Count(successor => ReferenceEquals(successor, block));
+
+                for (var edge = 0; edge < edges; edge++)
+                {
+                    phi.Operands.Add(value);
+                    phi.Targets.Add(source);
+                }
             }
         }
 
