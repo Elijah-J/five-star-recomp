@@ -40,6 +40,7 @@ internal static unsafe class TransientPoolLifetime
     private static long _violations;
     private static long _wideViolations;
     private static long _unsubmitted;
+    private static long _reported;
     private static long _summaryAt;
 
     /// <summary>Starts the check for a pool of <paramref name="blocks"/> blocks of <paramref name="size"/> bytes.</summary>
@@ -159,8 +160,8 @@ internal static unsafe class TransientPoolLifetime
 
         if (fence == 0)
         {
+            // Usually the recording that takes the block now: counted, not reported.
             _unsubmitted++;
-            Report(serial, block, previous, token, wide, "never submitted", 0, 0);
 
             return;
         }
@@ -186,7 +187,7 @@ internal static unsafe class TransientPoolLifetime
 
     private static void Report(uint serial, uint block, ulong previous, ulong token, bool wide, string where, ulong value, ulong completed)
     {
-        if (_violations + _wideViolations + _unsubmitted > Reported)
+        if (++_reported > Reported)
         {
             return;
         }
@@ -207,6 +208,6 @@ internal static unsafe class TransientPoolLifetime
         }
 
         _summaryAt = Stopwatch.GetTimestamp();
-        _log?.Info($"  [lifetime] {_recycles} blocks taken again; unfinished work reaching them: {_violations} narrow, {_wideViolations} through a whole-pool view, {_unsubmitted} never submitted");
+        _log?.Info($"  [lifetime] {_recycles} blocks taken again; unfinished work reaching them: {_violations} narrow, {_wideViolations} through a whole-pool view, {_unsubmitted} not submitted yet (the recordings taking them)");
     }
 }
