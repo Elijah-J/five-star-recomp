@@ -31,7 +31,8 @@ internal static unsafe class PoolStoreTrace
     private const int MaxSlots = 8;
     private const uint ViewKind = 0x80000000;
     private const int HighShift = 32;
-    private const int OutsideLogged = 32;
+    private const int OutsideLogged = 64;
+    private const int PerProgram = 3;
 
     /// <summary>Entry dwords: program id, address low or offset, address high or view | kind, value; a range's size.</summary>
     private const int LowWord = 1;
@@ -43,6 +44,7 @@ internal static unsafe class PoolStoreTrace
     public const uint Bytes = TraceBase + HeaderBytes + (Entries * EntryBytes);
 
     private static readonly ConcurrentDictionary<uint, string> Programs = new();
+    private static readonly ConcurrentDictionary<uint, int> Outside = new();
     private static readonly uint[] Views = new uint[MaxSlots];
     private static readonly (ulong Start, ulong Bytes)[] Ranges = new (ulong, ulong)[MaxSlots];
     private static int _nextId;
@@ -79,6 +81,22 @@ internal static unsafe class PoolStoreTrace
         range[0] = (uint)start;
         range[1] = (uint)(start >> HighShift);
         range[SizeWord] = (uint)bytes;
+    }
+
+    /// <summary>Range <paramref name="slot"/> as every address whose high dword is in [<paramref name="first"/>, <paramref name="last"/>].</summary>
+    public static void SetSpan(int slot, uint first, uint last)
+    {
+        byte* header = Header();
+
+        if (header == null || slot >= MaxSlots)
+        {
+            return;
+        }
+
+        uint* range = (uint*)(header + RangesAt + ((uint)slot * RangeBytes));
+        range[0] = first;
+        range[1] = last;
+        range[SizeWord] = uint.MaxValue;
     }
 
     /// <summary>A buffer UAV over the pool: its stores are traced (up to 8 views).</summary>
@@ -143,7 +161,10 @@ internal static unsafe class PoolStoreTrace
         }
     }
 
-    /// <summary>Logs new entries outside range 0 (the pool): writes into the game heap.</summary>
+    /// <summary>
+    /// Logs new global stores outside range 0 (the pool): writes into the game heap, the first
+    /// <see cref="PerProgram"/> of each program. Stores through a view stay inside it (the desktop view bounds them).
+    /// </summary>
     public static void LogOutside(LoaderLog log)
     {
         byte* header = Header();
@@ -162,10 +183,12 @@ internal static unsafe class PoolStoreTrace
             ulong address = Address(entry);
             var pool = Ranges[0];
 
-            if (address != 0 && (address < pool.Start || address >= pool.Start + pool.Bytes))
+            bool global = (entry[HighWord] & ViewKind) == 0;
+
+            if (global && address != 0 && (address < pool.Start || address >= pool.Start + pool.Bytes) && Outside.AddOrUpdate(entry[0], 1, static (_, seen) => seen + 1) <= PerProgram)
             {
                 _outsideLogged++;
-                log.Warn($"[store trace] a GPU store outside the transient pool: {Describe(entry, address)}");
+                log.Warn($"[store trace] a GPU global store outside the transient pool: {Describe(entry, address)}");
             }
         }
 

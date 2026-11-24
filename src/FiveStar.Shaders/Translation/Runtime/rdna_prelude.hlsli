@@ -45,7 +45,8 @@ uint2 ptr_add(uint lo, uint hi, uint u, int s) {
 }
 // ---- Store trace (loader --trace-pool-stores, which defines FIVESTAR_STORE_TRACE as the program's id): global stores
 // and atomics into up to 8 address ranges, and buffer stores and atomics through up to 8 views, are appended to a ring
-// at the end of the GPU-memory window. Header at TRACE_BASE: count, then 8 ranges {lo, hi, bytes} from + 16, 8 view
+// at the end of the GPU-memory window. Header at TRACE_BASE: count, then 8 ranges {lo, hi, bytes} (bytes 0xffffffff:
+// every address whose high dword is in [lo, hi]) from + 16, 8 view
 // heap indices from + 112; entries of {program id, address lo or byte offset, address hi or heap index | kind << 31,
 // value} from + 256. TRACE_BASE is DescriptorWindow.TraceBase.
 #ifdef FIVESTAR_STORE_TRACE
@@ -63,7 +64,8 @@ void TRACE_ADDR(uint lo, uint hi, uint v) {
     ByteAddressBuffer m = ResourceDescriptorHeap[GPU_MEM_HEAP];
     for (uint r = 0u; r < 8u; r++) {
         uint3 range = m.Load3(TRACE_BASE + 16u + r * 12u);
-        if (range.z != 0u && hi == range.y && lo - range.x < range.z) { trace_entry(lo, hi, v); return; }
+        bool span = range.z == 0xffffffffu && hi >= range.x && hi <= range.y;   // a range of high dwords
+        if (span || (range.z != 0u && range.z != 0xffffffffu && hi == range.y && lo - range.x < range.z)) { trace_entry(lo, hi, v); return; }
     }
 #endif
 }
