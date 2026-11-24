@@ -90,6 +90,30 @@ queue as last seen ([queue progress](d3d12x-shim.md#queue-progress)). Root CBV, 
 to 46) that fall in the pool are kept in a ring of 4,096 with the list's pipeline; the report lists the newest 24 in
 the corrupted block, which names the GPU work that used it. The game's code is read, never changed.
 
+## Memory map
+
+`fivestar-loader --memory-map <s>` walks the address space (VirtualQueryEx) every s seconds and logs `[memory]` lines:
+
+| Line | Holds |
+|---|---|
+| `#n` | private commit by owner: `XMemVirtualAlloc` (plain allocations of that shim), `XMemAlloc` blocks, heaps (process heaps and blocks with a heap segment signature), game images, everything else as `anonymous`; the managed heap's commit (part of the anonymous); mapped and image commit |
+| `private by protection` | 0x4 read-write, 0x404 read-write write-combined (upload and custom heaps), ... |
+| `anonymous by size` | counts and bytes per size class, and the committed sizes that hold the most |
+| `heaps` | HeapSummary of every process heap |
+| `since the last map` | new and gone allocations, by owner and size |
+| `largest` | the 20 largest: base, owner, committed of reserved, protection; an anonymous one with the modules its first page points into (`[nvgpucomp64.dll x3]`) |
+| `gpu memory` | QueryVideoMemoryInfo per adapter: local and non-local usage and budget |
+
+A walk of 200,000 to 300,000 regions takes 0.4 to 1 s. `--min-free-memory <GB>` and `--max-commit <GB>` poll the machine
+every 0.25 s and end the process with a last map (exit code 5).
+
+**Story load, before the compile budget** (RTX 4090, 64 GB, programs on demand): private 17 GB at 47 s, 26 GB at 96 s,
+54 GB at 147 s, 60 GB at 165 s; the growth is anonymous memory in power-of-two regions, almost fully committed (8 GB,
+4 GB x4, 2 GB x5, 1 GB x4). They are the NVIDIA compiler's arenas: six driver compiles of 1 to 3 MB mesh-shader
+pipelines ran on the build threads (stacks in nvgpucomp64.dll under CreatePipelineState) from 100 s on, each growing
+its arena 1, 2, 4, 8 GB. Everything else stayed flat: heaps 1.5 to 2 GB, `XMemVirtualAlloc` 4.5 GB, game images
+0.2 GB, managed heap 1 to 1.5 GB, write-combined 5.2 GB. [d3d12x-pipelines.md](d3d12x-pipelines.md#stand-ins) has
+the compile budget.
 ## Unknown
 
 - Whether ntdll keeps honouring `PEB.NtGlobalFlag` set at the create-process event in later Windows releases (checked
