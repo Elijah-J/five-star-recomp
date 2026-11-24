@@ -88,7 +88,12 @@ keyboard-and-mouse gamepad: A (Space) confirms, a short press too; arrows move t
 keeps the focus for about 15 s. Each terms item is checked only after its text was scrolled to the end with the right
 stick (move the mouse down) and some seconds passed; then Confirm is enabled. With the input script followed while
 running ([loader.md](loader.md#running-the-executable)) these can be answered from a second shell;
-`-- --input-script docs/first-run.input` answers them all unattended (the story load starts about 610 s in).
+`-- --input-script docs/first-run.input` answers them all unattended (the story load starts about 610 s in). B
+(C) goes back to the previous screen. The screens' text, headings and logos render in full; the brightness-calibration
+symbol is still missing (black at every brightness level). Each frame's first draw uses a stream pipeline (slot 86)
+whose program (key `7f2680d5a629ff03...`) is not among the extracted programs, so it is skipped; whether that draw is
+the symbol is not confirmed.
+
 
 ## Work folder
 

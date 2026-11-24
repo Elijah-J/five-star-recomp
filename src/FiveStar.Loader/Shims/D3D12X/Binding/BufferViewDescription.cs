@@ -53,6 +53,9 @@ internal struct BufferViewDescription
     [FieldOffset(16)]
     public uint UavElements;
 
+    [FieldOffset(20)]
+    public uint UavStride;
+
     [FieldOffset(32)]
     public int UavFlags;
 

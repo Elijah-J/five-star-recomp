@@ -407,8 +407,9 @@ flowchart LR
   unwraps its signature and buffers. Reset (10, 139) clears the list's binding state.
 - **Descriptor window.** A buffer (custom heap, write-combined system memory, UAV; 0x2610000 bytes for the game):
   one 16-byte record per sampler, a 1024-record null table at 0x8000, then from 0x10000 one 32-byte record per game
-  view descriptor in game order (a T#; buffers and CBVs use the first 16 bytes). Dword 0 of each mirrors dword 0 of
-  the title record, a record naming no desktop descriptor reading 5. A table's user SGPR is the window offset of its
+  view descriptor in game order (a T#; buffers and CBVs use the first 16 bytes). Dwords 0 and 1 of each mirror those
+  of the title record: the desktop index (a record naming no desktop descriptor reads 5) and a buffer view's element
+  stride (below). A table's user SGPR is the window offset of its
   first record (base + (handle - title start) / increment × record size), so a program's `MemLoad(table + k * 32)`
   reads the heap index of the table's k-th descriptor wherever the game put the table. Records are mirrored when the
   shim writes them and, for a table, at SetRootDescriptorTable: as many as the root signature's table spans (end of
@@ -418,8 +419,14 @@ flowchart LR
 
 The window covers only descriptors of the console's 32-bit pointer space: pointers into game memory (root
 descriptors, constants loaded through pointers) read the window, not game memory. Buffer views stay typed or
-structured desktop views, while programs read every V# as a `ByteAddressBuffer`; V# dwords 1 and 3 (stride, format
-code) stay 0.
+structured desktop views, while programs read every V# as a `ByteAddressBuffer`; V# dword 3 (format code) stays 0.
+Dword 1 is the stride an indexed access (`idxen`) multiplies its index by (`BufferRecordStrides`): 16 for a CBV, whose
+rows programs index in float4s, the structure for a structured view, the format's element for a typed one, 0 for a
+raw one. Before, it was 0 for every view: the Scaleform batch programs (`VBatch*`, which read row batch × 4 + k of
+their CBV for each vertex's matrix) read row 0 for every row, so both screen coordinates got the same value and every
+vector shape of the UI collapsed onto the line x = y: the diagonal across the first-run screens, the letters drawn as
+shapes rather than from the glyph cache (in the boot's text, those with ascenders or descenders) and the
+brightness-calibration symbols.
 
 ### Present
 

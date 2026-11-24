@@ -10,8 +10,9 @@ namespace FiveStar.Loader.Shims.D3D12X;
 
 /// <summary>
 /// Device slots 17 to 24 (view creation and descriptor copies, desktop order): a destination handle in a shader-visible
-/// heap becomes the desktop handle behind it with its record written (<see cref="XboxDescriptorHeaps.Destination"/>),
-/// a source handle the desktop descriptor its record names, and wrapped resources desktop resources. Copies inside one
+/// heap becomes the desktop handle behind it with its record written
+/// (<see cref="XboxDescriptorHeaps.Destination(nint, uint)"/>; a buffer view's record keeps its element stride), a
+/// source handle the desktop descriptor its record names, and wrapped resources desktop resources. Copies inside one
 /// shader-visible heap copy records, as the console copies descriptor bytes. Views are written while streaming, so
 /// these stay allocation-free.
 /// </summary>
@@ -58,7 +59,7 @@ internal static unsafe class XboxDescriptorMethods
 
         // In the game's own heaps a CBV is a V# the programs read as a ByteAddressBuffer: a raw SRV over the same bytes.
         if (description != null && description->Location != 0 && D3D12X.DescriptorHeaps.Find(handle, out _) is not null
-            && D3D12X.AddressBuffers.CreateRaw(inner, description->Location, description->Size, Destination(handle)))
+            && D3D12X.AddressBuffers.CreateRaw(inner, description->Location, description->Size, D3D12X.DescriptorHeaps.Destination(handle, BufferRecordStrides.ConstantBuffer)))
         {
             D3D12X.DrawTrace?.ConstantBufferView(D3D12X.DescriptorHeaps.Source(handle), description->Location, description->Size);
 
@@ -100,7 +101,9 @@ internal static unsafe class XboxDescriptorMethods
         byte* copy = stackalloc byte[DepthViewDescriptions.ShaderResourceViewSize];
         desktop = BufferViewRanges.Fit(resource, desktop, description, copy, false, out void* fitted);
         void* view = TargetViewDescriptions.ShaderResourceView(desktop, fitted, copy);
-        CreateDesktopView(self, CreateShaderResourceViewSlot, desktop, DepthViewDescriptions.ShaderResourceView(desktop, view, copy), handle);
+
+        nint destination = D3D12X.DescriptorHeaps.Destination(handle, BufferRecordStrides.ShaderResource(description));
+        CreateDesktopView(self, CreateShaderResourceViewSlot, desktop, DepthViewDescriptions.ShaderResourceView(desktop, view, copy), destination);
     }
 
     [HotPath]
@@ -110,7 +113,7 @@ internal static unsafe class XboxDescriptorMethods
         D3D12X.DrawTrace?.RenderTargetView(resource, Destination(handle));
         nint desktop = D3D12X.Objects.Unwrap(resource);
         byte* copy = stackalloc byte[TargetViewDescriptions.RenderTargetViewSize];
-        CreateDesktopView(self, CreateRenderTargetViewSlot, desktop, TargetViewDescriptions.RenderTargetView(desktop, description, copy), handle);
+        CreateDesktopView(self, CreateRenderTargetViewSlot, desktop, TargetViewDescriptions.RenderTargetView(desktop, description, copy), Destination(handle));
     }
 
     [HotPath]
@@ -119,7 +122,7 @@ internal static unsafe class XboxDescriptorMethods
     {
         nint desktop = D3D12X.Objects.Unwrap(resource);
         byte* copy = stackalloc byte[DepthViewDescriptions.DepthStencilViewSize];
-        CreateDesktopView(self, CreateDepthStencilViewSlot, desktop, DepthViewDescriptions.DepthStencilView(desktop, description, copy), handle);
+        CreateDesktopView(self, CreateDepthStencilViewSlot, desktop, DepthViewDescriptions.DepthStencilView(desktop, description, copy), Destination(handle));
     }
 
     [HotPath]
@@ -141,7 +144,8 @@ internal static unsafe class XboxDescriptorMethods
         }
 
         desktop = BufferViewRanges.Fit(resource, desktop, description, copy, true, out void* fitted);
-        create(inner, desktop, objects.Unwrap(counter), TargetViewDescriptions.UnorderedAccessView(desktop, fitted, copy), Destination(handle));
+        var destination = D3D12X.DescriptorHeaps.Destination(handle, BufferRecordStrides.UnorderedAccess(description));
+        create(inner, desktop, objects.Unwrap(counter), TargetViewDescriptions.UnorderedAccessView(desktop, fitted, copy), destination);
     }
 
     private static void WarnNullUnorderedAccessView(ResourceDescription desc)
@@ -260,7 +264,7 @@ internal static unsafe class XboxDescriptorMethods
         while (done < count)
         {
             uint run = Least(count - done, heap.RunLength(index + done));
-            nint desktop = heap.Destination(index + done, run);
+            nint desktop = heap.Destination(index + done, run, 0);
 
             if (desktop == 0)
             {
@@ -309,11 +313,11 @@ internal static unsafe class XboxDescriptorMethods
     }
 
     [HotPath]
-    private static void CreateDesktopView(XboxObject* self, int slot, nint resource, void* description, nint handle)
+    private static void CreateDesktopView(XboxObject* self, int slot, nint resource, void* description, nint destination)
     {
         nint inner = self->Inner;
         var create = (delegate* unmanaged<nint, nint, void*, nint, void>)ComObject.Slot(inner, slot);
-        create(inner, resource, description, Destination(handle));
+        create(inner, resource, description, destination);
     }
 
     [HotPath]

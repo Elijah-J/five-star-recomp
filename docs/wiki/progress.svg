@@ -702,7 +702,7 @@ svg { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
 <rect class="d" x="726.6" y="148.3" width="10.2" height="9.2" rx="1.0"/>
 <rect class="pill" x="670.0" y="43.0" width="64.7" height="16.0" rx="3.0"/>
 <text class="ink" x="674.0" y="55.0" font-size="11.0">First-ru…</text>
-<rect class="hit" x="668.0" y="41.0" width="70.3" height="118.0"><title>First-run screens: 100.0% — 1 stages done, 0 stages not yet. options, legal, privacy; UI text misses letters</title></rect>
+<rect class="hit" x="668.0" y="41.0" width="70.3" height="118.0"><title>First-run screens: 100.0% — 1 stages done, 0 stages not yet. options, legal, privacy; UI text complete</title></rect>
 <rect class="p" x="740.3" y="41.0" width="10.2" height="9.2" rx="1.0"/>
 <rect class="p" x="752.1" y="41.0" width="10.2" height="9.2" rx="1.0"/>
 <rect class="p" x="763.8" y="41.0" width="10.2" height="9.2" rx="1.0"/>
@@ -5227,8 +5227,8 @@ svg { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
 <text class="ink" x="16.0" y="1044.0" font-size="12.0">Story load</text>
 <text class="ink2" x="16.0" y="1059.0" font-size="11.0">the GPU hangs about six minutes into the</text>
 <text class="ink2" x="16.0" y="1073.0" font-size="11.0">load</text>
-<text class="ink" x="16.0" y="1093.0" font-size="12.0">UI text</text>
-<text class="ink2" x="16.0" y="1108.0" font-size="11.0">letters missing, calibration symbols black</text>
+<text class="ink" x="16.0" y="1093.0" font-size="12.0">Brightness symbol</text>
+<text class="ink2" x="16.0" y="1108.0" font-size="11.0">black; a pipeline&apos;s program is missing</text>
 <text class="ink" x="16.0" y="1128.0" font-size="12.0">Memory</text>
 <text class="ink2" x="16.0" y="1143.0" font-size="11.0">the story load reaches 62 to 65 GB;</text>
 <text class="ink2" x="16.0" y="1157.0" font-size="11.0">allocator of the large blocks unknown</text>

@@ -3,6 +3,7 @@
 
 using System.Runtime.InteropServices;
 using FiveStar.Loader.Native;
+using FiveStar.Loader.Shims.D3D12X.Binding;
 using FiveStar.Loader.Shims.D3D12X.Resources;
 
 namespace FiveStar.Loader.Shims.D3D12X;
@@ -29,7 +30,7 @@ internal static unsafe class XboxAddressDescriptors
             return;
         }
 
-        nint destination = D3D12X.DescriptorHeaps.Destination(handle);
+        nint destination = D3D12X.DescriptorHeaps.Destination(handle, BufferRecordStrides.ShaderResource(view));
         var texture = D3D12X.AddressViews.Create(self->Inner, resource, view, destination);
         D3D12X.DrawTrace?.AddressView(destination, resource, view, texture);
     }
