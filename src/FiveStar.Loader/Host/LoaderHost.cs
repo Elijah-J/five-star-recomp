@@ -333,6 +333,11 @@ internal sealed class LoaderHost
             TransientPoolWatch.Start(_log);
         }
 
+        if (_options.WatchHang)
+        {
+            GameHangWatch.Start(_runtime.Images, SampledCounters, _log);
+        }
+
         StartAudioCapture();
         _runtime.D3D12X.WaitForProgramIndex();
 

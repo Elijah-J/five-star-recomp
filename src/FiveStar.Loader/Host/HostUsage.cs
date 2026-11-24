@@ -61,6 +61,8 @@ internal static class HostUsage
           --d3d12-trace-queues   log the first queue submissions, signals and waits (cross-queue protocol)
           --d3d12-breadcrumbs    a GPU marker after every draw and dispatch: a stalled queue names the one it hangs in
           --watch-transient      check the game's transient-memory pool and log the first corrupted node
+          --watch-hang           log the game's main state, loading-screen flags and heartbeat, and every thread's
+                                 stack while the heartbeat its hang watchdog checks stands still
           --d3d12-trace-draws    log what the first draws bind (pipeline, targets, vertex buffers, tables) and read
                                  their render targets back
           --capture-dir <dir>    write read-back planes and render targets there as PNG

@@ -47,6 +47,13 @@ internal static unsafe class Kernel32
     [DllImport(Library, SetLastError = true)]
     public static extern nint OpenThread(uint access, int inherit, uint threadId);
 
+    /// <summary>GetThreadDescription(thread, PWSTR*): an HRESULT; the text is freed with <see cref="LocalFree"/>.</summary>
+    [DllImport(Library)]
+    public static extern int GetThreadDescription(nint thread, char** description);
+
+    [DllImport(Library)]
+    public static extern nint LocalFree(nint memory);
+
     [DllImport(Library, SetLastError = true)]
     public static extern uint SuspendThread(nint thread);
 
