@@ -331,6 +331,7 @@ internal sealed unsafe class TransientPoolWatch
         }
 
         PoolStoreTrace.SetRange(0, pool, bytes);
+        TransientPoolViews.PoolKnown();
         var (start, length) = Allocation(table);
 
         if (length != 0)

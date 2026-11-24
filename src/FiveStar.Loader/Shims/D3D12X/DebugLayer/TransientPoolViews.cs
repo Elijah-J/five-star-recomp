@@ -86,6 +86,25 @@ internal static unsafe class TransientPoolViews
         }
     }
 
+    /// <summary>Once the pool is known: the views made before that which overlap it go to the store trace.</summary>
+    public static void PoolKnown()
+    {
+        if (_views == null)
+        {
+            return;
+        }
+
+        for (uint desktop = 0; desktop < MaxViews; desktop++)
+        {
+            var view = _views[desktop];
+
+            if (view.Start != 0 && TransientPoolHits.InPool(view.Start, view.Bytes))
+            {
+                PoolStoreTrace.AddView(desktop);
+            }
+        }
+    }
+
     /// <summary>The game address a buffer UAV at <paramref name="desktop"/> starts at; 0 for none.</summary>
     public static ulong StartOf(uint desktop)
     {
