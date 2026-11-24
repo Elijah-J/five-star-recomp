@@ -5,7 +5,10 @@ using FiveStar.Shaders.Containers;
 
 namespace FiveStar.Cli.Setup;
 
-/// <summary>Extracts the shader containers and native programs of shaders.rpf to <c>&lt;work&gt;/shaders/dxbc</c> and <c>fssm</c>.</summary>
+/// <summary>
+/// Extracts the shader containers and native programs of shaders.rpf and the game executable to
+/// <c>&lt;work&gt;/shaders/dxbc</c> and <c>fssm</c>.
+/// </summary>
 internal sealed class ShaderExtractStep : ISetupStep
 {
     public const string StepName = "shader-extract";
@@ -25,7 +28,7 @@ internal sealed class ShaderExtractStep : ISetupStep
 
     public StepFingerprint Fingerprint(SetupContext context)
     {
-        var inputs = Fingerprints.OfFiles(context.Dump, [context.ShaderArchive]);
+        var inputs = Fingerprints.OfFiles(context.Dump, [context.ShaderArchive, .. Executable(context)]);
 
         return new StepFingerprint(inputs, Fingerprints.OfAssemblies(typeof(ShaderArchiveExtractor)));
     }
@@ -49,7 +52,7 @@ internal sealed class ShaderExtractStep : ISetupStep
             }
         }
 
-        var summary = ShaderArchiveExtractor.Extract(context.ShaderArchive, context.ShaderFolder);
+        var summary = ShaderArchiveExtractor.Extract(context.ShaderArchive, context.ShaderFolder, Executable(context).FirstOrDefault());
         var text = $"{summary.Records} records, {summary.Containers} containers, {summary.Programs} programs";
 
         if (summary.ProgramFailures > 0)
@@ -58,5 +61,16 @@ internal sealed class ShaderExtractStep : ISetupStep
         }
 
         return StepResult.Done(text);
+    }
+
+    /// <summary>The game executable when the dump has it (its embedded programs are extracted too).</summary>
+    private static string[] Executable(SetupContext context)
+    {
+        if (File.Exists(context.Executable))
+        {
+            return [context.Executable];
+        }
+
+        return [];
     }
 }

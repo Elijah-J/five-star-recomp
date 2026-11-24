@@ -11,7 +11,7 @@ work folder (once; later runs reuse it), then starts `fivestar-loader` on the ga
 3. Check: `fivestar doctor <dump folder>`. Every line should say `ok`; a `FAIL` line says what to install or pass.
 4. Run: `fivestar run <dump folder>`.
 
-The first run extracts and translates every shader program (25,884 programs, about an hour on 24 cores, 16 GB of
+The first run extracts and translates every shader program (25,908 programs, about an hour on 24 cores, 16 GB of
 disk) before the game starts; it can be stopped and resumed. Later runs start the game in under a second.
 
 The game uses four AMD-only instruction families (SSE4a, CLZERO, MONITORX/MWAITX, CLWB). On an Intel CPU the loader

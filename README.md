@@ -24,7 +24,7 @@ first-run screens, and starts loading story mode, where the GPU currently hangs.
 
 | Area | State |
 |---|---|
-| Shader translation | Every shader stage the game uses is translated (vertex, pixel, compute, mesh, geometry, ray intersection), and all 25,884 programs compile. Branches become structured `if`/`else` and loops, 39% smaller than the older dispatch loop and checked to give the same results on real programs. Instruction behaviour is checked on D3D12 WARP. |
+| Shader translation | Every shader stage the game uses is translated (vertex, pixel, compute, mesh, geometry, ray intersection), and all 25,908 programs compile. Branches become structured `if`/`else` and loops, 39% smaller than the older dispatch loop and checked to give the same results on real programs. Instruction behaviour is checked on D3D12 WARP. |
 | Archives | Contents can be extracted without the encrypted file table (no names yet). Metadata files parse completely. |
 | Textures | 99.3% of textures export, including pages in the console's BCPack BC1 format; the other BCPack formats (mostly BC7) cannot be decoded yet. |
 | Models | Drawable geometry (meshlets, packed vertices) decodes and exports as OBJ ([docs/models.md](docs/models.md)). |
