@@ -12,6 +12,16 @@ internal sealed class AddressTable
 {
     private readonly object _gate = new();
     private AddressRange[] _ranges = [];
+    private Action<AddressRange>? _added;
+
+    /// <summary>Calls <paramref name="added"/> with every range added from now on, in order.</summary>
+    public void Observe(Action<AddressRange> added)
+    {
+        lock (_gate)
+        {
+            _added = added;
+        }
+    }
 
     public void Add(AddressRange range)
     {
@@ -22,6 +32,7 @@ internal sealed class AddressTable
                 .OrderBy(r => r.GameAddress)
                 .ToArray();
             Volatile.Write(ref _ranges, ranges);
+            _added?.Invoke(range);
         }
     }
 

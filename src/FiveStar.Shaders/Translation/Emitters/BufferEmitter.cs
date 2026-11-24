@@ -7,10 +7,10 @@ using FiveStar.Shaders.Translation.Core;
 namespace FiveStar.Shaders.Translation.Emitters;
 
 /// <summary>
-/// MUBUF/MTBUF buffer loads and stores. Raw dword accesses use BufLoad/BufStore on the heap index in V# dword0 (a V#
-/// the program also writes is loaded through its RW view). Formatted accesses decode/encode in the prelude's
-/// FmtLoad/FmtStore with a format code (layout * 8 + numeric type, GCN dfmt/nfmt numbering) from the instruction
-/// (tbuffer) or from V# dword3.
+/// MUBUF/MTBUF buffer loads and stores on the V#'s view (<see cref="BufferAddress.View"/>). Raw dword accesses use
+/// BufLoad/BufStore (a V# the program also writes is loaded through its RW view). Formatted accesses decode/encode in
+/// the prelude's FmtLoad/FmtStore with a format code (layout * 8 + numeric type, GCN dfmt/nfmt numbering) from the
+/// instruction (tbuffer) or from the hardware format in V# dword3, and loads apply dword3's destination swizzle.
 /// </summary>
 internal sealed partial class BufferEmitter
 {
@@ -94,22 +94,24 @@ internal sealed partial class BufferEmitter
 
         if (op.StartsWith("buffer_load", StringComparison.Ordinal))
         {
-            var values = _operands.Snap(_operands.Read(resource, 0), address);
             var writable = resource.Kind == OperandKind.Scalar && WrittenResources().Contains(resource.Low);
+            var view = BufferAddress.View(_operands, resource, writable);
+            var byteAddress = _operands.SnapOne($"{view}.y + {address}");
             var function = writable ? "BufLoadRW" : "BufLoad";
 
             for (var dword = 0; dword < count; dword++)
             {
-                _operands.Write(a[Data], $"{function}({values[0]}, {values[1]} + {dword * BytesPerDword}u)", dword);
+                _operands.Write(a[Data], $"{function}({view}.x, {byteAddress} + {dword * BytesPerDword}u)", dword);
             }
 
             return;
         }
 
+        var target = BufferAddress.View(_operands, resource, true);
+
         for (var dword = 0; dword < count; dword++)
         {
-            var heapIndex = _operands.Read(resource, 0);
-            _state.Emit($"  if (active) BufStore({heapIndex}, {address} + {dword * BytesPerDword}u, {_operands.Read(a[Data], dword)});");
+            _state.Emit($"  if (active) BufStore({target}.x, {target}.y + {address} + {dword * BytesPerDword}u, {_operands.Read(a[Data], dword)});");
         }
     }
 
@@ -122,12 +124,17 @@ internal sealed partial class BufferEmitter
         }
 
         var resource = a[Resource];
-        var code = op.StartsWith("tbuffer", StringComparison.Ordinal) ? InstructionFormat(modifiers) : _operands.Read(resource, FormatDword);
-        var address = BufferAddress.Build(_operands, a[Address], resource, a[SOffset], modifiers);
-        var values = _operands.Snap(_operands.Read(resource, 0), address, code);
-        var (heapIndex, byteAddress, format) = (values[0], values[1], values[^1]);
+        var dword3 = _operands.Read(resource, FormatDword);
+        var code = op.StartsWith("tbuffer", StringComparison.Ordinal) ? InstructionFormat(modifiers) : $"buf_code({dword3})";
+        var store = op.Contains("store", StringComparison.Ordinal);
 
-        if (op.Contains("store", StringComparison.Ordinal))
+        var address = BufferAddress.Build(_operands, a[Address], resource, a[SOffset], modifiers);
+        var view = BufferAddress.View(_operands, resource, store);
+        var byteAddress = _operands.SnapOne($"{view}.y + {address}");
+        var format = _operands.SnapOne(code);
+        var swizzle = _operands.SnapOne(dword3);
+
+        if (store)
         {
             var data = new List<string>();
 
@@ -137,13 +144,13 @@ internal sealed partial class BufferEmitter
                 data.Add(value);
             }
 
-            _state.Emit($"  if (active) FmtStore({heapIndex}, {byteAddress}, {format}, uint4({string.Join(", ", data)}), {count}u);");
+            _state.Emit($"  if (active) FmtStore({view}.x, {byteAddress}, {format}, uint4({string.Join(", ", data)}), {count}u);");
 
             return;
         }
 
         var name = $"_fmt{_state.NextTemporary()}";
-        _state.Emit($"  uint4 {name} = FmtLoad({heapIndex}, {byteAddress}, {format});");
+        _state.Emit($"  uint4 {name} = fmt_swizzle(FmtLoad({view}.x, {byteAddress}, {format}), {swizzle}, {format});");
 
         for (var component = 0; component < count; component++)
         {

@@ -47,8 +47,14 @@ internal sealed unsafe class DescriptorWindow
     /// <summary>Where views go that no desktop descriptor is left for.</summary>
     public const uint SinkSlot = FallbackTableSlot + FallbackTableSize;
 
+    /// <summary>rdna_prelude GPU_MAP_HEAP: the address map of game memory (<see cref="GameMemoryViews"/>).</summary>
+    public const uint AddressMapSlot = FiveStar.Shaders.Translation.AddressMap.HeapSlot;
+
+    /// <summary>The null SRV and UAV (next slot) that unmapped pages of the address map name.</summary>
+    public const uint UnmappedSlot = AddressMapSlot + 1;
+
     /// <summary>The first desktop index of the game's descriptors.</summary>
-    public const uint ReservedViews = SinkSlot + 1;
+    public const uint ReservedViews = UnmappedSlot + 2;
 
     /// <summary>rdna_prelude STATIC_SAMPLER_BASE: samplers for the literal S#s of a program.</summary>
     public const uint StaticSamplerBase = 2032;
@@ -168,7 +174,8 @@ internal sealed unsafe class DescriptorWindow
         DesktopCalls.ShaderResourceView(device, buffer, &read, cpu + (nint)(WindowSlot * increment));
         DesktopCalls.UnorderedAccessView(device, buffer, &write, cpu + (nint)(WritableWindowSlot * increment));
 
-        // Null descriptors: the fallback table the root signature asks for, and the sink.
+        // Null descriptors: the fallback table the root signature asks for, the sink, the address map until it exists
+        // and the pair unmapped pages name.
         var nullWrite = BufferViewDescription.RawUnorderedAccess(0);
         var nullRead = BufferViewDescription.RawShaderResource(0);
 
@@ -177,9 +184,11 @@ internal sealed unsafe class DescriptorWindow
             DesktopCalls.UnorderedAccessView(device, 0, &nullWrite, cpu + (nint)(slot * increment));
         }
 
-        for (uint slot = NullViewSlot; slot < ReservedViews; slot++)
+        for (uint slot = NullViewSlot; slot <= UnmappedSlot; slot++)
         {
             DesktopCalls.ShaderResourceView(device, 0, &nullRead, cpu + (nint)(slot * increment));
         }
+
+        DesktopCalls.UnorderedAccessView(device, 0, &nullWrite, cpu + (nint)((UnmappedSlot + 1) * increment));
     }
 }

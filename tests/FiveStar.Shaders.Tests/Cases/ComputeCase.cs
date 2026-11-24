@@ -52,9 +52,9 @@ public sealed record ComputeCase(string Name, string Program, int Outputs, Func<
 
     public int TotalThreads => ThreadsPerGroup * Groups.X * Groups.Y * Groups.Z;
 
-    /// <summary>A raw-buffer V#: heap index, stride, record count, format code.</summary>
+    /// <summary>A raw-buffer V# as the D3D12.X shim writes it: base = heap index (base_hi 0), stride in dword 1 bits 16-29, record count.</summary>
     public static uint[] Descriptor(int heap, int stride = 0)
     {
-        return [(uint)heap, (uint)stride, 0x10000, 0];
+        return [(uint)heap, (uint)stride << 16, 0x10000, 0];
     }
 }

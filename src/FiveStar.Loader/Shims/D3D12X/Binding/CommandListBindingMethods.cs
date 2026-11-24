@@ -166,11 +166,15 @@ internal static unsafe class CommandListBindingMethods
         WriteConstants(CommandListBindings.Of(self), false, parameter, count, values, offset);
     }
 
-    /// <summary>Root CBV, SRV or UAV: the console GPU address goes to the parameter's SGPR pair as the game passes it.</summary>
+    /// <summary>
+    /// Root CBV, SRV or UAV: the console GPU address goes to the parameter's SGPR pair as the game passes it, and the
+    /// memory behind it gets a desktop buffer if it has none, so the address map holds it (<see cref="GameMemoryViews"/>).
+    /// </summary>
     [HotPath]
     [UnmanagedCallersOnly]
     public static void SetComputeRootAddress(XboxObject* self, uint parameter, ulong address)
     {
+        ShimContext.Runtime.D3D12X.GameMemory.TryFind(address, out _);
         UserData.WriteAddress(CommandListBindings.Of(self), true, parameter, address);
     }
 
@@ -178,6 +182,7 @@ internal static unsafe class CommandListBindingMethods
     [UnmanagedCallersOnly]
     public static void SetGraphicsRootAddress(XboxObject* self, uint parameter, ulong address)
     {
+        ShimContext.Runtime.D3D12X.GameMemory.TryFind(address, out _);
         UserData.WriteAddress(CommandListBindings.Of(self), false, parameter, address);
     }
 

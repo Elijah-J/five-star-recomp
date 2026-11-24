@@ -6,7 +6,7 @@ namespace FiveStar.Loader.Shims.D3D12X.Binding;
 /// <summary>
 /// One of the game's shader-visible heaps, or one of its CPU-only view heaps. Its descriptors live in title memory as
 /// on the console, one record per descriptor whose dword 0 is the index in the desktop shader-visible heap standing
-/// behind it and dwords 1 to 3 a buffer view's stride, record count and format (<see cref="BufferRecords"/>); the game copies these
+/// behind it and dwords 1 to 3 a buffer view's V# fields as the hardware lays them out (<see cref="BufferRecords"/>); the game copies these
 /// records itself (its per-draw tables, 0x144d9efc0, also from CPU-only heaps), so a table in title memory names
 /// desktop descriptors wherever the game put it. For a shader-visible heap the <see cref="DescriptorWindow"/> holds a
 /// mirror of dwords 0 to 3 of every record, which programs read through a table's pointer; a record is mirrored when
@@ -180,7 +180,7 @@ internal sealed unsafe class ShaderVisibleHeap
         new Span<byte>(record, (int)Increment).Clear();
         record[0] = desktop;
 
-        record[StrideDword] = buffer.Stride;
+        record[StrideDword] = buffer.Word1;
         record[RecordsDword] = buffer.Records;
         record[FormatDword] = buffer.Format;
         MirrorOne(index);

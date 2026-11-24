@@ -9,7 +9,8 @@ namespace FiveStar.Shaders.Translation.Emitters;
 
 /// <summary>
 /// global_/flat_ loads and stores through a 64-bit VGPR address, or an SGPR base plus a 32-bit VGPR offset (saddr form),
-/// on the GPU-memory window (MemLoad/MemStore). Sub-dword loads read the aligned dword and extract.
+/// with the prelude's PtrLoad/PtrStore (the window for high dword 0, else game memory). Sub-dword loads read the
+/// aligned dword and extract.
 /// </summary>
 internal sealed partial class GlobalMemoryEmitter
 {
@@ -92,15 +93,15 @@ internal sealed partial class GlobalMemoryEmitter
 
             if (!load)
             {
-                _state.Emit($"  if (active) MemStore({low}, {byteOffset}u, {_operands.Read(data, dword)});");
+                _state.Emit($"  if (active) PtrStore({low}, {high}, {byteOffset}u, {_operands.Read(data, dword)});");
                 continue;
             }
 
-            var value = $"MemLoad({low}, {byteOffset}u)";
+            var value = $"PtrLoad({low}, {high}, {byteOffset}u)";
 
             if (_state.UsesCode)
             {
-                value = $"({high} == CODE_TAG ? CodeLoad({low} + {byteOffset}u) : MemLoad({low}, {byteOffset}u))";
+                value = $"({high} == CODE_TAG ? CodeLoad({low} + {byteOffset}u) : {value})";
             }
 
             _operands.Write(data, value, dword);
@@ -112,19 +113,23 @@ internal sealed partial class GlobalMemoryEmitter
         var data = a[Destination];
         var address = a[Source0];
         string low;
+        string high;
 
         if (scalarBase is not null)
         {
             low = $"{_operands.Read(scalarBase, Low)} + {_operands.Read(address)}";
+            high = _operands.Read(scalarBase, High);
         }
         else
         {
             low = _operands.Read(address, Low);
+            high = _operands.Read(address, High);
         }
 
-        var byteAddress = _operands.SnapOne($"{low} + {offset}");
+        var pointer = _operands.Snap($"{low} + {offset}", high);
+        var byteAddress = pointer[0];
         var bits = kind.Contains("byte", StringComparison.Ordinal) ? ByteBits : ShortBits;
-        var value = $"((MemLoad({byteAddress} & ~3u, 0u) >> (({byteAddress} & 3u) * 8u)) & {Hlsl.HexUint((1L << bits) - 1)})";
+        var value = $"((PtrLoad({byteAddress} & ~3u, {pointer[1]}, 0u) >> (({byteAddress} & 3u) * 8u)) & {Hlsl.HexUint((1L << bits) - 1)})";
 
         if (kind.StartsWith('s'))
         {
