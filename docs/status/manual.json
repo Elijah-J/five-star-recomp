@@ -15,7 +15,7 @@
         { "name": "Pipelines", "done": 1, "partial": 0, "todo": 0, "note": "stand-ins while the driver compiles" },
         { "name": "User, saves, pad pairing", "done": 1, "partial": 0, "todo": 0 },
         { "name": "Next stage streaming", "done": 0, "partial": 1, "todo": 0, "note": "stops at a page bookkeeping assert" },
-        { "name": "First image", "done": 0, "partial": 1, "todo": 0, "note": "the intro video draws; one input-layout fix in review" },
+        { "name": "First image", "done": 1, "partial": 0, "todo": 0, "note": "the intro video" },
         { "name": "Menus", "done": 0, "partial": 0, "todo": 1 },
         { "name": "In game", "done": 0, "partial": 0, "todo": 1 }
       ]

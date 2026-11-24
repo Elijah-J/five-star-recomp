@@ -7,7 +7,7 @@ descriptor heaps, render targets and pipelines, and into its frame loop: it now 
 window through a swap chain at its own 30 frames per second. Its frame loop advances: it polls input, starts its save
 system, and after a scripted button press pairs a gamepad with the user and streams its next stage. It now draws its
 first real image: its UI layer and the intro video (Bink, decoded on the CPU and drawn with the game's own translated
-shaders), with one input-layout fix still being merged. A game assert in its physical page bookkeeping stops it
+shaders) in the right colours. A game assert in its physical page bookkeeping stops it
 shortly after (see [Roadmap](Roadmap.md)).
 
 ![Progress](progress.svg)
