@@ -95,7 +95,11 @@ keeps the focus for about 15 s. The two terms items are check boxes that A toggl
 stick, the mouse, is not required); with both checked Confirm is enabled. The terms screen drops the first press it gets. While pipelines compile the game can miss a
 0.2 s press, and an arrow held 0.5 s or longer repeats. With the input script followed while
 running ([loader.md](loader.md#running-the-executable)) these can be answered from a second shell;
-`-- --input-script docs/first-run.input` answers them all unattended (the story load starts about 500 s in). B
+`-- --input-script docs/first-run.input` answers them unattended: it taps Space until the legal screen shows, then
+waits for each screen it needs rather than for a time. It recognises screens it learned from your own frames
+(`%LOCALAPPDATA%\FiveStar\screens.txt`); the first time, press F8 when the legal screen, the terms screen and the story
+load show, and later runs need no help. The game writes these settings to its save, so with the same save folder the
+screens show only once. B
 (C) goes back to the previous screen. The screens' text, headings and logos render in full; the brightness-calibration
 symbol is still missing (every pixel right of the panel is 0 at level 15). It is not the frame's first draw: that is
 the executable's `VS_Clear` + `PS_Clear` ([shader-containers.md](shader-containers.md#executable)), which now runs but

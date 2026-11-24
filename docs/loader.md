@@ -116,7 +116,7 @@ ntdll answers only for OS-loaded modules; mapping it lets the loader bind that i
 | `XTaskQueue*` | Manual, ThreadPool, SerializedThreadPool and Immediate ports; composite queues; delayed callbacks; waiters (re-armed after each signal); monitors; terminate (pending callbacks run with `canceled = true`); duplicate and close reference counted; a process queue (ThreadPool/ThreadPool) created on first use |
 | `XAsync*` | Begin, Schedule, Complete, GetStatus (with wait), GetResultSize, GetResult (identity and buffer checked), Cancel, Run; DoWork on the work port, the completion routine on the completion port, Cleanup once |
 | `XUser*` | one signed-in offline user "Player" (fixed XUID); add, duplicate, close, find (by id, local id or any device), compare, gamertag, state, adult age group, every privilege granted (so `XUserResolvePrivilegeWithUi*` completes S_OK without UI); the controller picker answers the first XInput gamepad's GameInput device id; the audio endpoint is the PC's default communications device (MMDevice id); change, device-association and endpoint events register and never fire; never signing out; `XUserGetTokenAndSignature*` completes with HRESULT_FROM_WIN32(ERROR_NETWORK_UNREACHABLE) (no Xbox services token) |
-| `XGameSave*`, `XGameSaveFiles*` | folders under `--save-dir`: `saves\<xuid>\<configId>\<container>\<blob>`, names %-escaped; updates staged and written per blob through a temporary file; sync and async reads, enumeration, deletes; 256 MB quota, also for the save-files folder |
+| `XGameSave*`, `XGameSaveFiles*` | folders under `--save-dir`: `saves\<xuid>\<configId>\<container>\<blob>`, names %-escaped; updates staged and written per blob through a temporary file; sync and async reads, enumeration, deletes; 256 MB quota, also for the save-files folder. A read lays out `XGameSaveBlob[n]`, the data, then the names, packed; a buffer with room for the blobs and their data only still reads (the names then point at copies the loader keeps). Each call is logged with its container, names, sizes and result |
 | `XPackage*` | one installed game package at the package root with the identity from `MicrosoftGame.config`; mount returns the package root; chunks ready; installation monitors at 100 %, and a callback registered with `XPackageRegisterInstallationProgressChanged` runs once on the monitor's queue (completion port; the async block's queue for `XPackageInstallChunksAsync`), since the game reads the progress of a chunk install only inside that callback; `XPackageInstallChunks[Async]` completes at once with such a monitor; `XPackageChangeChunkInstallOrder` S_OK; `XPackageUninstallChunks` HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED), `XPackageUninstallPackage` false; no DLC, no features, nothing to download, no install writes |
 | `XStoreCreateContext`, `XStoreQueryGameLicense*` | an active, full, never-expiring license for the game itself: `XStoreGameLicense` (104 bytes) with the SKU at 0x00, `isActive` 0x12, `isTrialOwnedByThisUser`/`isDiscLicense`/`isTrial` 0x13..0x15 (all false), trial id 0x1C (empty), expiration 0x60 (INT64_MAX); the game reads 0x00, 0x13..0x15, 0x1C and 0x60 |
 | other `XStore*` the game calls | an unreachable store; no license or entitlement is ever reported. `XStoreAcquireLicenseFor{Package,Durables}*`, consumable balance and fulfillment, user collections/purchase ids and package downloads complete with E_GAMESTORE_NETWORK_ERROR (0x89245301) and no handle; `XStoreIsLicenseValid` false; entitled/associated product queries return an empty one-page query handle; the update query finds no updates; purchase, product page and redeem UI end with E_ABORT; `XStoreQueryPackageIdentifier` maps only the game's store id; license-changed and license-lost events register and never fire |
@@ -401,7 +401,8 @@ fivestar-loader --load $dump\XboxBvhBuilder.dll --load $dump\Bink2Scarlett.dll -
 | `--sample-threads <s>` | with `--run`: every s seconds the calls per shim, stub and GDK slot since the last sample, DirectStorage, pipeline (queued builds, DXIL held), present and GameInput counters, memory (private commit, managed heap, XMem allocations, physical pages; the machine's free physical memory and commit), and every thread's stack (below) |
 | `--profile-threads` | with `--sample-threads`: also the main image's busiest functions on running threads (400 rounds of every thread per sample, several seconds in which the game runs slower: frame times then are not the game's) |
 | `--trace-module <dll>` | with `--run`: the call trace also wraps imports bound to this mapped image (for example `bink2scarlett.dll`) |
-| `--input-script <file>` | timed key presses added to the desktop keys and timed captures; followed while running (below) |
+| `--input-script <file>` | timed key presses added to the desktop keys and timed captures, in blocks that wait for learned screens; followed while running (below) |
+| `--screens <file>` | the screens the input script learned (below); default `%LOCALAPPDATA%\FiveStar\screens.txt` |
 
 The output lists the images, an import table per image and module, the totals and the exports. Tests:
 `dotnet test tests/FiveStar.Loader.Tests`; with `FIVESTAR_DUMP` set to the dump folder they also load the six Xbox
@@ -439,7 +440,7 @@ calls (`lock inc`) and, under `--run`, wrap the GDK thunk-ABI slots. `OutputDebu
 logged as `[debug]` (first 4096 messages).
 
 **Input script.** `--input-script` lines are `<seconds> <key> [hold <s>] [repeat <n> every <s>]`, times from loader
-start (`+<s>`: that long after the previous line), keys named as in the input config, `#` a comment. A scripted key counts as held on the desktop, so the keyboard
+start or from the start of their screen block (below; `+<s>`: that long after the previous line), keys named as in the input config, `#` a comment. A scripted key counts as held on the desktop, so the keyboard
 and the keyboard-and-mouse gamepad both see it (`Space` is A). The game reads input only through its own GameInput
 calls; a press while it does not poll has no effect. `<seconds> capture` reads back the next present at that time
 (with `--capture-dir`, [d3d12x-shim.md](d3d12x-shim.md#debug-layer)); `<seconds> cursor <dx> <dy> [hold <s>] [repeat …]`
@@ -448,6 +449,18 @@ stick (full at 1000). [first-run.input](first-run.input) answers the first-run s
 runs: every 250 ms it reloads it when its write time changed, so lines appended with later times drive the game
 interactively (the log names each reload with the loader time; captures already due at a reload are skipped). The
 mouse needs no script: the real cursor's motion reaches the keyboard-and-mouse gamepad's right stick.
+
+**Screen blocks.** A line `screen <name>` starts a block whose times count from the moment the screen `<name>` shows,
+not from loader start; the lines before the first one are block 0. Blocks begin in order: while a block waits, the
+loader reads back the presented frame about four times a second and shrinks it to a signature, 48 x 27 cells of mean
+luminance. The frame shows the screen when at most 40 cells differ by more than 16 levels from the learned
+signature (a moved focus or a small animation changes a few cells, another screen hundreds), two reads in a row. When
+a block begins, the presses of the blocks before it that have not started are dropped, so `0 Space repeat 400 every 3`
+taps only until the next screen shows. The log names each screen with its time and, every 10 s while a block waits,
+the nearest frame seen. Screens are learned from the user's own frames, into `--screens`: one line
+`<name> <signature> [<max changed cells>]` each. `<seconds> learn <name>` learns the next frame as `<name>`; while a
+block waits for a screen it does not know, pressing F8 (the real key) when it shows learns it and begins the block.
+A `capture` also logs the frame's signature. Nothing is read back while no block waits.
 The loader is built with `<CETCompat>false</CETCompat>`: with CET shadow stacks, SEH resuming inside mapped code
 fail-fasts (0x30).
 

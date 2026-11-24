@@ -2,22 +2,30 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # fivestar-loader --input-script: answers the first-run screens of an empty save folder unattended, up to the story
-# load (docs/running.md#first-run-in-the-game). Times are seconds from loader start. With a warm pipeline cache the
-# black "press a button" screen showed 45 to 220 s in. Presses are held 0.3 s: while pipelines compile the game runs
-# at 10 to 20 frames a second and missed 0.2 s presses, and from about 0.5 s a held arrow repeats.
+# load (docs/running.md#first-run-in-the-game). The screen blocks wait for screens learned from your own frames
+# (--screens, default %LOCALAPPDATA%\FiveStar\screens.txt). The first time, a block waits for a screen it does not
+# know yet: press F8 when that screen shows, and the loader learns it and goes on. Presses are held 0.3 s: while
+# pipelines compile the game can miss 0.2 s presses, and from about 0.5 s a held arrow repeats.
 #
-# A tap passes the black screen, skips the logos and confirms each option screen (minimap, text size, the Off
-# option, brightness, controls notice); on the legal screen it does nothing while the Legal item has the focus.
-40 Space hold 0.3 repeat 91 every 4
-# Legal and photosensitivity: Down, wait a few seconds while the photosensitivity item holds the focus, Down, then
-# Next. The start time is from boots before programs were compiled on demand; the screens now come sooner.
-410 Down hold 0.3
-+4 Down hold 0.3
+# Black "press a button" screen, logos, intro art and the option screens (minimap, text size, the Off option,
+# brightness, controls notice): a Space tap every 3 s until the legal screen shows. A tap does nothing on the legal
+# screen while its Legal item has the focus.
+0 Space hold 0.3 repeat 400 every 3
+
+# Legal and photosensitivity: Down, then Down again once the photosensitivity item lets the focus go (about 15 s),
+# then Next.
+screen legal
+1 Down hold 0.3
++16 Down hold 0.3
 +1 Space hold 0.3
-# Privacy policy and terms of service: the two items are check boxes that A toggles, so Space, Down, Space, Down and
-# Space (Confirm) start the story load. If a box stays unchecked, presses appended while it runs can still fix it.
-+8 Space hold 0.3
+
+# Privacy policy and terms of service: two check boxes that Space toggles, then Confirm.
+screen terms
+2 Space hold 0.3
 +1 Down hold 0.3
 +1 Space hold 0.3
 +1 Down hold 0.3
 +1 Space hold 0.3
+
+# The story load (a spinner on dark blue): nothing to press, the log names the time.
+screen story-load
