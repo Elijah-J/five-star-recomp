@@ -36,6 +36,7 @@ internal sealed unsafe class DrawTrace
     private const int RectangleInts = 4;
     private const uint TitleDwordsShown = 4;
     private const uint FloatBytes = sizeof(float);
+    private const int DwordBits = 32;
 
     /// <summary>D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV and ID3D12Device::GetDescriptorHandleIncrementSize (d3d12.h).</summary>
     private const int ViewHeapType = 0;
@@ -288,11 +289,36 @@ internal sealed unsafe class DrawTrace
 
         for (uint parameter = 0; layout != null && parameter < (uint)layout->Count; parameter++)
         {
-            if (layout->Kind(parameter) == RootParameterKind.Table)
+            uint sgpr = UserData.GraphicsBase + layout->Offsets[parameter];
+            var kind = layout->Kind(parameter);
+
+            if (kind == RootParameterKind.Table)
             {
-                uint pointer = bindings->Graphics[UserData.GraphicsBase + layout->Offsets[parameter]];
-                AppendTable(text, parameter, pointer, layout->Extents[parameter]);
+                AppendTable(text, parameter, bindings->Graphics[sgpr], layout->Extents[parameter]);
             }
+            else if (kind != RootParameterKind.Constants)
+            {
+                AppendRootAddress(text, parameter, bindings->Graphics[sgpr] | ((ulong)bindings->Graphics[sgpr + 1] << DwordBits));
+            }
+        }
+    }
+
+    /// <summary>A root CBV, SRV or UAV: its console address and the first dwords there.</summary>
+    private void AppendRootAddress(StringBuilder text, uint parameter, ulong address)
+    {
+        text.Append($"\n      root descriptor {parameter} at 0x{address:x}:");
+        var data = (uint*)_memory.Find(address, ConstantsShown * sizeof(uint));
+
+        if (data == null)
+        {
+            text.Append(" (memory not readable)");
+
+            return;
+        }
+
+        for (int i = 0; i < ConstantsShown; i++)
+        {
+            text.Append($" {data[i]:x}");
         }
     }
 

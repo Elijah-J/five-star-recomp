@@ -48,6 +48,16 @@ public sealed class VertexAndGeometryTests : IClassFixture<WarpFixture>
         Assert.True(mismatches.Count == 0, Report(mismatches));
     }
 
+    /// <summary>The executable's clear, which reads its vertices and colour through a root SRV address.</summary>
+    [RealProgramTheory]
+    [InlineData("VS_Clear_f05fef9c")]
+    public void The_real_clear_program_reads_its_record_through_the_root_descriptor(string name)
+    {
+        var mismatches = new RealClearRunner(_fixture).Run(RealProgramTheoryAttribute.Folder!, name);
+
+        Assert.True(mismatches.Count == 0, Report(mismatches));
+    }
+
     private static string Report(IReadOnlyList<string> mismatches)
     {
         return $"{mismatches.Count} mismatches:\n{string.Join("\n", mismatches.Take(16))}";

@@ -7,12 +7,23 @@ using static FiveStar.Shaders.Translation.Emitters.Operands;
 namespace FiveStar.Shaders.Translation.Emitters;
 
 /// <summary>
-/// The byte address of a MUBUF/MTBUF access: soffset + instruction offset, plus index * stride (idxen, stride in
-/// V# dword1) and/or the VGPR offset (offen). With both, vaddr holds the index then the offset.
+/// The view and byte address of a MUBUF/MTBUF access. The view comes from the V#'s base (prelude <c>buf_view</c>): a
+/// heap index while base_hi is 0, else a console GPU address in game memory. The address is soffset + instruction
+/// offset, plus index * stride (idxen, stride in V# dword1 bits 16-29) and/or the VGPR offset (offen); with both, vaddr
+/// holds the index then the offset.
 /// </summary>
 internal static class BufferAddress
 {
+    private const int BaseDword = 0;
     private const int StrideDword = 1;
+
+    /// <summary>A uint2 temporary holding the V#'s heap index (x) and the byte offset of its base in that view (y).</summary>
+    public static string View(OperandAccess operands, Operand resource, bool writable)
+    {
+        var rw = writable ? "true" : "false";
+
+        return operands.SnapPair($"buf_view({operands.Read(resource, BaseDword)}, {operands.Read(resource, StrideDword)}, {rw})");
+    }
 
     public static string Build(OperandAccess operands, Operand vaddr, Operand resource, Operand soffset, InstructionModifiers modifiers)
     {
@@ -23,13 +34,12 @@ internal static class BufferAddress
         if (indexed && offset)
         {
             var index = operands.Read(vaddr, Low);
-            var stride = operands.Read(resource, StrideDword);
-            address += $" + {index} * {stride} + {operands.Read(vaddr, High)}";
+            address += $" + {index} * {Stride(operands, resource)} + {operands.Read(vaddr, High)}";
         }
         else if (indexed)
         {
             var index = operands.Read(vaddr);
-            address += $" + {index} * {operands.Read(resource, StrideDword)}";
+            address += $" + {index} * {Stride(operands, resource)}";
         }
         else if (offset)
         {
@@ -37,5 +47,10 @@ internal static class BufferAddress
         }
 
         return address + ")";
+    }
+
+    private static string Stride(OperandAccess operands, Operand resource)
+    {
+        return $"buf_stride({operands.Read(resource, StrideDword)})";
     }
 }

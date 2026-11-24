@@ -1,10 +1,12 @@
 // Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Runtime support for translated RDNA programs (prototype).
-// Bindless model: descriptor dword0 written by the D3D12.X shim = PC descriptor-heap index.
+// Runtime support for translated RDNA programs.
+// Bindless model: a descriptor's dword0 written by the D3D12.X shim is a PC descriptor-heap index (see GPU addresses).
 
 cbuffer UserData : register(b0) { uint4 g_user4[32]; };       // initial user SGPRs (root constants)
-static const uint GPU_MEM_HEAP = 0;                            // raw GPU-memory window (prototype)
+static const uint GPU_MEM_HEAP = 0;                            // raw window of the loader's 32-bit space, RW view at + 1
+static const uint GPU_MAP_HEAP = 7;                            // address map of game memory (raw SRV)
+static const uint GPU_MAP_SPANS = 0x8000u;                     // 4 GiB spans of the 47-bit address space
 static const uint STATIC_SAMPLER_BASE = 2032;                  // runtime-created samplers for literal S#s
 static const uint PC_END = 0xffffffffu;
 static const uint PC_YIELD = 0xfffffffeu;                      // mesh shaders: s_barrier yield point
@@ -16,6 +18,51 @@ uint MemLoad(uint ptr_lo, uint off) {
     ByteAddressBuffer m = ResourceDescriptorHeap[GPU_MEM_HEAP];
     return m.Load((ptr_lo + off) & ~3u);
 }
+void MemStore(uint ptr_lo, uint off, uint v) {
+    RWByteAddressBuffer m = ResourceDescriptorHeap[GPU_MEM_HEAP + 1];   // writable view of the GPU-memory window
+    m.Store((ptr_lo + off) & ~3u, v);
+}
+
+// ---- GPU addresses. A 64-bit pointer or V# base whose high dword is 0 is in the loader's 32-bit space: the window
+// for a pointer, a heap index for a V# (the shim's descriptor records). Any other address is a console GPU address in
+// game memory, found in the address map the shim keeps: level 1 holds per 4 GiB span (high dword) the byte offset of
+// its page table; a page table holds per 64 KiB page the heap index of a raw SRV over the page (its UAV at + 1) and
+// the page's byte offset in that view. Unmapped spans and pages name a null SRV/UAV pair.
+uint2 gpu_page(uint lo, uint hi) {
+    ByteAddressBuffer map = ResourceDescriptorHeap[GPU_MAP_HEAP];
+    uint table = map.Load((hi & (GPU_MAP_SPANS - 1u)) * 4u);
+    uint2 page = map.Load2(table + (lo >> 16) * 8u);
+    return uint2(page.x, page.y + (lo & 0xffffu));
+}
+uint PtrLoad(uint lo, uint hi, uint off) {   // carries out of the low dword are not propagated
+    uint a = lo + off;
+    if (hi == 0u) return MemLoad(a, 0u);
+    uint2 p = gpu_page(a, hi);
+    ByteAddressBuffer b = ResourceDescriptorHeap[p.x];
+    return b.Load(p.y & ~3u);
+}
+void PtrStore(uint lo, uint hi, uint off, uint v) {
+    uint a = lo + off;
+    if (hi == 0u) { MemStore(a, 0u, v); return; }
+    uint2 p = gpu_page(a, hi);
+    RWByteAddressBuffer b = ResourceDescriptorHeap[p.x + 1u];
+    b.Store(p.y & ~3u, v);
+}
+uint2 gpu_rw(uint lo, uint hi) {   // (RW heap index, byte address) of a pointer, for atomics
+    if (hi == 0u) return uint2(GPU_MEM_HEAP + 1u, lo);
+    uint2 p = gpu_page(lo, hi);
+    return uint2(p.x + 1u, p.y);
+}
+// A V#'s view: (heap index, byte offset of the base in it); rw takes the UAV of a game-memory base. Dword1 holds
+// base_hi in bits 0-15 and the stride in bits 16-29.
+uint2 buf_view(uint d0, uint d1, bool rw) {
+    uint hi = d1 & 0xffffu;
+    if (hi == 0u) return uint2(d0, 0u);
+    uint2 p = gpu_page(d0, hi);
+    return uint2(p.x + (rw ? 1u : 0u), p.y);
+}
+uint buf_stride(uint d1) { return (d1 >> 16) & 0x3fffu; }
+
 uint BufLoad(uint heap_index, uint off) {
     ByteAddressBuffer b = ResourceDescriptorHeap[heap_index];
     return b.Load(off & ~3u);
@@ -195,12 +242,12 @@ bool cmp_class(float x, uint m) {
     return ((m >> bit) & 1) != 0;
 }
 
-// ---- formatted buffer loads. code = layout*8 + numeric type (GCN dfmt/nfmt numbering), written into
-// V# dword3 by the D3D12.X shim (buffer_load_format) or taken from the instruction (tbuffer_load_format).
+// ---- formatted buffer loads. code = layout*8 + numeric type (GCN dfmt/nfmt numbering), from the gfx10 unified format
+// in V# dword3 bits 12-18 (buffer_load_format, buf_code) or from the instruction (tbuffer_load_format).
 // Branch-free (select only, no switch or loop): FmtLoad is inlined at every call, and a program can hold thousands,
 // each of which would otherwise add dozens of blocks and an [unroll] loop that dxc unrolls against the whole function.
 // Fields per layout, components x..w: bit offset | width << 8 (width 0 = no component). AMD format names list fields
-// from the MSB: 2_10_10_10 = R10G10B10A2 (R in the low bits). 10_11_11 / 11_11_10: TODO.
+// from the MSB: 2_10_10_10 = R10G10B10A2 (R in the low bits), 10_11_11 = R11G11B10.
 static const uint4 FMT_FIELDS[16] = {
     uint4(0, 0, 0, 0),
     uint4(0x800, 0, 0, 0),                      // 1: 8
@@ -208,8 +255,8 @@ static const uint4 FMT_FIELDS[16] = {
     uint4(0x800, 0x808, 0, 0),                  // 3: 8_8
     uint4(0x2000, 0, 0, 0),                     // 4: 32
     uint4(0x1000, 0x1010, 0, 0),                // 5: 16_16
-    uint4(0, 0, 0, 0),
-    uint4(0, 0, 0, 0),
+    uint4(0xb00, 0xb0b, 0xa16, 0),              // 6: 10_11_11
+    uint4(0xa00, 0xb0a, 0xb15, 0),              // 7: 11_11_10
     uint4(0x200, 0xa02, 0xa0c, 0xa16),          // 8: 10_10_10_2
     uint4(0xa00, 0xa0a, 0xa14, 0x21e),          // 9: 2_10_10_10
     uint4(0x800, 0x808, 0x810, 0x818),          // 10: 8_8_8_8
@@ -229,7 +276,8 @@ uint fmt_convert(uint v, uint bits, uint num) {
     int sv = select(bits >= 32u, asint(v), asint(v << sh) >> sh);
     float un = (float)v / (float)mx;                                         // UNORM
     float sn = max((float)sv / (float)(mx >> 1), -1.0);                      // SNORM
-    float fp = select(bits == 32u, asfloat(v), select(bits == 16u, f16tof32(v), (float)v));   // FLOAT
+    // FLOAT: 11- and 10-bit fields are unsigned halves with 6 and 5 mantissa bits
+    float fp = select(bits == 32u, asfloat(v), f16tof32(v << select(bits == 11u, 4u, select(bits == 10u, 5u, 0u))));
     float f = select(num == 0u, un, select(num == 1u, sn, select(num == 2u, (float)v,   // USCALED
               select(num == 3u, (float)sv, select(num == 7u, fp, 0.0)))));                 // SSCALED
     return select(num == 4u, v, select(num == 5u, asuint(sv), asuint(f)));                 // UINT, SINT
@@ -248,6 +296,25 @@ uint4 FmtLoad(uint heap_index, uint addr, uint code) {
     uint one = select(num - 4u <= 1u, 1u, asuint(1.0));
     return uint4(fmt_component(w, fields.x, num, 0u), fmt_component(w, fields.y, num, 0u),
                  fmt_component(w, fields.z, num, 0u), fmt_component(w, fields.w, num, one));
+}
+// gfx10 unified buffer formats (RDNA 2 ISA, buffer data formats: 1 8_UNORM .. 77 32_32_32_32_FLOAT) as codes; 0 invalid.
+static const uint FMT_UNIFIED[80] = {
+    0, 8, 9, 10, 11, 12, 13, 16, 17, 18, 19, 20, 21, 23, 24, 25, 26, 27, 28, 29, 36, 37, 39, 40, 41, 42, 43, 44, 45, 47,
+    48, 49, 50, 51, 52, 53, 55, 56, 57, 58, 59, 60, 61, 63, 64, 65, 66, 67, 68, 69, 72, 73, 74, 75, 76, 77, 80, 81, 82, 83,
+    84, 85, 92, 93, 95, 96, 97, 98, 99, 100, 101, 103, 108, 109, 111, 116, 117, 119, 0, 0,
+};
+uint buf_code(uint d3) { uint f = (d3 >> 12) & 0x7fu; return select(f < 80u, FMT_UNIFIED[min(f, 79u)], 0u); }
+uint fmt_select(uint4 v, uint sel, uint one) {
+    uint c = select((sel & 3u) == 0u, v.x, select((sel & 3u) == 1u, v.y, select((sel & 3u) == 2u, v.z, v.w)));
+    return select(sel >= 4u, c, select(sel == 1u, one, 0u));
+}
+// DST_SEL_X..W (V# dword3 bits 0-11): 0 and 1 the constants, 4-7 the loaded x..w (BGRA views read z, y, x, w). Loads
+// only; all four 0 keeps the loaded order.
+uint4 fmt_swizzle(uint4 v, uint d3, uint code) {
+    uint s = d3 & 0xfffu, one = select((code & 7u) - 4u <= 1u, 1u, asuint(1.0));
+    uint4 r = uint4(fmt_select(v, s & 7u, one), fmt_select(v, (s >> 3) & 7u, one),
+                    fmt_select(v, (s >> 6) & 7u, one), fmt_select(v, (s >> 9) & 7u, one));
+    return s == 0u ? v : r;
 }
 
 // ---- cube maps (AMD conventions). face: 0 +X, 1 -X, 2 +Y, 3 -Y, 4 +Z, 5 -Z
@@ -285,10 +352,6 @@ float3 cube_dir(float s, float t, float face) {
     }
 }
 
-void MemStore(uint ptr_lo, uint off, uint v) {
-    RWByteAddressBuffer m = ResourceDescriptorHeap[GPU_MEM_HEAP + 1];   // writable view of the GPU-memory window
-    m.Store((ptr_lo + off) & ~3u, v);
-}
 uint enc_num(float f, uint bits, uint num) {
     uint mx = bits >= 32 ? 0xffffffffu : ((1u << bits) - 1);
     switch (num) {

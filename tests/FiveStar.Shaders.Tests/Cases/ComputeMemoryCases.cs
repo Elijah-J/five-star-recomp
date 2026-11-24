@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Globalization;
+using System.Runtime.InteropServices;
 using FiveStar.Shaders.Tests.Warp;
+using FiveStar.Shaders.Translation;
 
 namespace FiveStar.Shaders.Tests.Cases;
 
@@ -58,7 +60,60 @@ public static class ComputeMemoryCases
             GlobalMemory(),
             GlobalNegativeOffset(),
             GlobalAtomic(),
+            RootDescriptors(),
         ];
+    }
+
+    // Root descriptors as VS_Clear uses them: a console GPU address in s[8:9] becomes a V# built in the program (stride
+    // in dword 1, the hardware dword 3 0x11014fac: 32_UINT, x y z w) and a 64-bit pointer; s[10:11] a second address
+    // written through. Both reach their buffers through the address map at heap slot 7.
+    private static ComputeCase RootDescriptors()
+    {
+        const string Program = """
+            s_mov_b32 s20, s8
+            s_or_b32 s21, s9, 0x40000
+            s_mov_b32 s22, -1
+            s_mov_b32 s23, 0x11014fac
+            s_buffer_load_dword s24, s[20:23], 0x4
+            s_load_dword s25, s[8:9], 0x8
+            v_lshlrev_b32_e32 v1, 2, v41
+            buffer_load_dword v20, v1, s[20:23], 0 offen
+            buffer_load_format_x v21, v41, s[20:23], 0 idxen
+            s_waitcnt vmcnt(0) lgkmcnt(0)
+            v_mov_b32_e32 v22, s24
+            v_mov_b32_e32 v23, s25
+            s_mov_b32 s28, s10
+            s_mov_b32 s29, s11
+            s_mov_b32 s30, -1
+            s_mov_b32 s31, 0x11014fac
+            buffer_store_dword v20, v1, s[28:31], 0 offen
+            """;
+        const ulong Read = 0x27E_0003_0040;
+        const ulong Written = 0x27E_0004_0010;
+        const int ReadHeap = 10;
+        const int WrittenHeap = 12;
+        const int NullView = 8;
+
+        var map = new AddressMap(1, NullView);
+        var bytes = new byte[map.Bytes];
+        map.Clear(bytes);
+        map.Map(bytes, Read & ~0xFFFFUL, 0x10000, ReadHeap, Read & ~0xFFFFUL);
+        map.Map(bytes, Written & ~0xFFFFUL, 0x10000, WrittenHeap - 1, (Written & ~0xFFFFUL) - 0x100);
+
+        var stored = new uint[256];
+        Input.AsSpan(16, Threads).CopyTo(stored.AsSpan((0x100 + 0x10) / 4));
+
+        return new ComputeCase("cs_root_descriptor", Program, 4, thread => [Input[16 + thread.Id], Input[16 + thread.Id], Input[17], Input[18]])
+        {
+            User = [unchecked((uint)Read), (uint)(Read >> 32), unchecked((uint)Written), (uint)(Written >> 32)],
+            Buffers =
+            [
+                new BufferResource((int)AddressMap.HeapSlot, MemoryMarshal.Cast<byte, uint>(bytes).ToArray(), Writable: false),
+                new BufferResource(ReadHeap, Input, Writable: false),
+                new BufferResource(WrittenHeap, new uint[256], Writable: true),
+            ],
+            Check = buffers => Differences($"heap{WrittenHeap}", stored, buffers[WrittenHeap]),
+        };
     }
 
     private static IEnumerable<string> Differences(string name, uint[] expected, uint[] actual)

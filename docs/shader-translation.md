@@ -110,10 +110,18 @@ The D3D12.X layer creates the views and samplers, so it decides what descriptor 
 |---|---|
 | T# dword0 | `ResourceDescriptorHeap` index |
 | S# dword0 | `SamplerDescriptorHeap` index; an S# built from literal constants gets `STATIC_SAMPLER_BASE + k` and its words are listed at the top of the program |
-| V# dword0 / dword1 / dword3 | heap index / stride (idxen) / format code for `buffer_*_format` (layout × 8 + numeric type, GCN numbering) |
-| 64-bit pointers (`s_load`, `global_*`) | byte address in the GPU-memory window `ResourceDescriptorHeap[GPU_MEM_HEAP]`, writable view at `+ 1` |
+| V# base (dword0, dword1 bits 0-15) | base_hi 0: dword0 is a heap index (the D3D12.X shim's records); otherwise a console GPU address, found in the address map (`buf_view`) |
+| V# dword1 bits 16-29 / dword3 | stride (idxen) / hardware format word: gfx10 unified format (bits 12-18, decoded by `buf_code`) and destination swizzle (bits 0-11, `fmt_swizzle`, loads only) |
+| 64-bit pointers (`s_load`, `global_*`) | high dword 0: byte address in the window `ResourceDescriptorHeap[GPU_MEM_HEAP]` (writable view at `+ 1`); otherwise a console GPU address in the address map (`PtrLoad`, `PtrStore`, `gpu_rw`) |
 | `s_getpc_b64` pointers | high dword `CODE_TAG`; loads read the program's own code, emitted as `g_code[]` |
 | BVH T# | dword0 = BVH base address >> 8 in the memory window (see [ray-intersection.md](ray-intersection.md)) |
+
+The **address map** (`ResourceDescriptorHeap[GPU_MAP_HEAP]`, slot 7; `AddressMap` writes it) holds a dword per 4 GiB
+span of the address space (the address's high dword) naming the span's page table, and per 64 KiB page the heap index
+of a raw SRV over the page (its UAV follows) and the page's byte offset in that view. A V# base is looked up once per
+access and the access offset added inside the view; a pointer is looked up at the address it reads, without carrying
+out of the low dword. The D3D12.X shim fills the map from its address table ([d3d12x-shim.md](d3d12x-shim.md#binding));
+an address it does not know names a null view and reads 0.
 
 A buffer the program also stores to is loaded through its RW view (`BufLoadRW`). Cube sampling rebuilds a direction
 from (s, t, face) with `cube_dir`.
@@ -545,9 +553,11 @@ file per distinct output signature ([d3d12x-shim.md](d3d12x-shim.md#rectangle-li
 run with LLVM and its new file must be committed), decodes them with `RdnaDecoder`, translates them (structured form), compiles them with dxc and
 runs them on D3D12 WARP. Results are compared with a reference model of the ISA (`Reference/`), never with the
 translator's output. Covered: pixel shaders (VALU, SALU, packed f16, cross-lane, EXEC, helper lanes, control flow,
-memory, exports), compute (ids, LDS, wave32/wave64 wave operations, buffer and global memory, atomics), ray
-intersection, the mesh path and its fallback (including overflow), vertex fetch, a handwritten GS and the real
-VoxelizeGeneric GS programs.
+memory, formatted loads with hardware format words and swizzles, exports), compute (ids, LDS, wave32/wave64 wave
+operations, buffer and global memory, atomics, a V# built from a root descriptor's address as `VS_Clear` builds it,
+read and written through the address map), ray
+intersection, the mesh path and its fallback (including overflow), vertex fetch, a handwritten GS, the real
+VoxelizeGeneric GS programs and the executable's real `VS_Clear`, which draws from a record at a root SRV address.
 
 Run `dotnet test tests/FiveStar.Shaders.Tests`. `FIVESTAR_LLVM` (LLVM bin folder) and `FIVESTAR_DXC` (dxc path) override
 the default tool locations; the decoder comparison on real programs needs LLVM; the real-GS tests and it need `FIVESTAR_DUMP` and

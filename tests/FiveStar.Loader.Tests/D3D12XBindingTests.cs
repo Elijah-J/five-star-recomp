@@ -43,15 +43,22 @@ public sealed unsafe class D3D12XBindingTests
     private const uint TableSize = 2;
     private const uint StructureStride = 16;
 
-    /// <summary>DXGI_FORMAT_R16G16B16A16_FLOAT and R8G8B8A8_UNORM.</summary>
+    /// <summary>DXGI_FORMAT_R16G16B16A16_FLOAT, R8G8B8A8_UNORM and B8G8R8A8_UNORM.</summary>
     private const int HalfFloat4 = 10;
     private const int Byte4Unorm = 28;
+    private const int Byte4UnormBgra = 87;
 
-    /// <summary>Format codes: GCN layouts 16_16_16_16 and 8_8_8_8, numeric type FLOAT, and 32 UINT.</summary>
-    private const uint Layout16x4 = 12;
-    private const uint Layout8x4 = 10;
-    private const uint FloatType = 7;
-    private const uint Dword = (4 * 8) + 4;
+    /// <summary>
+    /// Hardware V# dword 3 (RDNA 2 ISA): RESOURCE_LEVEL 1 (bit 24), the unified format (bits 12-18: 20 32_UINT, 71
+    /// 16_16_16_16_FLOAT, 56 8_8_8_8_UNORM) and DST_SEL x y z w (0xFAC) or z y x w (0xF2E).
+    /// </summary>
+    private const uint Dword = 0x01014FAC;
+    private const uint Half4 = 0x01047FAC;
+    private const uint Byte4 = 0x01038FAC;
+    private const uint Byte4Bgra = 0x01038F2E;
+
+    /// <summary>STRIDE: dword 1 bits 16-29.</summary>
+    private const int StrideShift = 16;
 
     /// <summary>Reads table entry 0 (an SRV) and 1 (a UAV) through the window and stores the SRV's first dword + 1.</summary>
     private const string Program = """
@@ -114,20 +121,24 @@ public sealed unsafe class D3D12XBindingTests
         var raw = BufferViewDescription.RawShaderResource(2);
         var typed = new BufferViewDescription { Format = HalfFloat4, Dimension = BufferViewDescription.BufferDimension, SrvMapping = BufferViewDescription.DefaultMapping, SrvElements = 8 };
         var typedUav = new BufferViewDescription { Format = Byte4Unorm, Dimension = BufferViewDescription.BufferDimension, UavElements = 16 };
+        var bgra = new BufferViewDescription { Format = Byte4UnormBgra, Dimension = BufferViewDescription.BufferDimension, SrvMapping = BufferViewDescription.DefaultMapping, SrvElements = 2 };
 
         var srv = (delegate* unmanaged<nint, nint, BufferViewDescription*, nint, void>)XboxDevice.Vtable(device.Device)[CreateShaderResourceViewSlot];
         var uav = (delegate* unmanaged<nint, nint, nint, BufferViewDescription*, nint, void>)XboxDevice.Vtable(device.Device)[CreateUnorderedAccessViewSlot];
+
         srv(device.Device, buffer, &structured, heap.Cpu);
         srv(device.Device, buffer, &raw, heap.Cpu + (nint)heap.Increment);
         srv(device.Device, buffer, &typed, heap.Cpu + (nint)(2 * heap.Increment));
         uav(device.Device, writable, 0, &typedUav, heap.Cpu + (nint)(3 * heap.Increment));
+        srv(device.Device, buffer, &bgra, heap.Cpu + (nint)(4 * heap.Increment));
 
-        // V# dwords 1 to 3: the idxen stride, num_records (elements of the stride, bytes without one) and the format
-        // code FmtLoad decodes (layout * 8 + numeric type).
-        Assert.Equal([StructureStride, 4u, Dword], Fields(test, 0));
+        // V# dwords 1 to 3 as the hardware lays them out: the idxen stride over base_hi 0 (dword 0 is a heap index),
+        // num_records (elements of the stride, bytes without one) and the format word with its destination swizzle.
+        Assert.Equal([StructureStride << StrideShift, 4u, Dword], Fields(test, 0));
         Assert.Equal([0u, 8u, Dword], Fields(test, 1));
-        Assert.Equal([8u, 8u, (Layout16x4 * 8) + FloatType], Fields(test, 2));
-        Assert.Equal([4u, 16u, Layout8x4 * 8], Fields(test, 3));
+        Assert.Equal([8u << StrideShift, 8u, Half4], Fields(test, 2));
+        Assert.Equal([4u << StrideShift, 16u, Byte4], Fields(test, 3));
+        Assert.Equal([4u << StrideShift, 2u, Byte4Bgra], Fields(test, 4));
     }
 
     [DxcFact]

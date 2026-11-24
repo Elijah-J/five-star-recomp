@@ -66,10 +66,12 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         Uploads = new UploadArena(Objects, PlacedResources.Addresses, log);
         AddressBuffers = new AddressBufferViews(GameMemory);
         AddressViews = new AddressShaderViews(Textures, AddressBuffers, Warnings, log);
+        MemoryViews = new GameMemoryViews(Warnings, log);
+        PlacedResources.Addresses.Observe(MemoryViews.Add);
 
         var hooks = new TitleMemoryHooks(images);
         Bindings = new XboxBindings(log, Warnings);
-        DescriptorHeaps = new XboxDescriptorHeaps(Objects, hooks, Bindings.Window, log, Warnings);
+        DescriptorHeaps = new XboxDescriptorHeaps(Objects, hooks, Bindings.Window, MemoryViews, log, Warnings);
         CommittedResources = new XboxCommittedResources(Objects, Descriptions, hooks, log);
         Presenter = new Presenter(Objects, Warnings, log);
         Rectangles = new RectangleDraws(log);
@@ -117,6 +119,9 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
 
     /// <summary>Desktop buffers over the memory the game committed itself, found by address.</summary>
     public XboxGameMemoryBuffers GameMemory { get; }
+
+    /// <summary>The address map through which programs read game memory at console GPU addresses.</summary>
+    public GameMemoryViews MemoryViews { get; }
 
     /// <summary>Device slot 127 and the title memory behind its resources.</summary>
     public XboxCommittedResources CommittedResources { get; }

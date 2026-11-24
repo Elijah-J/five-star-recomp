@@ -40,6 +40,7 @@ internal sealed unsafe class XboxDescriptorHeaps
     private readonly XboxObjects _objects;
     private readonly TitleMemoryHooks _hooks;
     private readonly DescriptorWindow _window;
+    private readonly GameMemoryViews _memoryViews;
     private readonly LoaderLog _log;
     private readonly OnceLog _warnings;
 
@@ -54,11 +55,12 @@ internal sealed unsafe class XboxDescriptorHeaps
     private nint _viewDesktopStart;
     private nint _sink;
 
-    public XboxDescriptorHeaps(XboxObjects objects, TitleMemoryHooks hooks, DescriptorWindow window, LoaderLog log, OnceLog warnings)
+    public XboxDescriptorHeaps(XboxObjects objects, TitleMemoryHooks hooks, DescriptorWindow window, GameMemoryViews memoryViews, LoaderLog log, OnceLog warnings)
     {
         _objects = objects;
         _hooks = hooks;
         _window = window;
+        _memoryViews = memoryViews;
         _log = log;
         _warnings = warnings;
     }
@@ -237,6 +239,7 @@ internal sealed unsafe class XboxDescriptorHeaps
             _viewRecords = DescriptorWindow.ViewRecords(desktopCount);
             _viewDesktopStart = desktopStart;
             _views = new ShaderVisibleHeap(memory, description->Count, increment, desktopStart, _viewRecords, remap, _window, null);
+            _memoryViews.Attach(device, desktopStart, increment, remap);
             _log.Detail($"  [d3d12_xs]   game views on {remap.Capacity} desktop pages of {DescriptorRemap.PageSize} descriptors, mapped on first write");
         }
         else if (samplers)

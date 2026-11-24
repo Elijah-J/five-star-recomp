@@ -373,10 +373,10 @@ flowchart LR
   image). Slots 9 and 10 both return it, so a CPU or GPU handle is the address of the descriptor's 32-byte record,
   as on the console. A record's dword 0 is the desktop index standing behind the descriptor, the rest zero: slots
   17 to 22, 61 and 70 write it with the view, so the game's own copies of records (its per-draw tables) carry
-  desktop indices. The desktop view heap holds 7 reserved descriptors then whole 4096-descriptor pages up to
+  desktop indices. The desktop view heap holds 10 reserved descriptors then whole 4096-descriptor pages up to
   1,000,000 (the tier-2 limit): 0 is a raw SRV over the descriptor window (`GPU_MEM_HEAP`), 1 a raw UAV over it, 2
   to 5 null descriptors for the mesh fallback table (root parameter 1; 5 is also what a record naming nothing
-  reads), 6 a sink.
+  reads), 6 a sink, 7 the address map (`GPU_MAP_HEAP`, below), 8 and 9 the null SRV and UAV its unmapped pages name.
 - **CPU-only view heaps** take title memory too (the game creates eleven of 3,128 descriptors and copies their
   32-byte records into its per-draw tables itself, 0x144d9efc0). Their records name descriptors of the desktop
   shader-visible heap: every view written into one takes the next descriptors of a ring of 16 remap pages
@@ -400,16 +400,27 @@ flowchart LR
   graphics and s4 for compute ([pipeline-cache.md](pipeline-cache.md#bindings)). List slots 33 and 34 keep the
   layout and set the bindless root signature and the fallback table.
 - **Root arguments (35 to 46)** write user SGPRs: a table its window pointer, constants their values, a root
-  descriptor the console GPU address as passed. Graphics SGPRs 8 to 15 are also written to dwords 0 to 7, where mesh
-  and geometry programs read them (`user_sgpr(n - 8)`).
+  descriptor the console GPU address as passed (its memory gets a desktop buffer if none covers it yet, so the
+  address map holds it). Graphics SGPRs 8 to 15 are also written to dwords 0 to 7, where mesh and geometry programs
+  read them (`user_sgpr(n - 8)`).
+- **Address map** (`GameMemoryViews`). Programs read a root descriptor's address, and any pointer or V# the game
+  builds in memory, as a console GPU address: `VS_Clear`, the executable's clear, builds its V# from a root SRV
+  (`s_mov s0, s8; s_or s1, s9, 0x10000; s_mov s2, -1; s_mov s3, 0x11014fac`), as about 970 of a sample of 2,591
+  programs do. Every range the address table gains (slot-133 runs, game memory, the upload ring) gets a raw SRV and
+  UAV per 256 MiB of its buffer (each view up to 512 MiB, the raw element limit; no UAV on the upload buffer), from 4
+  reserved remap pages (8,192 pairs), and the map in write-combined system memory names, per 64 KiB page, its
+  chunk's pair and offset ([shader-translation.md](shader-translation.md#resources) has the layout; 64 spans of
+  4 GiB). Ranges added before the game's view heap exists wait for it. The boot's first clears read a record in the
+  slot-133 pool: header 0x8e3 (positions from byte 16, 28 bytes apart), header 0xee4 (colours from byte 28), a
+  full-screen triangle and opaque black (0, 0, 0, 1), so their targets stay black (RGB) either way.
 - **Draws and dispatches (12 to 14, 61)** upload the bind point's 128 dwords when they changed (a 64 MiB upload ring
   of 512-byte blocks, a block reused after 131,072 others) and point root parameter 0 at them; ExecuteIndirect
   unwraps its signature and buffers. Reset (10, 139) clears the list's binding state.
 - **Descriptor window.** A buffer (custom heap, write-combined system memory, UAV; 0x2610000 bytes for the game):
   one 16-byte record per sampler, a 1024-record null table at 0x8000, then from 0x10000 one 32-byte record per game
   view descriptor in game order (a T#; buffers and CBVs use the first 16 bytes). Dwords 0 to 3 of each mirror those
-  of the title record: the desktop index (a record naming no desktop descriptor reads 5) and a buffer view's stride,
-  record count and format code (below). A table's user SGPR is the window offset of its
+  of the title record: the desktop index (a record naming no desktop descriptor reads 5) and a buffer view's V#
+  dwords 1 to 3 (below). A table's user SGPR is the window offset of its
   first record (base + (handle - title start) / increment × record size), so a program's `MemLoad(table + k * 32)`
   reads the heap index of the table's k-th descriptor wherever the game put the table. Records are mirrored when the
   shim writes them and, for a table, at SetRootDescriptorTable: as many as the root signature's table spans (end of
@@ -417,23 +428,21 @@ flowchart LR
   change (a shadow array). The game places a table's descriptors at the offsets of its own binding entries, not where the
   root signature's ranges say: `default_ps_tex` reads its T# at record 1 of a table whose root signature spans one. A handle outside both heaps reads the null table (warned once).
 
-The window covers only descriptors of the console's 32-bit pointer space: pointers into game memory (root
-descriptors, constants loaded through pointers) read the window, not game memory. Buffer views stay typed or
-structured desktop views, while programs read every V# as a `ByteAddressBuffer`. A buffer view's record carries the
-V# fields translated programs read in dwords 1 to 3 (`BufferRecords`), in the translator's encoding:
+The window covers the console's 32-bit pointer space (pointers whose high dword is 0, as tables are); every other
+address goes through the address map. Buffer views stay typed or structured desktop views, while programs read every
+V# as a `ByteAddressBuffer`. A buffer view's record is a hardware V# whose base address is the desktop index
+(`BufferRecords`): base_hi (dword 1 bits 0-15) 0 tells programs that dword 0 is a heap index, not an address.
 
 | Dword | Read by | CBV | Structured | Typed | Raw |
 |---|---|---|---|---|---|
-| 1 | `idxen` accesses: index × stride | 16 (float4 rows) | structure | format's element | 0 |
+| 1 bits 16-29 | `idxen` accesses: index × stride | 16 (float4 rows) | structure | format's element | 0 |
 | 2 | program code only (num_records: size and empty-buffer checks) | rows | elements | elements | bytes |
-| 3 | `buffer_load/store_format`: the code FmtLoad decodes, layout × 8 + numeric type in GCN numbering (`BufferFormatCodes`) | 32_32_32_32 FLOAT | 32 UINT | the view's format | 32 UINT |
+| 3 | `buffer_load/store_format`: the gfx10 unified format (bits 12-18) and DST_SEL (bits 0-11), RESOURCE_LEVEL 1 (`BufferFormatCodes`) | 32_32_32_32 FLOAT | 32 UINT | the view's format; B8G8R8A8 and B8G8R8X8 select z, y, x | 32 UINT |
 
-Counts are the game's, before the view is fitted to the desktop buffer. Dword 3 is not the hardware dword: FmtLoad
-reads all of it as the code, so no destination swizzle is carried (a B8G8R8A8 view reads in memory order), and the
-prelude still decodes 10_11_11 and 11_11_10 to 0. Texture records keep dwords 1 to 3 at 0. V#s a program builds
-itself from a root descriptor carry the hardware dword 3 (`VS_Clear`: 0x11014fac), which FmtLoad cannot decode. In a
-tenth of the programs (2,591), 1,121 use `buffer_load_format` with the V#'s format and 1,669 an `idxen` stride; with
-dword 3 at 0 every such load of a typed buffer read (0, 0, 0, 1).
+Counts are the game's, before the view is fitted to the desktop buffer. V#s a program builds itself carry the same
+words (`VS_Clear`: 0x11014fac, 32_UINT, x y z w), so one decoder serves both. Texture records keep dwords 1 to 3 at
+0. In a tenth of the programs (2,591), 1,121 use `buffer_load_format` with the V#'s format and 1,669 an `idxen`
+stride; with dword 3 at 0 every such load of a typed buffer read (0, 0, 0, 1).
 
 Before dword 1 was filled it was 0 for every view: the Scaleform batch programs (`VBatch*`, which read row batch × 4 + k of
 their CBV for each vertex's matrix) read row 0 for every row, so both screen coordinates got the same value and every
@@ -600,8 +609,9 @@ Two readback aids (`DrawTrace`, `FrameCapture`; debug only, they allocate and wa
 
 - `--d3d12-trace-draws` logs the first 24 draws, and 32 after each captured present: pipeline (programs, input
   layout, target formats, blend, rasterizer and depth state), render targets, viewport, scissor, depth view, vertex
-  buffers with their first vertices, the graphics user SGPRs, and the first 8 records of every table with the view
-  each names, the game's own record and a buffer's first values. After each traced draw the first render target is
+  buffers with their first vertices, the graphics user SGPRs, the first 8 records of every table with the view
+  each names, the game's own record and a buffer's first values, and every root CBV, SRV or UAV with its address and
+  the first 16 dwords there. After each traced draw the first render target is
   copied inside the game's list (`DrawProbes`) and summarized two presents later (non-black pixels, their box, mean
   colour). The game executes some closed lists again, so a probe's buffer is released only once its list was reset
   (releasing it at the report removed the device, debug-layer error #921).
