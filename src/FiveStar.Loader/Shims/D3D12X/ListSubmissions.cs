@@ -69,6 +69,8 @@ internal static unsafe class ListSubmissions
                 *ListSubmission.Of(list) = new ListSubmission { Fence = queue->Fence, Value = value };
             }
         }
+
+        QueueProgress.Executed(queue, lists, count, value, objects);
     }
 
     private static ulong Completed(nint fence)

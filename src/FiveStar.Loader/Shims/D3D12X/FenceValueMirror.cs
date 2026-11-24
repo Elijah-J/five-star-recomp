@@ -25,6 +25,10 @@ internal sealed unsafe class FenceValueMirror : IDisposable
     public const int QueueSignalSlot = 16;
     private const int DesktopQueueSignalSlot = 14;
 
+    /// <summary>X queue slot 17 (Wait) is desktop slot 15.</summary>
+    public const int QueueWaitSlot = 17;
+    private const int DesktopQueueWaitSlot = 15;
+
     /// <summary>A re-read even without a completion, in case an event registration was missed.</summary>
     private const int IdleMilliseconds = 16;
 
@@ -119,7 +123,20 @@ internal sealed unsafe class FenceValueMirror : IDisposable
             Volatile.Write(ref wrapper->SignaledValue, value);
         }
 
+        QueueProgress.FenceCall(queue, QueueEventKind.Signal, fence, value);
+
         return ((delegate* unmanaged<nint, nint, ulong, int>)ComObject.Slot(queue->Inner, DesktopQueueSignalSlot))(queue->Inner, inner, value);
+    }
+
+    /// <summary>Queue slot 17, Wait(fence, value): noted for <see cref="QueueProgress"/>, then desktop Wait.</summary>
+    [HotPath]
+    [UnmanagedCallersOnly]
+    public static int QueueWait(XboxObject* queue, nint fence, ulong value)
+    {
+        nint inner = ShimContext.Runtime.D3D12X.Objects.Unwrap(fence);
+        QueueProgress.FenceCall(queue, QueueEventKind.Wait, fence, value);
+
+        return ((delegate* unmanaged<nint, nint, ulong, int>)ComObject.Slot(queue->Inner, DesktopQueueWaitSlot))(queue->Inner, inner, value);
     }
 
     /// <summary>Fence slot 2: Release that drops the fence from the mirror with the last reference.</summary>

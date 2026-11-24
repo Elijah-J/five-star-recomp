@@ -79,6 +79,14 @@ it is not built the list sets nothing and drops its draws, dispatches and Execut
 SetPipelineState (counted in the sample summary). A derive (slot 55) from a stand-in uses the description kept
 under the stand-in's address; the rectangle-list variant is made from the built pipeline.
 
+**Memory.** The story load asks for about 29,000 pipelines the warm cache did not hold (15,000 by 210 s, 14,000 more
+at 870 s); 16 build threads compiling them took the loader from 19 to 74 GB private on a 64 GB machine, and at 978 s
+the commit charge reached the commit limit (129.1 of 129.2 GB) and the process ended without a record. So a build
+thread starts a build only while 8 GB of commit and 4 GB of physical memory are available (`WarmMemoryGuard.RoomForBuild`,
+polled every 2 s), and a pipeline with 4 MiB of DXIL or more goes to a thread of its own that also waits for 40 GB of
+commit, so it never holds up the others; until then its draws stay skipped. The sample summary counts the queued
+builds and the threads waiting for memory.
+
 ### Disk cache
 
 The driver's own shader cache stores a compile only once it finishes, so a boot that ends before the largest

@@ -21,6 +21,9 @@ internal static unsafe class WarmMemoryGuard
     /// </summary>
     public const ulong HeavyBytes = 32UL << 30;
 
+    /// <summary>Physical memory left to the game while pipelines build during a run.</summary>
+    public const ulong PhysicalReserveBytes = 4UL << 30;
+
     private const int PauseMilliseconds = 2000;
 
     /// <summary>Waits until <see cref="ReserveBytes"/> of commit is available or <paramref name="stopping"/> says so.</summary>
@@ -38,16 +41,39 @@ internal static unsafe class WarmMemoryGuard
         return AvailableCommit() >= HeavyBytes + ReserveBytes;
     }
 
+    /// <summary>
+    /// Whether a pipeline may start while the game runs: <see cref="ReserveBytes"/> of commit and
+    /// <see cref="PhysicalReserveBytes"/> of physical memory available, so the compiles do not page the game out.
+    /// </summary>
+    public static bool RoomForBuild()
+    {
+        var status = Status();
+
+        return status.AvailablePageFile >= ReserveBytes && status.AvailablePhysical >= PhysicalReserveBytes;
+    }
+
+    /// <summary>Whether a heavy pipeline may start while the game runs.</summary>
+    public static bool RoomForHeavyBuild()
+    {
+        return RoomForBuild() && RoomForHeavy();
+    }
+
     private static ulong AvailableCommit()
+    {
+        return Status().AvailablePageFile;
+    }
+
+    /// <summary>The machine's memory; all available when it cannot be read.</summary>
+    private static MemoryStatusEx Status()
     {
         MemoryStatusEx status = default;
         status.Length = (uint)sizeof(MemoryStatusEx);
 
         if (KernelBase.GlobalMemoryStatusEx(&status) == 0)
         {
-            return ulong.MaxValue;
+            return new MemoryStatusEx { AvailablePageFile = ulong.MaxValue, AvailablePhysical = ulong.MaxValue };
         }
 
-        return status.AvailablePageFile;
+        return status;
     }
 }

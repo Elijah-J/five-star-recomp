@@ -323,7 +323,7 @@ internal sealed class LoaderHost
     {
         string pipelines = _runtime.D3D12X.Pipelines?.Summary ?? "pipeline slots off";
 
-        return $"DirectStorage {_runtime.Storage.Summary()}; {pipelines}; {_runtime.D3D12X.Presenter.Presents} presents; {_runtime.Input.Summary}";
+        return $"DirectStorage {_runtime.Storage.Summary()}; {pipelines}; {_runtime.D3D12X.Presenter.Presents} presents; {_runtime.Input.Summary}; {MemorySnapshot.Summary()}";
     }
 
     /// <summary>

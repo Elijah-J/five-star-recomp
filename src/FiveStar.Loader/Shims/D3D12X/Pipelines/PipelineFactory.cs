@@ -198,10 +198,16 @@ internal sealed unsafe class PipelineFactory
     /// </summary>
     private int Create(DesktopStream stream, Guid* iid, nint* result, string names, Action<nint>? built)
     {
+        Action<nint> named = pipeline =>
+        {
+            QueueProgress.Name(pipeline, names);
+            built?.Invoke(pipeline);
+        };
+
         if (Cache is not null && !HResult.Failed(Cache.Load(stream, iid, result)))
         {
             stream.Dispose();
-            built?.Invoke(*result);
+            named(*result);
 
             return HResult.Ok;
         }
@@ -209,7 +215,7 @@ internal sealed unsafe class PipelineFactory
         *result = 0;
         var wanted = *iid;
 
-        return StandIns.Create(() => Build(stream, wanted), result, names, built);
+        return StandIns.Create(() => Build(stream, wanted), result, names, named, stream.ShaderBytes >= HeavyShaderBytes);
     }
 
     /// <summary>

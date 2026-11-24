@@ -190,6 +190,8 @@ internal static unsafe class CommandListBindingMethods
         }
 
         Flush(self, false);
+        ListActivity.Of(self)->Draws++;
+
         ShimContext.Runtime.D3D12X.Rectangles.BeforeDraw(self);
         ShimContext.Runtime.D3D12X.DrawTrace?.Draw(self, vertices, instances);
         nint inner = self->Inner;
@@ -207,6 +209,8 @@ internal static unsafe class CommandListBindingMethods
         }
 
         Flush(self, false);
+        ListActivity.Of(self)->Draws++;
+
         ShimContext.Runtime.D3D12X.Rectangles.BeforeDraw(self);
         ShimContext.Runtime.D3D12X.DrawTrace?.Draw(self, indices, instances);
         nint inner = self->Inner;
@@ -224,6 +228,7 @@ internal static unsafe class CommandListBindingMethods
         }
 
         Flush(self, true);
+        ListActivity.Of(self)->Dispatches++;
         nint inner = self->Inner;
         ((delegate* unmanaged<nint, uint, uint, uint, void>)ComObject.Slot(inner, DesktopDispatch))(inner, x, y, z);
     }
@@ -240,6 +245,7 @@ internal static unsafe class CommandListBindingMethods
 
         Flush(self, false);
         Flush(self, true);
+        ListActivity.Of(self)->Indirect++;
         var objects = ShimContext.Runtime.D3D12X.Objects;
         nint inner = self->Inner;
         var execute = (delegate* unmanaged<nint, nint, uint, nint, ulong, nint, ulong, void>)ComObject.Slot(inner, DesktopExecuteIndirect);
@@ -272,6 +278,7 @@ internal static unsafe class CommandListBindingMethods
     private static int ResetList(XboxObject* self, nint allocator, nint pipelineState)
     {
         *CommandListBindings.Of(self) = default;
+        *ListActivity.Of(self) = default;
         ShimContext.Runtime.D3D12X.DrawTrace?.Reset(self);
 
         var objects = ShimContext.Runtime.D3D12X.Objects;

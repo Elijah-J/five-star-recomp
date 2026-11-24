@@ -547,6 +547,17 @@ is bound before or after), and `--d3d12-trace-queues` logs the first 4000 submis
 flags), queue Signal and Wait and CPU fence signals, numbering queues and fences as they appear. Without
 `--shader-dir` the boot reaches the first frames in about 15 s, which makes a run per bisection step cheap.
 
+### Queue progress
+
+Always on (`QueueProgress`): each queue keeps its last 64 calls, ExecuteCommandLists with the draws, dispatches and
+indirect executions its lists recorded and the last pipeline set (named by its translated programs), and Signal and
+Wait (queue slot 17, a handler for this) on game fences. A watch thread reads every queue's shim fence
+([Resubmitted lists](#boot)) four times a second. A queue whose submitted work has not advanced for 1.5 s is logged
+once per stall as `[gpu] queue #n: executions done up to v of w, no progress for t s`, with its calls since the last
+finished execution (`NOT DONE` marks the ones the GPU has not finished; a Wait shows the fence's value then) and the
+memory line of the thread sampler. A removed device sets every fence to UINT64_MAX; the watch then logs every queue
+as last seen, without the debug layer as well.
+
 Two readback aids (`DrawTrace`, `FrameCapture`; debug only, they allocate and wait for the GPU):
 
 - `--d3d12-trace-draws` logs the first 24 draws, and 32 after each captured present: pipeline (programs, input
