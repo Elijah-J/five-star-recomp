@@ -18,6 +18,7 @@ internal sealed unsafe class SpareAllocators
     private const int GetDeviceSlot = 7;
     private const int GetTypeSlot = 8;
     private const int CreateCommandAllocatorSlot = 9;
+    private const int CreateCommandListSlot = 12;
     private const int AllocatorResetSlot = 8;
 
     private static readonly Guid DeviceIid = new("189819f1-1db6-4b57-be54-1821339b85f7");
@@ -62,15 +63,62 @@ internal sealed unsafe class SpareAllocators
                 hr = reset(list, created, pipeline);
             }
 
-            if (HResult.Failed(hr))
-            {
-                int type = ((delegate* unmanaged<nint, int>)ComObject.Slot(list, GetTypeSlot))(list);
-                ShimContext.Runtime.D3D12X.Warnings.Warn("spare-allocator", $"[d3d12_xs] command list Reset refused on a fresh allocator too: list type {type}, allocator created {created != 0}, {spares.Count} spares, pipeline 0x{pipeline:x}: {HResult.Format(hr)}");
-            }
-
             return hr;
         }
     }
+
+    /// <summary>
+    /// A new desktop list of <paramref name="list"/>'s type, recording on a new spare of desktop
+    /// <paramref name="allocator"/>, for a list whose Close failed: the desktop refuses every later Reset of such a list
+    /// with E_INVALIDARG, on any allocator. The old list is kept, not released, as the GPU may still run it. 0 when the
+    /// desktop refuses.
+    /// </summary>
+    public nint Replace(nint list, nint allocator, nint pipeline)
+    {
+        lock (_gate)
+        {
+            nint spare = Create(list);
+
+            if (spare == 0)
+            {
+                return 0;
+            }
+
+            if (!_spares.TryGetValue(allocator, out var spares))
+            {
+                spares = [];
+                _spares[allocator] = spares;
+            }
+
+            spares.Add(spare);
+            Guid deviceIid = DeviceIid;
+            nint device = 0;
+
+            if (HResult.Failed(((delegate* unmanaged<nint, Guid*, nint*, int>)ComObject.Slot(list, GetDeviceSlot))(list, &deviceIid, &device)))
+            {
+                return 0;
+            }
+
+            int type = ((delegate* unmanaged<nint, int>)ComObject.Slot(list, GetTypeSlot))(list);
+            Guid listIid = D3D12XLayout.GraphicsCommandListIid;
+            nint created = 0;
+            int hr = ((delegate* unmanaged<nint, uint, int, nint, nint, Guid*, nint*, int>)ComObject.Slot(device, CreateCommandListSlot))(device, 0, type, spare, pipeline, &listIid, &created);
+            ComObject.Release(device);
+
+            Replaced++;
+            ShimContext.Runtime.D3D12X.Warnings.Warn("list-replaced", $"[d3d12_xs] command list of type {type} refused every Reset after a failed Close: replaced by a new list ({HResult.Format(hr)})");
+
+            if (HResult.Failed(hr))
+            {
+                return 0;
+            }
+
+            return created;
+        }
+    }
+
+    /// <summary>Lists replaced after a failed Close.</summary>
+    public long Replaced { get; private set; }
 
     /// <summary>Resets the spares of desktop <paramref name="allocator"/>; one a list still records on keeps its memory.</summary>
     public void ResetSpares(nint allocator)

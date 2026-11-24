@@ -324,7 +324,20 @@ internal static unsafe class CommandListBindingMethods
         // The allocator backs another recording list, which the console allows: record on a spare (SpareAllocators).
         if (hr == HResult.InvalidArgument && desktop != 0)
         {
-            hr = ShimContext.Runtime.D3D12X.SpareAllocators.Reset(inner, desktop, pipeline, reset);
+            var spares = ShimContext.Runtime.D3D12X.SpareAllocators;
+            hr = spares.Reset(inner, desktop, pipeline, reset);
+
+            // Refused on a fresh allocator too: the list's last Close failed, and the desktop list is dead.
+            if (hr == HResult.InvalidArgument)
+            {
+                nint replacement = spares.Replace(inner, desktop, pipeline);
+
+                if (replacement != 0)
+                {
+                    self->Inner = replacement;
+                    hr = HResult.Ok;
+                }
+            }
         }
 
         return hr;

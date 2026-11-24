@@ -25,6 +25,13 @@ internal static class ResourceStates
     public const int ResolveDest = 0x1000;
     public const int ResolveSource = 0x2000;
     public const int GenericRead = 0xAC3;
+    private const int VertexAndConstantBuffer = 0x1;
+    private const int IndirectArgument = 0x200;
+    private const int AccelerationStructure = 0x400000;
+
+    /// <summary>D3D12_COMMAND_LIST_TYPE_COMPUTE and _COPY.</summary>
+    private const int ComputeList = 2;
+    private const int CopyList = 3;
 
     /// <summary>D3D12_RESOURCE_DIMENSION_UNKNOWN and _BUFFER.</summary>
     public const int UnknownDimension = 0;
@@ -80,6 +87,23 @@ internal static class ResourceStates
         resource->Dimension = dimension;
         resource->HomeState = home;
         resource->Flags = flags;
+    }
+
+    /// <summary>
+    /// The states a barrier on a desktop list of D3D12_COMMAND_LIST_TYPE <paramref name="listType"/> may name: every
+    /// state on a direct list; on a compute list the compute ones (VERTEX_AND_CONSTANT_BUFFER, UNORDERED_ACCESS,
+    /// NON_PIXEL_SHADER_RESOURCE, INDIRECT_ARGUMENT, COPY_DEST, COPY_SOURCE, RAYTRACING_ACCELERATION_STRUCTURE); on a
+    /// copy list COPY_DEST and COPY_SOURCE. A barrier naming any other bit makes the desktop Close fail with
+    /// E_INVALIDARG, and every later Reset of that list fails the same way, on any allocator.
+    /// </summary>
+    public static int Legal(int listType)
+    {
+        return listType switch
+        {
+            ComputeList => VertexAndConstantBuffer | UnorderedAccess | NonPixelShaderResource | IndirectArgument | CopyDest | CopySource | AccelerationStructure,
+            CopyList => CopyDest | CopySource,
+            _ => ~0,
+        };
     }
 
     /// <summary>

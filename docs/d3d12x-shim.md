@@ -332,8 +332,16 @@ chunk is read whole.
 **Spare allocators.** The game takes a list and an allocator from separate pools (0x140188430) and resets the list on
 an allocator that may back another recording list, which the console allows; the desktop answers E_INVALIDARG and the
 game breaks at 0x142474ce1. The list then records on a spare allocator kept for that game allocator and reset with it
-(allocator slot 8; SpareAllocators). Barriers leave out write states the desktop resource has no flag for
-(ResourceStates.Allowed; error #523 on a depth texture moved to UNORDERED_ACCESS).
+(allocator slot 8; SpareAllocators). A list whose Close failed (an invalid call was recorded) is refused by every
+later Reset, on any allocator, with E_INVALIDARG; such a list gets a new desktop list behind the same wrapper (the old
+one is kept, as the GPU may still run it), and the failed Close is warned once. Barriers leave out write states the
+desktop resource has no flag for (ResourceStates.Allowed; error #523 on a depth texture moved to UNORDERED_ACCESS).
+A compute list names only compute states (VERTEX_AND_CONSTANT_BUFFER, UNORDERED_ACCESS, NON_PIXEL_SHADER_RESOURCE,
+INDIRECT_ARGUMENT, COPY_DEST, COPY_SOURCE, acceleration structure) and a copy list only the copy ones
+(`ResourceStates.Legal`): any other bit fails the desktop Close. Render targets rest in RENDER_TARGET, so a compute
+list's transition of one (or to PIXEL_SHADER_RESOURCE) is left out and the texture keeps its state on that list
+(warned once). The per-list table of moved textures grows as needed; at 64 entries it used to stop tracking, and the
+untracked textures were never moved home at Close.
 **Buffer views on split buffers.** A slot-133 buffer over pages in two sections is two desktop buffers, and the
 game's object is the first. A slot 18/19 buffer view goes to the run that holds its first element and is cut at the
 run's end (BufferViewRanges); a view past the first run's end removed the device (error #31). 16 of 3,388 buffers
@@ -610,14 +618,15 @@ commit). With breadcrumbs, compute queue #2's first list stopped at operation 12
 operation, so its arguments, built for the X-only argument type 0x69 that becomes DISPATCH, are the open question);
 every other list had not started. The buffer-stride fix in descriptor records did not change it. With markers per
 recording (four boots, also with the 24 programs the scanner had skipped), that list finished and queues #2 and #4
-stopped in their second execution at a plain dispatch (45 to 80 groups) of `InstanceCulling~CS_Prop_BatchCull`; queues
-#3 and #5 finished the same list shape. No boot stopped at an ExecuteIndirect. Broadcasting every scalar branch
+stopped in their second execution at a plain dispatch (45 to 80 groups) of `InstanceCulling~CS_Prop_BatchCull`;
+queues #3 and #5 finished the same list shape. No boot stopped at an ExecuteIndirect. Broadcasting every scalar branch
 condition from lane 0 in that program's wave32 variant did not help; bounding its loops did, and the next stop was a
 direct-queue dispatch of `scattering_transmittance_system~CS_DensityShadowMapCheckerboard`, a ray march whose float
 step counter cannot reach its bound. With every loop bounded ([shader-translation.md](shader-translation.md#loop-guard))
 three boots passed that point without a GPU stall and ended on the CPU: once list slot 139's Reset refused with
-E_INVALIDARG on a compute list even on a fresh allocator (the game then breaks at 0x142474ce1), once a silent end at
-115 of 123 GB of commit (debug layer on, cold pipeline cache), once an access violation at 0x144e9b4b2: the game's
+E_INVALIDARG on a compute list even on a fresh allocator (the game then breaks at 0x142474ce1; the list's last Close
+had failed on a graphics state in a compute-list barrier, see Spare allocators under
+[Game memory on the GPU](#game-memory-on-the-gpu); now avoided), once a silent end at 115 of 123 GB of commit (debug layer on, cold pipeline cache), once an access violation at 0x144e9b4b2: the game's
 transient-memory allocator (0x140188430 on context +0x12780, block from 0x14005c280) walks a list at block +0x48 whose
 nodes hold garbage (0xa, 0x200000009). Boot 2 had the same fault after its GPU hang. The loops' inputs are wrong on
 the PC, and something writes over CPU data in title memory; both were before the root-descriptor address map.
