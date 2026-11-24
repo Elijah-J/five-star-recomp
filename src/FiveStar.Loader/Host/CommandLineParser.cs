@@ -10,6 +10,8 @@ namespace FiveStar.Loader.Host;
 /// <summary>Parses the fivestar-loader command line; <see cref="HostUsage"/> lists the options.</summary>
 internal sealed class CommandLineParser
 {
+    private const double BytesPerGigabyte = 1L << 30;
+
     private readonly string[] _args;
     private readonly HostOptions _options = new();
     private int _index;
@@ -164,9 +166,7 @@ internal sealed class CommandLineParser
             case "--screens":
                 return SetScreensFile();
             case "--audio-capture":
-                _options.AudioCapture = Path.GetFullPath(Next());
-
-                return true;
+                return SetAudioCapture();
             case "--record-audio":
                 return SetRecordAudio();
             case "--desktop-timers":
@@ -212,7 +212,7 @@ internal sealed class CommandLineParser
             case "--shader-jobs":
                 return SetShaderJobs();
             default:
-                throw new CommandLineException($"unknown argument {option}");
+                return ApplyMemory(option);
         }
     }
 
@@ -444,6 +444,55 @@ internal sealed class CommandLineParser
     private bool SetSampleThreads()
     {
         _options.SampleThreads = TimeSpan.FromSeconds(double.Parse(Next(), CultureInfo.InvariantCulture));
+
+        return true;
+    }
+
+    private bool SetAudioCapture()
+    {
+        _options.AudioCapture = Path.GetFullPath(Next());
+
+        return true;
+    }
+
+    /// <summary>The memory map and the memory limits.</summary>
+    private bool ApplyMemory(string option)
+    {
+        switch (option)
+        {
+            case "--memory-map":
+                return SetMemoryMap();
+            case "--min-free-memory":
+                return SetMemoryFloor();
+            case "--max-commit":
+                return SetCommitCeiling();
+            default:
+                throw new CommandLineException($"unknown argument {option}");
+        }
+    }
+
+    private bool SetMemoryFloor()
+    {
+        _options.MinimumFreeMemory = Gigabytes(Next());
+
+        return true;
+    }
+
+    private bool SetCommitCeiling()
+    {
+        _options.MaximumCommit = Gigabytes(Next());
+
+        return true;
+    }
+
+    private static ulong Gigabytes(string text)
+    {
+        return (ulong)(double.Parse(text, CultureInfo.InvariantCulture) * BytesPerGigabyte);
+    }
+
+    private bool SetMemoryMap()
+    {
+        _options.MemoryMap = TimeSpan.FromSeconds(double.Parse(Next(), CultureInfo.InvariantCulture));
 
         return true;
     }

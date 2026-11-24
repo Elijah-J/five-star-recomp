@@ -38,6 +38,12 @@ internal sealed unsafe class XMemPhysicalMemory : IDisposable
     public long LivePages => _pages.LivePages;
 
     /// <summary>
+    /// The bases XMemVirtualAlloc gave out as plain VirtualAlloc memory, for the memory map (--memory-map); the game
+    /// frees them with its own VirtualFree, so a base may be stale.
+    /// </summary>
+    public AllocationBases PlainAllocations { get; } = new();
+
+    /// <summary>
     /// <c>void* XMemVirtualAlloc(void* address, SIZE_T size, DWORD allocationType, uint64 xmemFlags, DWORD protect)</c>.
     /// MEM_RESERVE_PLACEHOLDER makes a placeholder the game splits itself; MEM_64K_PAGES without MEM_COMMIT makes a
     /// mappable reservation (in an existing placeholder with MEM_REPLACE_PLACEHOLDER); anything else is VirtualAlloc
@@ -58,6 +64,7 @@ internal sealed unsafe class XMemPhysicalMemory : IDisposable
         else
         {
             result = Allocate(address, size, allocationType, protect);
+            PlainAllocations.Add(result);
         }
 
         if (_log.DetailEnabled)

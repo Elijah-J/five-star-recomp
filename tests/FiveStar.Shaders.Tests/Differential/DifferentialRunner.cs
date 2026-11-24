@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Globalization;
 using FiveStar.Shaders.Compilation;
 using FiveStar.Shaders.Disassembly;
+using FiveStar.Shaders.Dxil;
 using FiveStar.Shaders.Tests.Toolchain;
 using FiveStar.Shaders.Tests.Warp;
 using FiveStar.Shaders.Translation;
@@ -35,19 +36,30 @@ public sealed class DifferentialRunner
     // WARP's shader compiler needs minutes and many GB for larger dispatch-form programs (90 KB of HLSL: over 10 min, 13 GB).
     private const int MaxSource = 64_000;
 
+    // The structured form compiles quickly on WARP; the DXIL backend comparison takes larger programs.
+    private const int MaxBackendSource = 400_000;
+
     private static readonly TranslationOptions Dispatch = new(StructuredControlFlow: false, PinWaveSize: false, EmulateWaveSize: true);
 
     private readonly WarpFixture _fixture;
     private readonly ShaderWorkbench _workbench;
+    private readonly string _folder;
+    private readonly bool _backend;
     private readonly Lock _gpu = new();
 
     // The program whose run WARP did not finish; WARP cannot cancel it, so nothing else runs after it.
     private string? _stalled;
 
-    /// <summary>Builds in <paramref name="folder"/>, whose prelude gets the same heap redirection as the programs.</summary>
-    public DifferentialRunner(WarpFixture fixture, string folder)
+    /// <summary>
+    /// Builds in <paramref name="folder"/>, whose prelude gets the same heap redirection as the programs. With
+    /// <paramref name="backend"/> it compares the structured form compiled by dxc with the same form compiled by the DXIL
+    /// backend (compute programs) instead of the two control-flow forms.
+    /// </summary>
+    public DifferentialRunner(WarpFixture fixture, string folder, bool backend)
     {
         _fixture = fixture;
+        _folder = folder;
+        _backend = backend;
         _workbench = new ShaderWorkbench(ShaderToolchain.Find(), folder);
         var prelude = Path.Combine(folder, RuntimeIncludes.Names[0]);
         File.WriteAllText(prelude, HeapSlots.Rewrite(RuntimeIncludes.Read(RuntimeIncludes.Names[0])));
@@ -82,6 +94,11 @@ public sealed class DifferentialRunner
 
     private DifferentialOutcome Compare(string name, string stage, ShaderProgram program)
     {
+        if (_backend)
+        {
+            return CompareBackend(name, stage, program);
+        }
+
         var dispatch = HlslTranslator.Translate(program, Dispatch).Hlsl;
         var structured = HlslTranslator.Translate(program, Dispatch with { StructuredControlFlow = true }).Hlsl;
 
@@ -126,6 +143,65 @@ public sealed class DifferentialRunner
             }
 
             return Execute(name, stage, first, second, seed);
+        }
+    }
+
+    /// <summary>The structured form through dxc and through the DXIL backend.</summary>
+    private DifferentialOutcome CompareBackend(string name, string stage, ShaderProgram program)
+    {
+        var structured = HlslTranslator.Translate(program, Dispatch with { StructuredControlFlow = true }).Hlsl;
+
+        if (program.Stage != ShaderStage.Compute || structured.Length > MaxBackendSource)
+        {
+            return new DifferentialOutcome(name, stage, DifferentialVerdict.Skipped, $"not compared: {stage}, {structured.Length} characters");
+        }
+
+        var first = PrepareStructured(name + ".dxc", structured);
+        var second = PrepareBackend(name + ".dxil", structured);
+
+        if (first.Error is not null || second.Error is not null)
+        {
+            return CompileOutcome(name, stage, first.Error, second.Error);
+        }
+
+        lock (_gpu)
+        {
+            if (_stalled is not null)
+            {
+                return new DifferentialOutcome(name, stage, DifferentialVerdict.Skipped, $"{NotRunNote} {_stalled}");
+            }
+
+            return Execute(name, stage, first, second, StableSeed(name));
+        }
+    }
+
+    /// <summary>The structured compute form through dxc (a group barrier is fine outside the dispatch switch).</summary>
+    private PreparedForm PrepareStructured(string name, string hlsl)
+    {
+        var source = LoopBudget.Insert(HeapSlots.Rewrite(hlsl));
+
+        try
+        {
+            return new PreparedForm(name, ShaderStage.Compute, source, "cs", _workbench.Compile(name, source, "cs"), null, 0, 0, null);
+        }
+        catch (InvalidOperationException exception)
+        {
+            return new PreparedForm(name, ShaderStage.Compute, source, "cs", [], null, 0, 0, exception.Message.Split('\n')[0]);
+        }
+    }
+
+    private PreparedForm PrepareBackend(string name, string hlsl)
+    {
+        var source = LoopBudget.Insert(HeapSlots.Rewrite(hlsl));
+        var form = new PreparedForm(name, ShaderStage.Compute, source, "cs", [], null, 0, 0, null);
+
+        try
+        {
+            return form with { Shader = DxilBackend.Compile(form.Source, form.Profile, include => File.ReadAllText(Path.Combine(_folder, include))) };
+        }
+        catch (DxilBackendException exception)
+        {
+            return form with { Error = "dxil backend: " + exception.Message };
         }
     }
 
@@ -241,7 +317,13 @@ public sealed class DifferentialRunner
         try
         {
             var first = dispatch with { Shader = _workbench.CompileStrict(dispatch.Name, dispatch.Source, dispatch.Profile) };
-            var second = structured with { Shader = _workbench.CompileStrict(structured.Name, structured.Source, structured.Profile) };
+            var second = structured;
+
+            if (!_backend)
+            {
+                second = structured with { Shader = _workbench.CompileStrict(structured.Name, structured.Source, structured.Profile) };
+            }
+
             var (firstResult, _) = Launch(first, seed);
             var (secondResult, _) = Launch(second, seed);
 

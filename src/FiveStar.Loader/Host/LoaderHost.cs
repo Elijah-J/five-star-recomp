@@ -326,6 +326,8 @@ internal sealed class LoaderHost
             new ThreadSampler(_runtime.Images, _runtime.Trace, SampledCounters, _options.ProfileThreads, _log).Start(interval.Value);
         }
 
+        StartMemoryWatch();
+
         GpuBreadcrumbs.Enable(_options.D3D12Breadcrumbs);
 
         if (_options.WatchTransient)
@@ -342,6 +344,22 @@ internal sealed class LoaderHost
         _runtime.D3D12X.WaitForProgramIndex();
 
         return new ExecutableRunner(_runtime.Faults, _log).Run(main, _options.RunTimeout);
+    }
+
+    /// <summary>The memory map (<c>--memory-map</c>) and the memory limits (<c>--min-free-memory</c>, <c>--max-commit</c>).</summary>
+    private void StartMemoryWatch()
+    {
+        var map = new MemoryMap(_runtime.Images, _runtime.XMem, _runtime.XMemPhysical, _log);
+
+        if (_options.MemoryMap.HasValue)
+        {
+            map.Start(_options.MemoryMap.Value);
+        }
+
+        if (_options.MinimumFreeMemory != 0 || _options.MaximumCommit != 0)
+        {
+            new MemoryLimit(_options.MinimumFreeMemory, _options.MaximumCommit, map, _log).Start();
+        }
     }
 
     /// <summary>With --run, the console's millisecond timers for the whole process, unless <c>--desktop-timers</c>.</summary>

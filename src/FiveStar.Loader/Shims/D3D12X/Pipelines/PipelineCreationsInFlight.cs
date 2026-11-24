@@ -15,6 +15,9 @@ internal sealed class PipelineCreationsInFlight
 {
     private readonly ConcurrentDictionary<int, PipelineCreation> _running = new();
 
+    /// <summary>For <see cref="Begin"/>: a creation not made through a device slot (a build thread's driver compile).</summary>
+    public const int NoSlot = -1;
+
     /// <summary>Marks the calling thread as creating a pipeline through <paramref name="slot"/>.</summary>
     public void Begin(int slot)
     {
@@ -57,8 +60,18 @@ internal sealed class PipelineCreationsInFlight
             return string.Empty;
         }
 
-        var text = entries.Select(entry => $"slot {entry.Slot} {entry.What} {Stopwatch.GetElapsedTime(entry.Started).TotalSeconds:F0} s");
+        var text = entries.Select(entry => $"{SlotText(entry.Slot)}{entry.What} {Stopwatch.GetElapsedTime(entry.Started).TotalSeconds:F0} s");
 
         return $"{entries.Length} in flight ({string.Join(", ", text)})";
+    }
+
+    private static string SlotText(int slot)
+    {
+        if (slot == NoSlot)
+        {
+            return string.Empty;
+        }
+
+        return $"slot {slot} ";
     }
 }
