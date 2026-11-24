@@ -76,18 +76,24 @@ uint buf_stride(uint d1) { return (d1 >> 16) & 0x3fffu; }
 // dword3 bits 28-29), as measured on RDNA1 and RDNA2 hardware (Mesa's GFX11 column):
 //   0 structured: index >= num_records, or offset + 4 > stride;  1 structured: index >= num_records;
 //   2: num_records == 0;  3 raw: offset + soffset + 4 > num_records (index * stride moves the address, unchecked).
+// The hardware adds index * stride to the 48-bit base without wrapping, so an index whose product reaches 4 GiB (an
+// index of -1 from a counter at 0) lands far past any buffer; in the 32-bit offset of a view it would wrap to just
+// below the base (20 bytes below for a 20-byte record), so such an access is out of range in every mode.
 // num_records is dword2; the offset is the VGPR offset plus the instruction offset. Once per access buf_limit gives
 // the end the dwords must fit under and buf_offset the checked offset; each dword then costs one compare (buf_fits).
 uint buf_limit(uint d1, uint d2, uint d3, uint index) {
     uint sel = (d3 >> 28) & 3u;
     uint structured = select(index < d2, select(sel == 0u, buf_stride(d1), 0xffffffffu), 0u);
     uint unchecked = select(d2 == 0u, 0u, 0xffffffffu);
-    return select(sel == 3u, d2, select(sel == 2u, unchecked, structured));
+    uint limit = select(sel == 3u, d2, select(sel == 2u, unchecked, structured));
+    uint stride = buf_stride(d1);
+    return select(stride != 0u && index > 0xffffffffu / max(stride, 1u), 0u, limit);
 }
 uint buf_offset(uint d3, uint offset, uint soffset) {
     return select(((d3 >> 28) & 3u) == 3u, offset + soffset, offset);
 }
-bool buf_fits(uint start, uint limit) { return limit >= 4u && start <= limit - 4u; }// s_buffer_load: the whole offset against num_records, counted in bytes (stride 0) or in strides.
+bool buf_fits(uint start, uint limit) { return limit >= 4u && start <= limit - 4u; }
+// s_buffer_load: the whole offset against num_records, counted in bytes (stride 0) or in strides.
 uint sbuf_limit(uint d1, uint d2) {
     uint stride = max(buf_stride(d1), 1u);
     return select(d2 > 0xffffffffu / stride, 0xffffffffu, d2 * stride);

@@ -139,7 +139,7 @@ an address it does not know names a null view and reads 0.
 (an atomic returns 0). Console programs rely on it: an argument or append writer runs past its allocation, and a loop
 reads zeros past an end. Without it, those stores landed through the address map in the game memory next to the
 buffer. One of the places they landed was the transient pool's block-end nodes, which caused the story-load faults at
-0x144e9b4b2 ([debugging.md](debugging.md#transient-pool-watch)).
+0x144e9b4b2 ([debugging.md](debugging.md#transient-pool-watch)). The hardware adds index * stride to the base without wrapping, so an index of -1 (a counter at 0) lands 4 GiB away and is dropped; the translated address is a 32-bit offset into a view, where the same product wraps to one record below the base, inside the game's whole-pool raw view (OOB_SELECT 3 does not check the index). An access whose index * stride reaches 4 GiB is out of range in every mode (`buf_limit`); before, 20-byte records of index -1 overwrote the transient pool's block-end nodes.
 
 The rules follow OOB_SELECT (V# dword3 bits 28-29) as measured on RDNA1 (gfx1011) and RDNA2 (gfx1036) hardware
 (Leonida's docs/buffer_bounds.md, Mesa's GFX11 column). num_records is dword2; the offset is the VGPR offset plus the
