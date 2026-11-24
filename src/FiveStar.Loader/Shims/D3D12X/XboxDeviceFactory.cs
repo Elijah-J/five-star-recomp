@@ -229,7 +229,7 @@ internal sealed unsafe class XboxDeviceFactory : IDisposable
         var warnings = new OnceLog(_log);
         WaitForProgramIndex();
         var library = TranslatedProgramLibrary.Open(_programIndex!, translated, device2, warnings, _log);
-        var rectangles = new RectanglePipelines(device2, root, Path.Combine(translated, RectangleGeometryShader.Folder), warnings);
+        var rectangles = new RectanglePipelines(device2, root, Path.Combine(translated, RectangleGeometryShader.Folder), library, warnings);
         Rectangles.Attach(rectangles);
 
         var builds = new PipelineBuildQueue(Environment.ProcessorCount / PipelineSlots.CoresPerBuildThread);

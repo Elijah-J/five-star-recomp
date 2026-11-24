@@ -23,6 +23,7 @@ internal sealed unsafe class PipelineSlots
     public static readonly TimeSpan CreationBudget = TimeSpan.FromSeconds(CreationBudgetSeconds);
 
     private const int CreationBudgetSeconds = 1;
+    private const int MegabyteShift = 20;
 
     // D3D12_PIPELINE_STATE_STREAM_DESC: SizeInBytes @0, pPipelineStateSubobjectStream @8.
     private const int StreamPointerField = sizeof(long);
@@ -91,7 +92,7 @@ internal sealed unsafe class PipelineSlots
         get
         {
             var running = _factory.InFlight.Summary();
-            var counts = $"{Volatile.Read(ref _requests)} pipelines requested, {Volatile.Read(ref _created)} created, {_factory.StandIns.Summary}";
+            var counts = $"{Volatile.Read(ref _requests)} pipelines requested, {Volatile.Read(ref _created)} created, {_factory.ProgramBytes >> MegabyteShift} MB of DXIL held, {_factory.StandIns.Summary}";
 
             var parts = new[] { counts, _failures.Summary(), running, _factory.Cache?.Summary ?? string.Empty }.Where(part => part.Length > 0);
 

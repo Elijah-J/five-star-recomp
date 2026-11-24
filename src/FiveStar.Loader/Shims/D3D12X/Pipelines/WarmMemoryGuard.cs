@@ -6,9 +6,10 @@ using FiveStar.Loader.Native;
 namespace FiveStar.Loader.Shims.D3D12X.Pipelines;
 
 /// <summary>
-/// Keeps the warm-up within the machine's memory: the driver's compile of one translated program can take tens of
-/// gigabytes, so no build starts while less than <see cref="ReserveBytes"/> of commit is available, and a pipeline of
-/// <see cref="PipelineFactory.HeavyShaderBytes"/> or more starts only with <see cref="HeavyBytes"/> available.
+/// Keeps pipeline builds within the machine's memory: the driver's compile of one translated program can take tens of
+/// gigabytes, so no build (warm-up or game) starts while less than <see cref="ReserveBytes"/> of commit is available,
+/// and in the warm-up a pipeline of <see cref="PipelineFactory.HeavyShaderBytes"/> or more starts only with
+/// <see cref="HeavyBytes"/> available.
 /// </summary>
 internal static unsafe class WarmMemoryGuard
 {

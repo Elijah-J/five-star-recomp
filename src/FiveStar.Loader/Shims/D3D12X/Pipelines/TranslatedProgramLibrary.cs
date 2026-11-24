@@ -10,17 +10,24 @@ namespace FiveStar.Loader.Shims.D3D12X.Pipelines;
 /// <summary>
 /// The output of <c>fivestar shader translate</c>: <c>&lt;folder&gt;/&lt;name&gt;.dxil</c> per program, found through a
 /// <see cref="ProgramIndex"/> of the extracted FSSM programs, or the form a <see cref="ProgramVariantPicker"/> picks for
-/// the adapter. Each DXIL file is read once.
+/// the adapter. The most recently used programs stay in memory up to <see cref="CacheBytes"/> of DXIL; older ones are
+/// read again when asked for (a story load touches gigabytes of DXIL, most of it once).
 /// </summary>
 internal sealed class TranslatedProgramLibrary : IProgramLibrary
 {
+    /// <summary>DXIL kept in memory; a single larger program is still kept while it is the most recent.</summary>
+    public const long CacheBytes = 1L << 30;
+
     private const string DxilExtension = ".dxil";
 
     private readonly object _gate = new();
     private readonly ProgramIndex _index;
     private readonly string _folder;
     private readonly ProgramVariantPicker? _picker;
-    private readonly Dictionary<string, TranslatedProgram?> _loaded = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, LinkedListNode<TranslatedProgram>> _loaded = new(StringComparer.Ordinal);
+    private readonly LinkedList<TranslatedProgram> _recent = [];
+    private readonly HashSet<string> _missing = new(StringComparer.Ordinal);
+    private long _heldBytes;
 
     /// <param name="index">The extracted programs.</param>
     /// <param name="folder">The translation's output folder.</param>
@@ -74,6 +81,8 @@ internal sealed class TranslatedProgramLibrary : IProgramLibrary
         lock (_gate)
         {
             _loaded.Clear();
+            _recent.Clear();
+            _heldBytes = 0;
         }
     }
 
@@ -82,32 +91,70 @@ internal sealed class TranslatedProgramLibrary : IProgramLibrary
         return [.. _index.Find(prefix)];
     }
 
-    private TranslatedProgram? Load(string name)
+    public long HeldBytes => Interlocked.Read(ref _heldBytes);
+
+    public TranslatedProgram? Load(string name)
     {
         lock (_gate)
         {
             if (_loaded.TryGetValue(name, out var known))
             {
-                return known;
+                _recent.Remove(known);
+                _recent.AddFirst(known);
+
+                return known.Value;
             }
 
-            var file = name + DxilExtension;
-
-            if (_picker is not null)
+            if (_missing.Contains(name))
             {
-                file = _picker.File(name, file);
+                return null;
             }
 
-            TranslatedProgram? program = null;
+            var path = PathOf(name);
 
-            if (file is not null && File.Exists(Path.Combine(_folder, file)))
+            if (path is null)
             {
-                program = new TranslatedProgram(name, _index.Stage(name), File.ReadAllBytes(Path.Combine(_folder, file)));
+                _missing.Add(name);
+
+                return null;
             }
 
-            _loaded[name] = program;
+            var program = new TranslatedProgram(name, _index.Stage(name), File.ReadAllBytes(path));
+            _loaded[name] = _recent.AddFirst(program);
+            Interlocked.Add(ref _heldBytes, program.Dxil.Length);
+            Trim();
 
             return program;
+        }
+    }
+
+    /// <summary>The file of the program's form for this adapter, or null when there is none.</summary>
+    private string? PathOf(string name)
+    {
+        var file = name + DxilExtension;
+
+        if (_picker is not null)
+        {
+            file = _picker.File(name, file);
+        }
+
+        if (file is null || !File.Exists(Path.Combine(_folder, file)))
+        {
+            return null;
+        }
+
+        return Path.Combine(_folder, file);
+    }
+
+    /// <summary>Drops the least recently used programs past <see cref="CacheBytes"/>.</summary>
+    private void Trim()
+    {
+        while (Interlocked.Read(ref _heldBytes) > CacheBytes && _recent.Count > 1)
+        {
+            var oldest = _recent.Last!.Value;
+            _recent.RemoveLast();
+            _loaded.Remove(oldest.Name);
+            Interlocked.Add(ref _heldBytes, -oldest.Dxil.Length);
         }
     }
 }

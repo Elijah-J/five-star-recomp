@@ -8,9 +8,10 @@ using Vortice.Direct3D12;
 namespace FiveStar.Loader.Shims.D3D12X.Pipelines;
 
 /// <summary>
-/// A desktop pipeline-state stream in native memory: each subobject is a u32 D3D12_PIPELINE_STATE_SUBOBJECT_TYPE and
-/// its payload at the payload's alignment, every subobject pointer-aligned. Shader bytecode, input elements and their
-/// semantic names live in native allocations freed on disposal. Alongside, a SHA-256 runs over the stream's content
+/// A desktop pipeline-state stream: each subobject is a u32 D3D12_PIPELINE_STATE_SUBOBJECT_TYPE and its payload at
+/// the payload's alignment, every subobject pointer-aligned. The stream keeps the shader bytecode and input elements it
+/// was given; <see cref="Describe"/> lays them out in native memory, which <see cref="Release"/> frees again, so a
+/// stream waiting for a build thread holds no copy of its DXIL. Alongside, a SHA-256 runs over the stream's content
 /// with every pointer replaced by what it points to (the root signature by nothing: the cache's salt covers it), so
 /// <see cref="Key"/> names the pipeline the same way in every process.
 /// </summary>
@@ -21,8 +22,11 @@ internal sealed unsafe class DesktopStream : IDisposable
 
     private const int WordSize = sizeof(int);
     private const int StreamDescWords = 2;
+    private const int ElementFieldsOffset = PipelineLayout.PointerSize;
 
     private readonly List<byte> _bytes = [];
+    private readonly List<(int Offset, byte[] Bytecode)> _shaders = [];
+    private readonly List<(int Offset, IReadOnlyList<VertexElement> Elements)> _layouts = [];
     private readonly List<nint> _allocations = [];
     private readonly IncrementalHash _identity = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
     private nint* _desc;
@@ -40,12 +44,14 @@ internal sealed unsafe class DesktopStream : IDisposable
         _bytes.AddRange(BitConverter.GetBytes((long)address));
     }
 
-    /// <summary>A D3D12_SHADER_BYTECODE subobject over a native copy of <paramref name="bytecode"/>.</summary>
+    /// <summary>A D3D12_SHADER_BYTECODE subobject over <paramref name="bytecode"/>, which must not change afterwards.</summary>
     public void AddShader(PipelineStateSubObjectType type, byte[] bytecode)
     {
         Begin(type, PipelineLayout.PointerSize);
-        _bytes.AddRange(BitConverter.GetBytes((long)Native(bytecode)));
+        _shaders.Add((_bytes.Count, bytecode));
+        _bytes.AddRange(BitConverter.GetBytes(0L));
         _bytes.AddRange(BitConverter.GetBytes((long)bytecode.Length));
+
         ShaderBytes += bytecode.Length;
         Identify(BitConverter.GetBytes(bytecode.Length));
         Identify(bytecode);
@@ -71,35 +77,30 @@ internal sealed unsafe class DesktopStream : IDisposable
         }
     }
 
-    /// <summary>A D3D12_INPUT_LAYOUT_DESC over native D3D12_INPUT_ELEMENT_DESCs.</summary>
+    /// <summary>A D3D12_INPUT_LAYOUT_DESC over D3D12_INPUT_ELEMENT_DESCs of <paramref name="elements"/>.</summary>
     public void AddInputLayout(IReadOnlyList<VertexElement> elements)
     {
-        var table = new byte[elements.Count * PipelineLayout.InputElementSize];
         Identify(BitConverter.GetBytes(elements.Count));
 
-        for (var index = 0; index < elements.Count; index++)
+        foreach (var element in elements)
         {
-            var element = elements[index];
-            int[] fields = [element.SemanticIndex, element.Format, element.InputSlot, element.Offset, element.Classification, element.StepRate];
-            var row = table.AsSpan(index * PipelineLayout.InputElementSize);
-            BitConverter.TryWriteBytes(row, (long)NativeString(element.Semantic));
             Identify(System.Text.Encoding.ASCII.GetBytes(element.Semantic + "\0"));
 
-            for (var field = 0; field < fields.Length; field++)
+            foreach (var field in Fields(element))
             {
-                BitConverter.TryWriteBytes(row[(PipelineLayout.PointerSize + (field * WordSize))..], fields[field]);
-                Identify(BitConverter.GetBytes(fields[field]));
+                Identify(BitConverter.GetBytes(field));
             }
         }
 
         Begin(PipelineStateSubObjectType.InputLayout, PipelineLayout.PointerSize);
-        _bytes.AddRange(BitConverter.GetBytes((long)Native(table)));
+        _layouts.Add((_bytes.Count, elements));
+        _bytes.AddRange(BitConverter.GetBytes(0L));
         _bytes.AddRange(BitConverter.GetBytes((long)elements.Count));
     }
 
     /// <summary>
-    /// The D3D12_PIPELINE_STATE_STREAM_DESC {SizeInBytes, pPipelineStateSubobjectStream} over the stream; built once,
-    /// so no subobject may be added after the first call.
+    /// The D3D12_PIPELINE_STATE_STREAM_DESC {SizeInBytes, pPipelineStateSubobjectStream} over a native copy of the
+    /// stream, valid until <see cref="Release"/>; no subobject may be added after the first call.
     /// </summary>
     public void* Describe()
     {
@@ -109,12 +110,23 @@ internal sealed unsafe class DesktopStream : IDisposable
         }
 
         Align(PipelineLayout.PointerSize);
-        var stream = Native(_bytes.ToArray());
+        var stream = (byte*)Native(_bytes.ToArray());
+
+        foreach (var (offset, bytecode) in _shaders)
+        {
+            *(nint*)(stream + offset) = Native(bytecode);
+        }
+
+        foreach (var (offset, elements) in _layouts)
+        {
+            *(nint*)(stream + offset) = InputElements(elements);
+        }
+
         var desc = (nint*)NativeMemory.Alloc((nuint)(StreamDescWords * sizeof(nint)));
         _allocations.Add((nint)desc);
 
         desc[0] = _bytes.Count;
-        desc[1] = stream;
+        desc[1] = (nint)stream;
         _desc = desc;
 
         return desc;
@@ -126,7 +138,8 @@ internal sealed unsafe class DesktopStream : IDisposable
         return DesktopDevice.CreatePipelineState(device2, Describe(), iid, result);
     }
 
-    public void Dispose()
+    /// <summary>Frees the native copy <see cref="Describe"/> made; the next call makes a new one.</summary>
+    public void Release()
     {
         foreach (var allocation in _allocations)
         {
@@ -135,7 +148,37 @@ internal sealed unsafe class DesktopStream : IDisposable
 
         _allocations.Clear();
         _desc = null;
+    }
+
+    public void Dispose()
+    {
+        Release();
         _identity.Dispose();
+    }
+
+    /// <summary>A native D3D12_INPUT_ELEMENT_DESC table: semantic name pointer, then the six u32 fields.</summary>
+    private nint InputElements(IReadOnlyList<VertexElement> elements)
+    {
+        var table = new byte[elements.Count * PipelineLayout.InputElementSize];
+
+        for (var index = 0; index < elements.Count; index++)
+        {
+            var row = table.AsSpan(index * PipelineLayout.InputElementSize);
+            var fields = Fields(elements[index]);
+            BitConverter.TryWriteBytes(row, (long)NativeString(elements[index].Semantic));
+
+            for (var field = 0; field < fields.Length; field++)
+            {
+                BitConverter.TryWriteBytes(row[(ElementFieldsOffset + (field * WordSize))..], fields[field]);
+            }
+        }
+
+        return Native(table);
+    }
+
+    private static int[] Fields(VertexElement element)
+    {
+        return [element.SemanticIndex, element.Format, element.InputSlot, element.Offset, element.Classification, element.StepRate];
     }
 
     private nint Native(byte[] bytes)

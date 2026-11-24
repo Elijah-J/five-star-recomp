@@ -8,6 +8,7 @@ using FiveStar.Loader.Diagnostics;
 using FiveStar.Loader.Loading;
 using FiveStar.Loader.Mods;
 using FiveStar.Loader.Native;
+using FiveStar.Loader.Shims;
 using FiveStar.Loader.Shims.D3D12X.DebugLayer;
 using FiveStar.Loader.Shims.D3D12X.Present;
 using FiveStar.Loader.Shims.Input;
@@ -322,8 +323,9 @@ internal sealed class LoaderHost
     private string SampledCounters()
     {
         string pipelines = _runtime.D3D12X.Pipelines?.Summary ?? "pipeline slots off";
+        string memory = ProcessMemory.Summary(_runtime.XMem.LiveBytes, _runtime.XMemPhysical.LivePages * (long)XMemPhysicalMemory.PageSize);
 
-        return $"DirectStorage {_runtime.Storage.Summary()}; {pipelines}; {_runtime.D3D12X.Presenter.Presents} presents; {_runtime.Input.Summary}";
+        return $"DirectStorage {_runtime.Storage.Summary()}; {pipelines}; {_runtime.D3D12X.Presenter.Presents} presents; {_runtime.Input.Summary}; {memory}";
     }
 
     /// <summary>

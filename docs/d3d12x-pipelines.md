@@ -79,6 +79,14 @@ it is not built the list sets nothing and drops its draws, dispatches and Execut
 SetPipelineState (counted in the sample summary). A derive (slot 55) from a stand-in uses the description kept
 under the stand-in's address; the rectangle-list variant is made from the built pipeline.
 
+Memory while builds wait (a cold story load queues thousands):
+
+| Item | Rule |
+|---|---|
+| Queued stream | keeps its subobjects and references the programs' DXIL; the native copy the driver reads is made for the cache lookup and again for the build, and freed while the stream waits in the queue (`DesktopStream.Release`) |
+| DXIL | `TranslatedProgramLibrary` keeps the most recently used programs up to 1 GiB and reads older ones again; rectangle-list recipes keep program names, not DXIL |
+| Build start | waits while less than 8 GB of commit is available (`WarmMemoryGuard`, as in the warm-up), since one driver compile can take gigabytes |
+
 ### Disk cache
 
 The driver's own shader cache stores a compile only once it finishes, so a boot that ends before the largest
