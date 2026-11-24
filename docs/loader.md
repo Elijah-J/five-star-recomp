@@ -435,6 +435,27 @@ calls; a press while it does not poll has no effect.
 The loader is built with `<CETCompat>false</CETCompat>`: with CET shadow stacks, SEH resuming inside mapped code
 fail-fasts (0x30).
 
+### The game's hang watchdog
+
+The game starts a watchdog thread early in its startup (thread function RVA 0x2215a60). Every second it sleeps
+1000 ms and reads `QueryPerformanceCounter`; a global heartbeat timestamp, set by the game's main loops, must change
+at least once in 30 rounds. If it does not, the watchdog calls an optional crash callback and writes to address 0: an
+access violation at **RVA 0x2215c35** (0x2215da9 in its second loop variant). It is a hang detector, not a protection:
+
+| Condition | Effect |
+|---|---|
+| one round took more than 2 s (the process was suspended, a debugger stopped it) | the count restarts |
+| a game event pauses it, another resumes it | no check while paused |
+| the game has open "long operation" scopes | each scope's start time is checked against 300 s instead (behind a game setting) |
+
+So everything the game's startup waits on, up to its first heartbeat, has about 30 s in total, however slow the PC.
+A shim must not spend long on the game's threads during startup. The program index of `--shader-dir` (25 884
+programs in the dump) is the known case: device creation used to open every program, which under file-system load
+(other processes reading the folders, on-access scanning) took over 30 s. The loader now starts the index on a worker
+thread when it reads the command line, waits for it before running the entry point, and `ProgramIndex` saves it in
+the folder as `programs.fspx` (name, stage and hash prefix per program, stamped with every program's name, length and
+write time), so later loads open one file.
+
 ## Call cost
 
 `dotnet run -c Release --project benchmarks/FiveStar.Benchmarks -- --filter * --job short` (BenchmarkDotNet short job,

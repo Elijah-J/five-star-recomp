@@ -53,7 +53,14 @@ internal static class HostComposition
             cache = options.PipelineCache ?? Path.Combine(WorkDirectory(options), PipelineLibraryCache.FolderName);
         }
 
-        return new PipelineFolders(options.ShaderDirectory, options.TranslatedDirectory, cache);
+        var folders = new PipelineFolders(options.ShaderDirectory, options.TranslatedDirectory, cache);
+
+        if (folders.Programs is null || folders.Translated is null)
+        {
+            return folders;
+        }
+
+        return folders with { Index = ProgramIndexLoad.Start(folders.Programs) };
     }
 
     /// <summary>--work-dir, or the work folder beside the loader.</summary>

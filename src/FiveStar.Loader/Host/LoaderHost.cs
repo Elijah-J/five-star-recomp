@@ -310,6 +310,8 @@ internal sealed class LoaderHost
             new ThreadSampler(_runtime.Images, _runtime.Trace, SampledCounters, _options.ProfileThreads, _log).Start(interval.Value);
         }
 
+        _runtime.D3D12X.WaitForProgramIndex();
+
         return new ExecutableRunner(_runtime.Faults, _log).Run(main, _options.RunTimeout);
     }
 
