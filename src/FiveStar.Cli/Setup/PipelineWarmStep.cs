@@ -17,13 +17,14 @@ internal sealed class PipelineWarmStep : ISetupStep
 {
     public const string StepName = "pipeline-warm";
 
-    // Measured on an RTX 4090: the library takes about 90 KiB per pipeline, 28,164 pipelines.
-    private const long ExpectedBytes = 3L << 30;
+    // Measured on an RTX 4090: about 140 KiB per pipeline, 28,164 pipelines.
+    private const long ExpectedBytes = 4L << 30;
 
     private const string SegmentPattern = "*.psolib";
     private const string LoaderOption = "loader";
 
-    private static readonly TimeSpan TypicalTime = TimeSpan.FromHours(1);
+    // Measured on an RTX 4090 with 4 jobs: every 20th pipeline in 26 minutes; the mesh pipelines take minutes each.
+    private static readonly TimeSpan TypicalTime = TimeSpan.FromHours(9);
 
     public string Name => StepName;
 

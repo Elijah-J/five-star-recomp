@@ -120,6 +120,14 @@ text. `fivestar setup` runs it as the `pipeline-warm` step ([setup.md](setup.md)
 
 Slot 86 streams and slot 55 derives are not in the console cache; they are cached when a run builds them.
 
+**Measured (RTX 4090, 64 GB, 4 jobs, driver cache partly warm).** Every 20th record (1,409 pipelines): 1,367 handled
+in 26 minutes, 981 built into 137 MB (about 140 KiB each), the rest refused by the runtime (E_INVALIDARG, the stage
+linkage errors under Unknown). Graphics pipelines with a mesh shader take 2 to 6.5 minutes each and dominate, so the
+full 28,164 take about 9 hours. Alone, the screen-probe compute programs take 73 to 109 s; the ray-traced shadow
+programs in the dispatch-loop form took over 500 s and more than 30 GB in the driver. A 180 s boot after an empty
+cache stores about 56,000 pipelines (the other 15,000 are still queued when it ends); the next boot loads them
+without stand-ins: no stand-in in its first 10 s (against 5,000 cold), 108 presents by then (115 cold).
+
 ## Pipeline-state stream (slot 86)
 
 0x14086f090 zeroes 0x2B0 bytes and writes a fixed stream; the desc is `{u64 0x2B0, stream}`. Each subobject is a u32
@@ -276,6 +284,13 @@ unwrapped, so slot 55 receives the desktop pointer it registered.
 
 ## Unknown
 
+- Why `LoadPipeline` refuses (E_INVALIDARG) about 1,600 cached pipelines per boot with the same key, mostly shadow,
+  linear-depth and puddle passes, also within the run that stored them; they are built anew.
+- Whether the 15-block cycle without an exit edge in the ray-traced shadow programs (`*_Tiled`: from 0x11fd8 through a
+  far-jump island at 0x38758 back to 0x11fd8, the jumps made with `s_getpc_b64`/`s_sub_u32`/`s_setpc_b64`) is the
+  console's code or an island target off by one instruction (0x11fd4 holds the loop's `s_cbranch_execz`). The
+  structurizer refuses it ("loop without exit"), so these programs translate to the dispatch-loop form (3,700 cases,
+  10 MB of DXIL), which the driver compiles for minutes with tens of gigabytes.
 - The other graphics pipelines the desktop runtime refuses with E_INVALIDARG: the debug layer reports stage
   linkage (errors 660, 662: an output in another register or with fewer components than the pixel shader reads;
   666: a mesh shader without the pixel shader's `TEXCOORD22`), so the translated signatures differ between stages.

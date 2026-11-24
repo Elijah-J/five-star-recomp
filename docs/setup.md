@@ -49,7 +49,7 @@ dependencies must be done); `--force` redoes them even when they are up to date.
 
 The default is `%LOCALAPPDATA%\FiveStar\<titleid>-<version>\`, for example `%LOCALAPPDATA%\FiveStar\7952987A-1.0.2.1\`;
 `--work <dir>` picks another. A full run needs about 16 GB for the shaders (about 610 KiB per program), 0.5 GB for the
-console pipeline cache, about 3 GB for the built pipelines (`pipeline-warm`) and 0.9 to 2.2 times each page file for its textures (58 GB of page files). Before each step setup
+console pipeline cache, about 4 GB for the built pipelines (`pipeline-warm`) and 0.9 to 2.2 times each page file for its textures (58 GB of page files). Before each step setup
 compares its estimate (twice the page files for textures) with the free space of the drive and stops the step with a
 message when it does not fit; on a re-run it counts only what is not done yet.
 
