@@ -46,6 +46,9 @@ internal sealed class LoadedImage
 
     public int TlsCallbackCount { get; set; }
 
+    /// <summary>Offset of the saved slot-0 pointer in the TLS block of an executable (<see cref="TlsSlotZero"/>); -1 otherwise.</summary>
+    public int TlsSlotZeroSaveOffset { get; set; } = -1;
+
     public bool EntryCalled { get; set; }
 
     public int EntryResult { get; set; }
