@@ -76,7 +76,8 @@
       "items": [
         { "name": "Story load", "note": "the game ends itself while frames wait for shaders" },
         { "name": "Brightness symbol", "note": "still black on the calibration screen" },
-        { "name": "Memory", "note": "the story load reaches 62 to 65 GB; allocator of the large blocks unknown" },
+        { "name": "Memory", "note": "a small commit limit parks shader compiles in the story load" },
+        { "name": "In-game audio", "note": "menus and intro play; XMA voices not yet heard" },
         { "name": "Pipeline warm-up", "note": "programs and pipelines made on first use; only what the game uses is kept" }
       ]
     },

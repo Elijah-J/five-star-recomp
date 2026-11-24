@@ -61,6 +61,7 @@ internal sealed class LoaderHost
             _runtime.Faults.Install();
         }
 
+        using var timers = Timers();
         CheckCpu();
 
         if (!ConfigureMods())
@@ -117,6 +118,17 @@ internal sealed class LoaderHost
         _log.Info($"cpu self-test: {result.Cases - result.Failures.Count} of {result.Cases} cases agree with the CPU and the reference");
     }
 
+    /// <summary>The input script, its learned screens and the present signatures its screen blocks wait for.</summary>
+    private void UseInputScript(string path, FrameCapture? capture)
+    {
+        string screensFile = _options.ScreensFile ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "FiveStar", "screens.txt");
+        var screens = new ScreenStore(screensFile);
+        var sampler = new ScreenSampler(signature => _runtime.Input.Seen(signature), _log);
+        _runtime.D3D12X.Presenter.Screens = sampler;
+        var script = _runtime.Input.UseScript(path, System.Diagnostics.Stopwatch.StartNew(), () => capture?.RequestNext(), sampler.Request, screens);
+        _log.Info($"  [input] {script.Presses.Count} scripted presses, {script.Marks.Count} captures and learns, {script.Screens.Count - 1} screens from {path} (followed while running); {screens.Count} learned screens in {screensFile}");
+    }
+
     private void LoadAbiTable()
     {
         if (_options.GdkAbiTable is not null)
@@ -144,8 +156,7 @@ internal sealed class LoaderHost
 
         if (_options.InputScript is not null)
         {
-            var script = _runtime.Input.UseScript(_options.InputScript, System.Diagnostics.Stopwatch.StartNew(), () => capture?.RequestNext());
-            _log.Info($"  [input] {script.Presses.Count} scripted presses, {script.Captures.Count} captures from {_options.InputScript} (followed while running)");
+            UseInputScript(_options.InputScript, capture);
         }
 
         if (_options.D3D12Debug)
@@ -322,9 +333,45 @@ internal sealed class LoaderHost
             TransientPoolWatch.Start(_log);
         }
 
+        StartAudioCapture();
         _runtime.D3D12X.WaitForProgramIndex();
 
         return new ExecutableRunner(_runtime.Faults, _log).Run(main, _options.RunTimeout);
+    }
+
+    /// <summary>With --run, the console's millisecond timers for the whole process, unless <c>--desktop-timers</c>.</summary>
+    private ConsoleTimers? Timers()
+    {
+        if (!_options.RunMain)
+        {
+            return null;
+        }
+
+        if (_options.DesktopTimers)
+        {
+            return ConsoleTimers.Desktop(_log);
+        }
+
+        return ConsoleTimers.Take(_log);
+    }
+
+    /// <summary><c>--audio-capture</c>: starts the recorder, a child copy of the loader that records this process tree.</summary>
+    private void StartAudioCapture()
+    {
+        string? path = _options.AudioCapture;
+        string? loader = Environment.ProcessPath;
+
+        if (path is null || loader is null)
+        {
+            return;
+        }
+
+        var start = new System.Diagnostics.ProcessStartInfo(loader) { UseShellExecute = false };
+        start.ArgumentList.Add("--record-audio");
+        start.ArgumentList.Add(_processId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        start.ArgumentList.Add(path);
+        using var recorder = System.Diagnostics.Process.Start(start);
+        _log.Info($"  [audio-capture] recorder pid {recorder?.Id} writes {path}");
     }
 
     /// <summary>The loader counters each thread sample logs.</summary>
@@ -333,7 +380,9 @@ internal sealed class LoaderHost
         string pipelines = _runtime.D3D12X.Pipelines?.Summary ?? "pipeline slots off";
         string memory = ProcessMemory.Summary(_runtime.XMem.LiveBytes, _runtime.XMemPhysical.LivePages * (long)XMemPhysicalMemory.PageSize);
 
-        return $"DirectStorage {_runtime.Storage.Summary()}; {pipelines}; {_runtime.D3D12X.Presenter.Presents} presents; {_runtime.Input.Summary}; {memory}; {MemorySnapshot.Summary()}";
+        string audio = $"audio: {_runtime.Audio.Summary}; XDsp {_runtime.XDsp.Submitted} commands";
+
+        return $"DirectStorage {_runtime.Storage.Summary()}; {pipelines}; {_runtime.D3D12X.Presenter.Presents} presents; {_runtime.Input.Summary}; {audio}; {memory}; {MemorySnapshot.Summary()}";
     }
 
     /// <summary>

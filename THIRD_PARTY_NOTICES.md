@@ -38,6 +38,12 @@ Its crash in the transient-pool walk (0x144e9b54a, from stale copy-backs of shad
 object layout (state written up to +0x564) were leads for docs/d3d12x-shim.md, checked against our shim and the
 executable. No code was copied.
 
+Its audio modules were leads for the loader's audio (docs/audio-runtime.md): the xapu.dll command and 0x50-byte result
+layout (identity echo, samples written, the first-frame and frame-count fields), the note that the game's mixer sleeps
+about 4 ms per 5.3 ms block and needs millisecond timers (and that Windows 11 drops them for a hidden window unless
+the process opts out), and recording through process loopback from a child process. Each was checked against the
+executable or a boot; the code is our own.
+
 ## GTA6-Asset-Info
 
 https://github.com/TrinitronClient/GTA6-Asset-Info, revision `0f649eba78cdd6e053d7aefd333fb6e3abe9739a`, GPL-3.0.

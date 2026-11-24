@@ -15,21 +15,23 @@ internal sealed class OpusVoice
     private IOpusDecoder? _decoder;
 
     /// <summary>
-    /// Decodes <paramref name="packet"/> and copies as many interleaved floats as fit into <paramref name="output"/>;
-    /// returns the floats written.
+    /// Decodes <paramref name="packet"/>, drops its first <paramref name="first"/> samples per channel and copies at most
+    /// <paramref name="keep"/> samples per channel, interleaved, as fit into <paramref name="output"/>; returns the
+    /// samples per channel written.
     /// </summary>
-    public int Decode(ReadOnlySpan<byte> packet, Span<float> output, int channels)
+    public int Decode(ReadOnlySpan<byte> packet, Span<float> output, int channels, int first, int keep)
     {
         if (_decoder is null || _decoder.NumChannels != channels)
         {
             _decoder = OpusCodecFactory.CreateDecoder(XApuLayout.OpusRate, channels);
         }
 
-        int samples = _decoder.Decode(packet, _scratch, XApuLayout.MaxPacketSamples, false);
-        int floats = Math.Min(samples * channels, output.Length);
-        _scratch.AsSpan(0, floats).CopyTo(output);
+        int decoded = _decoder.Decode(packet, _scratch, XApuLayout.MaxPacketSamples, false);
+        int skipped = Math.Min(first, decoded);
+        int samples = Math.Min(Math.Min(decoded - skipped, keep), output.Length / channels);
+        _scratch.AsSpan(skipped * channels, samples * channels).CopyTo(output);
 
-        return floats;
+        return samples;
     }
 
     public void Reset()

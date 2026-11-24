@@ -19,7 +19,8 @@ internal static class HostUsage
           --cpu <host|intel>     intel: report SSE4a, CLZERO, MONITORX/MWAITX and CLWB as missing and check their
                                  emulation through the exception handler (self-test code, not the game's)
           --trace-system         with --run: the call trace also records System32 imports
-          --input-script <file>  timed key presses ("<s> <key> [hold <s>] [repeat <n> every <s>]" or "<s> capture" per line; reloaded when the file changes)
+          --input-script <file>  timed key presses ("<s> <key> [hold <s>] [repeat <n> every <s>]", "<s> capture", "<s> learn <screen>" per line; "screen <name>" starts a block timed from when that screen shows; reloaded when the file changes)
+          --screens <file>       learned screens of --input-script (default %LOCALAPPDATA%\FiveStar\screens.txt)
                                  added to the desktop keys, so the keyboard and the virtual gamepad see them
           --profile-threads      with --sample-threads: also log the main image's busiest functions on running threads
           --trace-module <dll>   with --run: the call trace also records calls into this mapped image
@@ -68,6 +69,8 @@ internal static class HostUsage
           --raytracing          XboxBvhBuilder.dll's CPU paths: console acceleration-structure sizes and BLAS
                                  rehydration into game memory (off: desktop sizes, nothing written)
           --xdsp-convolution     run the XDsp convolution effects on the CPU (default: silence; response format inferred)
+          --audio-capture <wav>  record what the game plays (process loopback, 48 kHz stereo) and print how much had sound
+          --desktop-timers       keep 15.6 ms timer ticks (default with --run: 1 ms, which the game's audio mixer needs)
           --bcpack-tables <file> the BCPack tables (bcpack-tables.bin, not shipped; fivestar setup imports them):
                                  every BCPack codec decodes exactly; without them BC3, BC6H and BC7 have no
                                  decoder and BC4 and BC5 decode approximately

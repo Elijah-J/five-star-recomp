@@ -6,7 +6,7 @@ using Xunit;
 
 namespace FiveStar.Loader.Tests;
 
-/// <summary>The --input-script file: timed presses, repeated, held for their hold time only.</summary>
+/// <summary>The --input-script file: timed presses, repeated, held for their hold time only, and screen blocks.</summary>
 public sealed class InputScriptTests
 {
     [Fact]
@@ -23,13 +23,38 @@ public sealed class InputScriptTests
     }
 
     [Fact]
-    public void Capture_lines_are_times_not_presses()
+    public void Capture_and_learn_lines_are_marks_not_presses()
     {
-        var script = InputScript.Parse(["90 capture", "15 Space", "30 CAPTURE"]);
+        var script = InputScript.Parse(["90 capture", "15 Space", "30 learn title"]);
 
-        Assert.Equal([30.0, 90.0], script.Captures);
+        Assert.Equal([new ScriptedMark(0, 30, "title"), new ScriptedMark(0, 90, null)], script.Marks);
         Assert.Single(script.Presses);
-        Assert.Equal(1, script.StartedBefore(20));
+        Assert.True(script.Started(0, 20));
+    }
+
+    [Fact]
+    public void Screen_blocks_start_when_their_screen_shows_and_stop_the_block_before()
+    {
+        var script = InputScript.Parse(["0 Space repeat 100 every 3", "screen legal", "0.5 Down", "+15 Down"]);
+        var keys = new PressedKeys();
+        int down = KeyNames.Parse("Down")!.Value;
+        int space = KeyNames.Parse("Space")!.Value;
+
+        // Block 0 taps Space until the legal screen shows at 31 s; its later taps are dropped then.
+        script.Apply(keys, 30.5);
+        bool downBefore = keys.IsDown(down);
+        script.Begin(1, 31);
+
+        keys.Clear();
+        script.Apply(keys, 33.1);
+        bool spaceAfter = keys.IsDown(space);
+        script.Apply(keys, 46.6);
+
+        Assert.Equal(["", "legal"], script.Screens);
+        Assert.False(downBefore);
+        Assert.False(spaceAfter);
+        Assert.True(keys.IsDown(down));
+        Assert.Equal(-1, script.WaitingBlock);
     }
 
     [Fact]
