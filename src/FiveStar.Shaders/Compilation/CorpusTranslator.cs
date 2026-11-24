@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Five Star Recomp contributors.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 using FiveStar.Shaders.Translation;
 
@@ -91,7 +92,7 @@ public sealed partial class CorpusTranslator
         var results = new ProgramResult[paths.Count];
         var parallel = new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, options.Parallelism) };
         var done = 0;
-        Parallel.For(0, paths.Count, parallel, index =>
+        Parallel.ForEach(Partitioner.Create(LargestFirst(paths), EnumerablePartitionerOptions.NoBuffering), parallel, index =>
         {
             results[index] = Work(paths[index], options);
             _progress?.Report(new CorpusProgress(Interlocked.Increment(ref done), paths.Count));
@@ -101,6 +102,17 @@ public sealed partial class CorpusTranslator
         ResultsFile.Write(Path.Combine(options.OutputFolder, ResultsName), merged);
 
         return merged;
+    }
+
+    /// <summary>
+    /// The indices of the programs, largest file first: dxc needs minutes for the largest few, so started last they
+    /// would run on alone at the end of the run while the other jobs idle.
+    /// </summary>
+    private static int[] LargestFirst(IReadOnlyList<string> paths)
+    {
+        var sizes = paths.Select(path => File.Exists(path) ? new FileInfo(path).Length : 0).ToArray();
+
+        return Enumerable.Range(0, paths.Count).OrderByDescending(index => sizes[index]).ThenBy(index => index).ToArray();
     }
 
     /// <summary>Earlier results in their order with re-run programs replaced; new programs at the end.</summary>
