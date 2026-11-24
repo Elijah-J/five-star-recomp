@@ -12,7 +12,7 @@ namespace FiveStar.Formats.Ttpf.BcPack;
 /// <param name="Cycles">Decoder clocks simulated.</param>
 /// <param name="UnfittedBlocks">Blocks whose reference chain reaches an unfitted preset window slot.</param>
 /// <param name="Detail">The lane (<see cref="BcPackDecodeStatus.BadHeader"/>) or lane bit mask
-/// (<see cref="BcPackDecodeStatus.IllegalEndState"/>).</param>
+/// (<see cref="BcPackDecodeStatus.IllegalEndState"/>), or the invalid blocks (<see cref="BcPackDecodeStatus.InvalidBlock"/>).</param>
 public readonly record struct BcPackDecodeResult(
     BcPackDecodeStatus Status,
     int Consumed,
@@ -42,6 +42,8 @@ public readonly record struct BcPackDecodeResult(
                 return $"lanes [{LaneList(Detail)}] ended in an illegal state";
             case BcPackDecodeStatus.TrailingData:
                 return $"non-zero bytes after the end of the stream ({Consumed} of {ChunkLength} consumed)";
+            case BcPackDecodeStatus.InvalidBlock:
+                return $"{Detail} block records name no valid block";
             default:
                 return Status.ToString();
         }
