@@ -23,8 +23,23 @@ internal static class XgSwizzles
 
     private static readonly string[] SmallPatterns = ["xxxxyyyyyxyx", "xxxyyyxyxyx", "xxyyyxyxyx", "xyyxxyxyx", "yyxxyxyx"];
     private static readonly string[] LargePatterns = ["xxxyyyxyyxyxyxyx", "xxxyyyxyxyxyxyx", "xxyyxyyxyxyxyx", "xyxxyyxyxyxyx", "xyxyyxyxyxyx"];
+
+    /// <summary>The axes in the order extra brick bits are taken.</summary>
+    private const string AxisLetters = "xzy";
+
+    /// <summary>log2 of the 4 KB brick per element size: 16x16x16, 8x16x16, 8x16x8, 8x8x8, 4x8x8 (x, y, z).</summary>
+    private static readonly int[] BrickXLog2 = [4, 3, 3, 3, 2];
+    private static readonly int[] BrickYLog2 = [4, 4, 4, 3, 3];
+    private static readonly int[] BrickZLog2 = [4, 4, 3, 3, 3];
+
+    /// <summary>log2 growth from a 4 KB to a 64 KB brick: the RDNA 1 KB brick times (4, 4, 4) against (1, 2, 2).</summary>
+    private const int LargeGrowthX = 2;
+    private const int LargeGrowthYZ = 1;
+
     private static readonly XgSwizzle[] Small = Parse(SmallPatterns);
     private static readonly XgSwizzle[] Large = WithLowYSwapped(Parse(LargePatterns), OneByteSize);
+    private static readonly XgSwizzle[] SmallVolumes = Volumes(false);
+    private static readonly XgSwizzle[] LargeVolumes = Volumes(true);
 
     /// <summary>The swizzle of a block size (bytes) and element size (log2 of bytes); the 256-byte block is a prefix.</summary>
     [HotPath]
@@ -45,6 +60,81 @@ internal static class XgSwizzles
         int microBits = small.Bits - (System.Numerics.BitOperations.Log2(SmallBlockBytes) - System.Numerics.BitOperations.Log2(MicroBlockBytes));
 
         return new XgSwizzle(small.XMask & ((1u << microBits) - 1), microBits);
+    }
+
+    /// <summary>
+    /// The brick of a thick (3D) block size and element size: the 4 KB bricks found on the shipped volumes (2- and
+    /// 8-byte elements, docs/textures.md), other sizes and 64 KB bricks extended to the RDNA brick shape by taking x, z
+    /// and y bits in turn (not checked on data).
+    /// </summary>
+    [HotPath]
+    public static XgSwizzle FindVolume(int blockBytes, int elementLog2)
+    {
+        if (blockBytes == LargeBlockBytes)
+        {
+            return LargeVolumes[elementLog2];
+        }
+
+        return SmallVolumes[elementLog2];
+    }
+
+    private static XgSwizzle[] Volumes(bool large)
+    {
+        var swizzles = new XgSwizzle[ElementSizes];
+
+        for (int size = 0; size < ElementSizes; size++)
+        {
+            swizzles[size] = Volume(large, size);
+        }
+
+        return swizzles;
+    }
+
+    private static XgSwizzle Volume(bool large, int elementLog2)
+    {
+        int x = BrickXLog2[elementLog2] + (large ? LargeGrowthX : 0);
+        int y = BrickYLog2[elementLog2] + (large ? LargeGrowthYZ : 0);
+        int z = BrickZLog2[elementLog2] + (large ? LargeGrowthYZ : 0);
+        string known = FiveStar.Formats.Ttpf.SwizzlePatterns.FindVolume(1 << elementLog2) ?? string.Empty;
+        string pattern = Extend(known, x, y, z);
+        uint xMask = 0;
+        uint zMask = 0;
+
+        for (int bit = 0; bit < pattern.Length; bit++)
+        {
+            if (pattern[bit] == 'x')
+            {
+                xMask |= 1u << bit;
+            }
+            else if (pattern[bit] == 'z')
+            {
+                zMask |= 1u << bit;
+            }
+        }
+
+        return new XgSwizzle(xMask, pattern.Length, false, zMask);
+    }
+
+    /// <summary>Appends x, z and y bits in turn, each while its axis has fewer than the wanted bits.</summary>
+    private static string Extend(string pattern, int x, int y, int z)
+    {
+        var text = new System.Text.StringBuilder(pattern);
+        int[] wanted = [x, z, y];
+        int[] have = [pattern.Count(c => c == 'x'), pattern.Count(c => c == 'z'), pattern.Count(c => c == 'y')];
+
+        while (have[0] < wanted[0] || have[1] < wanted[1] || have[2] < wanted[2])
+        {
+            for (int axis = 0; axis < wanted.Length; axis++)
+            {
+                if (have[axis] < wanted[axis])
+                {
+                    text.Append(AxisLetters[axis]);
+                    have[axis]++;
+                }
+            }
+        }
+
+        return text.ToString();
     }
 
     private static XgSwizzle[] WithLowYSwapped(XgSwizzle[] swizzles, int size)

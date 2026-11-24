@@ -60,6 +60,11 @@ internal static class XgAddress
 
         var swizzle = plane.Swizzle;
 
+        if (plane.Thick)
+        {
+            return plane.Offset + mip.Offset + Brick(plane, mip, x, y, (uint)slice);
+        }
+
         if (mip.InTail != 0)
         {
             return sliceStart + ((ulong)swizzle.Index(mip.TailX + x, mip.TailY + y) * bytesPerElement);
@@ -71,5 +76,21 @@ internal static class XgAddress
         ulong inside = (ulong)swizzle.Index(x % tileWidth, y % tileHeight) * bytesPerElement;
 
         return sliceStart + mip.Offset + (tile * (ulong)plane.BlockBytes) + inside;
+    }
+
+    /// <summary>The offset inside a thick mip of element (x, y, z): bricks in x, then y, then z.</summary>
+    [HotPath]
+    private static ulong Brick(in XgPlane plane, in XgMip mip, uint x, uint y, uint z)
+    {
+        var swizzle = plane.Swizzle;
+        uint width = (uint)swizzle.TileWidth;
+        uint height = (uint)swizzle.TileHeight;
+        uint depth = (uint)swizzle.TileDepth;
+        ulong columns = mip.PitchElements / width;
+        ulong rows = mip.PaddedHeightElements / height;
+        ulong brick = ((((ulong)(z / depth) * rows) + (y / height)) * columns) + (x / width);
+        ulong inside = (ulong)swizzle.Index(x % width, y % height, z % depth) * (ulong)plane.BytesPerElement;
+
+        return (brick * (ulong)plane.BlockBytes) + inside;
     }
 }

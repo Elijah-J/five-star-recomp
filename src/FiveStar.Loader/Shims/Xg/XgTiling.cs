@@ -58,10 +58,11 @@ internal static unsafe class XgTiling
             return;
         }
 
-        var swizzle = XgSwizzles.Find(XgSwizzles.LargeBlockBytes, BitOperations.Log2((uint)plane.BytesPerElement));
+        int elementLog2 = BitOperations.Log2((uint)plane.BytesPerElement);
+        var swizzle = plane.Thick ? XgSwizzles.FindVolume(XgSwizzles.LargeBlockBytes, elementLog2) : XgSwizzles.Find(XgSwizzles.LargeBlockBytes, elementLog2);
         shape->WidthInTexels = (uint)(swizzle.TileWidth * plane.BlockDimension);
         shape->HeightInTexels = (uint)(swizzle.TileHeight * plane.BlockDimension);
-        shape->DepthInTexels = 1;
+        shape->DepthInTexels = (uint)swizzle.TileDepth;
     }
 
     private static void WriteTilings(in XgSurface surface, int standard, uint* tilingCount, uint first, XgSubresourceTiling* tilings)
@@ -88,7 +89,7 @@ internal static unsafe class XgTiling
 
             tiling->WidthInTiles = mip.PitchElements / (uint)plane.Swizzle.TileWidth;
             tiling->HeightInTiles = (ushort)(mip.PaddedHeightElements / (uint)plane.Swizzle.TileHeight);
-            tiling->DepthInTiles = 1;
+            tiling->DepthInTiles = (ushort)(XgLayoutBuilder.AlignUp(mip.DepthElements, (ulong)plane.Swizzle.TileDepth) / (ulong)plane.Swizzle.TileDepth);
             tiling->StartTileIndexInOverallResource = (uint)((plane.Offset + ((ulong)slice * plane.SliceStride) + mip.Offset) / (ulong)XgSwizzles.LargeBlockBytes);
         }
 

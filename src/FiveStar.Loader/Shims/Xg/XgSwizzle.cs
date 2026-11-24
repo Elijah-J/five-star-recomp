@@ -10,20 +10,23 @@ namespace FiveStar.Loader.Shims.Xg;
 /// A block swizzle as two bit masks over the element index inside a block: index bit k is the next x bit of the
 /// element's position when bit k of <see cref="XMask"/> is set, the next y bit otherwise. Blocks are laid out
 /// row-major. A pattern with a x bits and b y bits covers a 2^a by 2^b element block. With
-/// <see cref="LowYSwapped"/> the first two y bits of the mask are y bit 1, then y bit 0.
+/// <see cref="LowYSwapped"/> the first two y bits of the mask are y bit 1, then y bit 0. A thick (3D) block also has
+/// z bits (<see cref="ZMask"/>): a brick of 2^a by 2^b by 2^c elements.
 /// </summary>
 internal readonly struct XgSwizzle
 {
     private const uint LowYBits = 3;
 
-    public XgSwizzle(uint xMask, int bits, bool lowYSwapped = false)
+    public XgSwizzle(uint xMask, int bits, bool lowYSwapped = false, uint zMask = 0)
     {
         XMask = xMask;
-        YMask = ((1u << bits) - 1) & ~xMask;
+        ZMask = zMask;
+        YMask = ((1u << bits) - 1) & ~xMask & ~zMask;
         Bits = bits;
         LowYSwapped = lowYSwapped;
         TileWidth = 1 << BitOperations.PopCount(XMask);
         TileHeight = 1 << BitOperations.PopCount(YMask);
+        TileDepth = 1 << BitOperations.PopCount(ZMask);
     }
 
     public bool LowYSwapped { get; }
@@ -31,6 +34,12 @@ internal readonly struct XgSwizzle
     public uint XMask { get; }
 
     public uint YMask { get; }
+
+    /// <summary>Gets the z bits of a thick block; 0 for a 2D block.</summary>
+    public uint ZMask { get; }
+
+    /// <summary>Gets the block depth in elements (1 for a 2D block).</summary>
+    public int TileDepth { get; }
 
     /// <summary>Gets the number of index bits: log2 of the elements in one block.</summary>
     public int Bits { get; }
@@ -53,6 +62,18 @@ internal readonly struct XgSwizzle
         }
 
         return Deposit(x, XMask) | Deposit(y, YMask);
+    }
+
+    /// <summary>The element index inside a thick block of the element at (x, y, z) of that block.</summary>
+    [HotPath]
+    public uint Index(uint x, uint y, uint z)
+    {
+        if (Bmi2.IsSupported)
+        {
+            return Index(x, y) | Bmi2.ParallelBitDeposit(z, ZMask);
+        }
+
+        return Index(x, y) | Deposit(z, ZMask);
     }
 
     /// <summary>The x position of the element at an index inside its block.</summary>

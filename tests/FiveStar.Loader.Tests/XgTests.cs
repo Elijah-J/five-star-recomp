@@ -73,6 +73,20 @@ public sealed unsafe class XgTests
     }
 
     [Fact]
+    public void A_volume_in_a_4_kb_s_mode_is_laid_out_in_the_shipped_bricks()
+    {
+        // 256x32x8 R16_FLOAT in SW_4KB_S: 8x16x16 bricks (x, z, y, z, y, x, ...), so the 8 slices pad to 16: 0x40000
+        // bytes, the size of the game's archive chunk for it (the 2D-slice layout gave 0x20000).
+        var desc = new XgResourceDesc { Dimension = 4, Width = 256, Height = 32, DepthOrArraySize = 8, MipLevels = 1, Format = 54, SampleCount = 1, Layout = 0x105 };
+        XgLayoutBuilder.Build(desc, out var surface);
+        ref readonly XgPlane plane = ref surface.Planes[0];
+
+        Assert.Equal(0x40000ul, surface.Size);
+        Assert.Equal((2ul, 4ul, 8ul), (XgAddress.Element(plane, 0, 0, 1, 0), XgAddress.Element(plane, 0, 1, 0, 0), XgAddress.Element(plane, 0, 0, 0, 1)));
+        Assert.Equal((0x1000ul, 0x20000ul), (XgAddress.Element(plane, 0, 0, 8, 0), XgAddress.Element(plane, 0, 0, 0, 16)));
+    }
+
+    [Fact]
     public void Element_offsets_follow_the_64_kb_blocks_and_the_tail_slot()
     {
         using var test = TestRuntime.Create();

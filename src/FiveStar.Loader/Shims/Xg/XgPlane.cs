@@ -24,7 +24,13 @@ internal struct XgPlane
     /// <summary>The first mip in the tail block, or <see cref="MipCount"/> when there is no tail.</summary>
     public int FirstTailMip;
 
+    /// <summary>
+    /// The depth (3D) or array size. A thick plane (a 3D texture in a Z or S mode) holds one mip chain of bricks
+    /// instead: <see cref="SliceStride"/> and <see cref="Size"/> are the whole volume, and a slice is a depth.
+    /// </summary>
     public int Slices;
+
+    public bool Thick;
     public ulong Offset;
     public ulong SliceStride;
     public ulong Size;
